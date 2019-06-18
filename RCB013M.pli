@@ -1,0 +1,306 @@
+ /* RCB013M - READ PARAMETER FILE                                    */ 00019212
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCB013M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLI                                           */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : GET PARAMETERS FROM PARAMETER FILE            */ 00140000
+ /*                                                                  */ 00150000
+ /* INPUT            : - FILES : RCBPARM  - PARAMETER FILE           */ 00160000
+ /*                                                                  */ 00170000
+ /* OUTPUT           : NONE                                          */ 00180000
+ /*                                                                  */ 00190000
+ /* EXTERNAL MODULES : RCB0M1M - COMMON MESSAGE MODULE               */ 00200000
+ /*                    RCB0E1M - COMMON ERROR MODULE                 */ 00210000
+ /*                                                                  */ 00220000
+ /* MESSAGES         : 0029 - TYPE OF WARRANTY INVALID               */ 00230000
+ /*                    0030 - TYPE OF MAINT INVALID                  */ 00240000
+ /*                    0047 - INCOMPLETE FILE                        */ 00250000
+ /*                    0048 - UNVALID FIELD                          */ 00260000
+ /*                    0049 - UNABLE TO CONVERT VALUE                */ 00270000
+ /*                    0050 - ERROR READING PARAMETER                */ 00280000
+ /*                    0214 - INVALID WARRANTY PERIOD                */ 00290000
+ /*                                                                  */ 00300000
+ /* DEPENDENCIES     : NONE                                          */ 00310000
+ /*                                                                  */ 00320000
+ /* MAINTENANCE LOG  :                                               */ 00330000
+ /* ---------------                                                  */ 00340000
+ /*                                                                  */ 00350000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00360000
+ /* --------------------------------------------------------------   */ 00370000
+ /*  1996-11-07 | RA01170      | ALIGN CEDS TO HVP                   */ 00380000
+ /*  1997-09-05 | RC01191      | CEDS ENHANCEMENTS FOR HVP DATA      */ 00390000
+ /*             |              |                                     */ 00400000
+ /********************************************************************/ 00410000
+ RCB013M: PROC (IPARM_PTR,                                              00420000
+                RETCODE,                                                00430000
+                PTR_INT_AREA)                                           00440000
+          REORDER;                                                      00450000
+ /*-----------------------------------------------------------------*/  00460000
+ /* ARGUMENTS                                                       */  00470000
+ /*-----------------------------------------------------------------*/  00480000
+ DCL 1 IPARM_PTR   PTR;                /* POINTER TO PARM AREA      */  00490000
+ DCL 1 IPARM       BASED(IPARM_PTR),   /* PARAMETER AREA            */  00500000
+      %INCLUDE RCBZ13S;;                                                00510000
+ DCL RETCODE       FIXED BIN(31);      /* RETURN CODE               */  00520000
+ DCL PTR_INT_AREA  PTR;                /* PTR INTERFACE AREA         */ 00530000
+ DCL 1 PARM_INT_AREA BASED(PTR_INT_AREA),                               00540000
+      %INCLUDE RCBZ01S;;                                                00550000
+1/*-----------------------------------------------------------------*/  00560000
+ /* FILES                                                           */  00570000
+ /*-----------------------------------------------------------------*/  00580000
+ DCL RCBPARM       FILE                /* PARAMETER FILE            */  00590000
+                   INPUT                                                00600000
+                   STREAM;                                              00610000
+ /*-----------------------------------------------------------------*/  00620000
+ /* EXTERNAL ENTRIES                                                */  00630000
+ /*-----------------------------------------------------------------*/  00640000
+ DCL RCB0M1M       EXTERNAL ENTRY;     /* COMMON MESSAGE MODULE     */  00650000
+ DCL RCB0E1M       EXTERNAL ENTRY;     /* COMMON ERROR MODULE       */  00660000
+ /*-----------------------------------------------------------------*/  00670000
+ /* BUILTIN FUNCTIONS                                               */  00680000
+ /*-----------------------------------------------------------------*/  00690000
+ DCL ADDR          BUILTIN;                                             00700000
+ DCL DATAFIELD     BUILTIN;                                             00710000
+ DCL INDEX         BUILTIN;                                             00720000
+ DCL NULL          BUILTIN;                                             00730000
+ DCL ONCODE        BUILTIN;                                             00740000
+ DCL ONSOURCE      BUILTIN;                                             00750000
+ DCL STRING        BUILTIN;                                             00760000
+ DCL SUBSTR        BUILTIN;                                             00770000
+ DCL VERIFY        BUILTIN;                                             00780000
+1/*-----------------------------------------------------------------*/  00790000
+ /* WORK FIELDS                                                     */  00800000
+ /*-----------------------------------------------------------------*/  00810000
+ DCL 1 PARM,                           /* AREA TO GET PARAMETER     */  00820000
+      %INCLUDE RCBZ13S;;                                                00830000
+ DCL 1 DATE_AREA,                      /* DATE AREA                 */  00840000
+      %INCLUDE RCBZ03S;;                                                00850000
+ DCL 1 VALID_WARRANTY_PERIODS,         /* WARRANTY PERIODS          */  00860000
+      %INCLUDE RCBZ98S;;                                                00870000
+ DCL 1 VALID_TPMNT,                    /* TYPE OF MAINTENANCE       */  00880000
+      %INCLUDE RCBZ99S;;                                                00890000
+ DCL 1 TIMESTAMP,                      /* CURRENT DATE/TIME STAMP   */  00900000
+      3 YYYY       CHAR(04),                                            00910000
+      3 MM         CHAR(02),                                            00920000
+      3 DD         CHAR(02),                                            00930000
+      3 TIME       CHAR(09);                                            00940000
+ DCL I             FIXED BIN(15);      /* INDEX DATAFIELD           */  00950000
+ DCL WRK_LEVEL     FIXED BIN(15);                                       00960000
+ DCL PIC5_9        PIC'ZZZZ9';         /* WORKFIELD NUMERIC FIELDS  */  00970000
+1/*-----------------------------------------------------------------*/  00980000
+ /* MAIN LINE                                                       */  00990000
+ /*-----------------------------------------------------------------*/  01000000
+                                         /* SET LEVEL AND MOD NAME  */  01010000
+ WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01020000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01030000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCB013M';                     01040000
+ RETCODE = 0;                          /* INIT RETURN CODE          */  01050000
+ ON CONVERSION BEGIN;                  /* INVALID DATA              */  01060000
+   CALL RCB013M_ISSUE_MESSAGE(49);                                      01070000
+   ONSOURCE() = 0;                     /* NO RETRY                  */  01080000
+   RETCODE = 12;                                                        01090000
+   END;                                                                 01100000
+ ON NAME(RCBPARM) BEGIN;               /* INVALID FIELD             */  01110000
+   I = INDEX(DATAFIELD(),'*/');        /* END OF COMMENT            */  01120000
+   IF I = 0                            /* NO END OF COMMENT         */  01130000
+   |  SUBSTR(DATAFIELD(),1,2) ¬= '/*'  /* NO START OF COMMENT       */  01140000
+   |  SUBSTR(DATAFIELD(),I) ¬= '*/'    /* MORE AFTER END OF COMMENT */  01150000
+   THEN DO;                            /* MEANS INVALID ASSIGNMENT  */  01160000
+     CALL RCB013M_ISSUE_MESSAGE(48);                                    01170000
+     RETCODE = 12;                                                      01180000
+     END;                                                               01190000
+   END;                                                                 01200000
+ ON ENDFILE(RCBPARM) BEGIN;            /* INVALID INPUT             */  01210000
+   CALL RCB013M_ISSUE_MESSAGE(47);                                      01220000
+   RETCODE = 12;                                                        01230000
+   END;                                                                 01240000
+ GET FILE(RCBPARM) DATA(PARM);         /* READ IN PARAMETER FILE    */  01250000
+ IF RETCODE = 0                                                         01260000
+ THEN DO;                                                               01270000
+   CALL RCB013M_CHECK;                                                  01280000
+   END;                                                                 01290000
+ IF RETCODE ¬= 0                                                        01300000
+ THEN DO;                                                               01310000
+   CALL RCB013M_ISSUE_MESSAGE(50);                                      01320000
+   CALL RCB013M_ERROR (NULL,                                            01330000
+                       'OTHER',                                         01340000
+                       '#001');                                         01350000
+   END;                                                                 01360000
+ IPARM = PARM;                         /* PASS IT BACK TO CALLER    */  01370000
+                                       /* RESET LEVEL               */  01380000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            01390000
+1/********************************************************************/ 01400000
+ /*                                                                  */ 01410000
+ /* MODULE NAME      : RCB013M_CHECK                                 */ 01420000
+ /*                                                                  */ 01430000
+ /* DESCRIPTION      : CHECK PARAMETER FIELDS                        */ 01440000
+ /*                                                                  */ 01450000
+ /********************************************************************/ 01460000
+ RCB013M_CHECK: PROC;                                                   01470000
+                                       /* CHECK TYPE OF MAINTENANCE  */ 01480000
+ IF PARM.TYPE_OF_MAINT ¬= ' ' &                                         01490000
+    VERIFY(PARM.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_NO_WAR) ¬= 0            01500000
+ THEN DO;                                                               01510000
+   CALL RCB013M_ISSUE_MESSAGE(30);                                      01520000
+   RETCODE = 8;                                                         01530000
+   END;                                                                 01540000
+                                       /* CHECK TYPE OF WARRANTY     */ 01550000
+ /* IF PARM.TYPE_OF_WARRANTY ¬= ''                           *RC01191*/ 01560000
+ IF VERIFY(PARM.TYPE_OF_WARRANTY,VALID_TPMNT.TPMNT_WAR) ¬= 0            01570000
+ THEN DO;                                                               01580000
+   CALL RCB013M_ISSUE_MESSAGE(29);                                      01590000
+   RETCODE = 8;                                                         01600000
+   END;                                                                 01610000
+ ELSE DO;                              /* TYPE OF WARRANTY CORRECT   */ 01620000
+   IF PARM.WARRANTY_PERIOD ¬=          /* CHECK WARRANTY PERIOD      */ 01630000
+                      RCB013M_DETERMINE_PERIOD(PARM.TYPE_OF_WARRANTY)   01640000
+   THEN DO;                                                             01650000
+     CALL RCB013M_ISSUE_MESSAGE(214);                                   01660000
+     RETCODE = 8;                                                       01670000
+     END;                                                               01680000
+   END;                                                                 01690000
+ END RCB013M_CHECK;                                                     01700000
+1/********************************************************************/ 01710000
+ /*                                                                  */ 01720000
+ /* MODULE NAME      : RCB013M_DETERMINE_PERIOD                      */ 01730000
+ /*                                                                  */ 01740000
+ /* DESCRIPTION      : DETERMINE WARRANTY PERIOD                     */ 01750000
+ /*                                                                  */ 01760000
+ /********************************************************************/ 01770000
+ RCB013M_DETERMINE_PERIOD: PROC(TYPE_OF_WARRANTY)                       01780000
+                           RETURNS(FIXED DEC(3));                       01790000
+ DCL TYPE_OF_WARRANTY                                                   01800000
+                   CHAR(1);            /* SPECIFIED TYPE OF WARRANTY */ 01810000
+ DCL WARRANTY_PERIOD                                                    01820000
+                   FIXED DEC(3);       /* WARRANTY PERIOD FOUND FOR  */ 01830000
+                                       /* SPECIFIED TYPE OF WARRANTY */ 01840000
+ SELECT;                                                                01850000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_3_MONTHS) DO;     01860000
+     WARRANTY_PERIOD = 3;                                               01870000
+     END;                                                               01880000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_6_MONTHS) DO;     01890000
+     WARRANTY_PERIOD = 6;                                               01900000
+     END;                                                               01910000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_12_MONTHS) DO;    01920000
+     WARRANTY_PERIOD = 12;                                              01930000
+     END;                                                               01940000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_14_MONTHS) DO;    01950000
+     WARRANTY_PERIOD = 14;                                              01960000
+     END;                                                               01970000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_24_MONTHS) DO;    01980000
+     WARRANTY_PERIOD = 24;                                              01990000
+     END;                                                               02000000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_36_MONTHS) DO;    02010000
+     WARRANTY_PERIOD = 36;                                              02020000
+     END;                                                               02030000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_48_MONTHS) DO;    02040000
+     WARRANTY_PERIOD = 48;                                              02050000
+     END;                                                               02060000
+   WHEN (TYPE_OF_WARRANTY = VALID_WARRANTY_PERIODS.WT_60_MONTHS) DO;    02070000
+     WARRANTY_PERIOD = 60;                                              02080000
+     END;                                                               02090000
+   OTHERWISE DO;                                                        02100000
+     WARRANTY_PERIOD = 0;                                               02110000
+     END;                                                               02120000
+   END;                                                                 02130000
+ RETURN(WARRANTY_PERIOD);                                               02140000
+ END RCB013M_DETERMINE_PERIOD;                                          02150000
+1/********************************************************************/ 02160000
+ /*                                                                  */ 02170000
+ /* MODULE NAME      : RCB013M_ISSUE_MESSAGE                         */ 02180000
+ /*                                                                  */ 02190000
+ /* DESCRIPTION      : ISSUE SPECIFIED MESSAGE WITH VALUES           */ 02200000
+ /*                                                                  */ 02210000
+ /********************************************************************/ 02220000
+ RCB013M_ISSUE_MESSAGE: PROC(MSGNR);                                    02230000
+ DCL MSGNR         FIXED BIN (31);     /* MESSAGE NUMBER            */  02240000
+ DCL PARM_INT_AREA_MSGNR_9             /* MESSAGE NUMBER NUMERIC    */  02250000
+                   BASED(ADDR(PARM_INT_AREA.MESSAGE_NUMBER))            02260000
+                   PIC'9999';                                           02270000
+                                                                        02280000
+ PARM_INT_AREA.MSG_VAR_CODES  = ' ';   /* INIT ALL MESSAGE VARIABLES*/  02290000
+ PARM_INT_AREA_MSGNR_9 = MSGNR;                                         02300000
+ SELECT (MSGNR);                       /* CHECK MESSAGE NUMBER      */  02310000
+   WHEN(29) DO;                        /* TYPE OF WARRANTY INVALID  */  02320000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'BU';                              02330000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FV';                              02340000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = PARM.TYPE_OF_WARRANTY;             02350000
+     END;                                                               02360000
+   WHEN(30) DO;                        /* TYPE OF MAINT INVALID     */  02370000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'BU';                              02380000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FV';                              02390000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = PARM.TYPE_OF_MAINT;                02400000
+     END;                                                               02410000
+   WHEN(47) DO;                        /* INCOMPLETE FILE           */  02420000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                              02430000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';                              02440000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBPARM';                         02450000
+     END;                                                               02460000
+   WHEN(48) DO;                        /* INVALID FIELD NAME        */  02470000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                              02480000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';                              02490000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBPARM';                         02500000
+     PARM_INT_AREA.MSG_VAR_CODE_7  = 'FN';                              02510000
+     PARM_INT_AREA.MSG_VAR_VALUE_7 = DATAFIELD();                       02520000
+     END;                                                               02530000
+   WHEN(49) DO;                        /* UNABLE TO CONVERT VALUE   */  02540000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                              02550000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';                              02560000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBPARM';                         02570000
+     PARM_INT_AREA.MSG_VAR_CODE_7  = 'FV';                              02580000
+     PARM_INT_AREA.MSG_VAR_VALUE_7 = ONSOURCE();                        02590000
+     END;                                                               02600000
+   WHEN(50) DO;                        /* ERROR READING PARAMETER   */  02610000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                              02620000
+     END;                                                               02630000
+   WHEN(214) DO;                       /* INVALID WARRANTY PERIOD   */  02640000
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                              02650000
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FV';                              02660000
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = PARM.TYPE_OF_WARRANTY;             02670000
+     PARM_INT_AREA.MSG_VAR_CODE_7  = 'PD';                              02680000
+     PIC5_9 = PARM.WARRANTY_PERIOD;                                     02690000
+     PARM_INT_AREA.MSG_VAR_VALUE_7 = STRING(PIC5_9);                    02700000
+     END;                                                               02710000
+   OTHERWISE DO;                                                        02720000
+     CALL RCB013M_ERROR (NULL,                                          02730000
+                         'OTHER',                                       02740000
+                         '#002');                                       02750000
+     END;                                                               02760000
+   END;/*SELECT*/                                                       02770000
+ CALL RCB0M1M(PTR_INT_AREA);                                            02780000
+ END RCB013M_ISSUE_MESSAGE;                                             02790000
+1/********************************************************************/ 02800000
+ /*                                                                  */ 02810000
+ /* MODULE NAME      : RCB013M_ERROR                                 */ 02820000
+ /*                                                                  */ 02830000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE                */ 02840000
+ /*                                                                  */ 02850000
+ /********************************************************************/ 02860000
+ RCB013M_ERROR: PROC (PTR_ERROR,                                        02870000
+                      ERR_TYPE,                                         02880000
+                      CALL_ID);                                         02890000
+                                                                        02900000
+ DCL PTR_ERROR             PTR;                                         02910000
+ DCL ERR_TYPE              CHAR (8);                                    02920000
+ DCL CALL_ID               CHAR (4);                                    02930000
+                                                                        02940000
+ PARM_INT_AREA.PTR_ERROR = PTR_ERROR;                                   02950000
+ PARM_INT_AREA.ERR_TYPE  = ERR_TYPE;                                    02960000
+ PARM_INT_AREA.CALL_ID   = CALL_ID;                                     02970000
+ CALL RCB0E1M (PTR_INT_AREA);                                           02980000
+                                                                        02990000
+ END RCB013M_ERROR;                                                     03000000
+ /*-----------------------------------------------------------------*/  03010000
+ /* COMPILE DATE/TIMESTAMP                                          */  03020000
+ /*-----------------------------------------------------------------*/  03030000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 03040000
+ $DAIMOD (RCB013M);                    /* MODULE TO BE COMPILED      */ 03050000
+ END RCB013M;                                                           03060000

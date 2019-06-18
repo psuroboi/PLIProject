@@ -1,0 +1,660 @@
+ /* RCBC20M SERVICE REFERENCE SELECTION                              */ 00010000
+ /********************************************************************/ 00020000
+ /*                                                                  */ 00030000
+ /* TRANSACTION CODE    : RC20                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* PROGRAM NAME        : RCBC20M                                    */ 00060000
+ /*                                                                  */ 00070000
+ /* TYPE                : CICS/VS                                    */ 00080000
+ /*                                                                  */ 00090000
+ /* USED MAPSET         : RCBM20                                     */ 00100000
+ /*      MAP            : RCBM20                                     */ 00110000
+ /*                     : RCBH20                                     */ 00120000
+ /*                                                                  */ 00121000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION         : _ SERVICE REFERENCE SELECTION              */ 00140000
+ /*                                                                  */ 00150000
+ /* LINKED TRANSACTION  : - RC20                                     */ 00160000
+ /*                                                                  */ 00170000
+ /* MESSAGES            :                                            */ 00180000
+ /*                                                                  */ 00190000
+ /*                                                                  */ 00200000
+ /*  MAINTENANCE LOG :                                               */ 00210000
+ /*  ---------------                                                 */ 00220000
+ /*                                                                  */ 00230000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00240000
+ /*  --------------------------------------------------------------  */ 00250000
+ /*  2002-03-22 | RA01233      | TACTICAL SERVICE REFERENCE          */ 00260000
+ /*  2004/01/13 | RB01261      | MAKE COUNTRY NUMBER CHANGEABLE      */ 00270100
+ /*  2004/01/13 | RB01263      | MINOR CICS CHANGES                  */ 00271000
+ /*  2007/05/13 | RB01281      | CHANGES FOR FLEXIBLE WARRANTY       */ 00271100
+ /*             |              | MACHINES                            */ 00272000
+ /*  2009-08-07 | RB01301      | CEDS ALIGNMENT TO CHIS 810 - BAU    */ 00273000
+ /*             |              | Service Extensions                  */ 00274000
+ /*  2014-05-05 | RB01338      | CEDS 3.3 A21 RELEASE - RACF USER    */ 00274178
+ /*             |              | GROUP FOR TS ACCESS MANAGEMENT TEAM */ 00274278
+ /********************************************************************/ 00280000
+1RCBC20M: PROC(COMMPTR)                                                 00290000
+          OPTIONS (MAIN)                                                00300000
+          REORDER;                                                      00310000
+0/********************************************************************/ 00320000
+ /*                                                                  */ 00330000
+ /********************************************************************/ 00340000
+                                                                        00340100
+0DCL PLIXOPT   VAR  CHAR (256)                                          00340200
+               INIT ('STORAGE(00,00,00,0)') STATIC EXTERNAL;            00340300
+                                                                        00340400
+0/********************************************************************/ 00341000
+ /*  BMS RELATED CONSTANTS                                           */ 00342000
+ /********************************************************************/ 00343000
+ %INCLUDE DFHBMSCA;                                                     00350000
+0/********************************************************************/ 00360000
+ /*  ATTENTION IDENTIFIER CONSTANTS                                  */ 00370000
+ /********************************************************************/ 00380000
+ %INCLUDE DFHAID;                                                       00390000
+0/********************************************************************/ 00391000
+ /*  EXTERNAL ENTRIES                                                */ 00392000
+ /********************************************************************/ 00393000
+                                                                        00395000
+1/********************************************************************/ 00400000
+ /*  COMMUNICATION AREA                                              */ 00410000
+ /********************************************************************/ 00420000
+     %INCLUDE (RCBCP2S);                                                00430000
+     %INCLUDE (RCBCHDS);,                                               00440000
+     %INCLUDE (RCBC00S);;                                               00441000
+0/********************************************************************/ 00460000
+ /*  MAP STRUCTURES                                                  */ 00470000
+ /********************************************************************/ 00480000
+ %INCLUDE (RCBM20);                                                     00500100
+0/********************************************************************/ 00501000
+ /*  DB2 STRUCTURES                                                  */ 00502000
+ /********************************************************************/ 00503000
+ DCL 1 RCB500S,                                                         00504000
+      %INCLUDE RCB500S;;                                                00505000
+ DCL 1 RCB500SI,                                                        00506000
+      %INCLUDE RCB500SI;;                                               00507000
+0/********************************************************************/ 00510000
+ /*  RETURN CODES                                                    */ 00520000
+ /********************************************************************/ 00530000
+ DCL RESPONSE     FIXED BINARY(31) INIT('0'B);  /*RETURN CODE        */ 00540000
+ DCL CODE_EXPLAIN FIXED BINARY(31) INIT('0'B);  /*RETURN CODE EXPLAIN*/ 00550000
+0/********************************************************************/ 00550100
+ /*  INTERFACE AREAS                                                 */ 00550200
+ /********************************************************************/ 00550300
+                                                                        00551100
+-/********************************************************************/ 00551200
+ /****   DECLARATIONS OF DB2 SQLCA                                ****/ 00552000
+ /********************************************************************/ 00553000
+  EXEC SQL  INCLUDE  SQLCA                  ;/*                      */ 00554000
+0/********************************************************************/ 00560000
+ /*  WORKING DECLARATIONS                                            */ 00570000
+ /********************************************************************/ 00580000
+ DCL SCREEN_ERROR     BIT(1) INIT('0'B);                                00630000
+ DCL ERROR_FLAG       BIT(1) INIT('0'B);                                00640000
+ DCL COMMAREA_STRING  CHAR(5984) INIT('');                              00650000
+0/********************************************************************/ 00660000
+ /*  MESSAGES                                                        */ 00670000
+ /********************************************************************/ 00680000
+ DCL ERR_MESSAGE3 CHAR(30) INIT('ERROR IN RECEIVING MAP ');             00690000
+ DCL ERR_MESSAGE4 CHAR(30) INIT('INVREQ IN EXECUTING ASSIGNMENT');      00700000
+ DCL ERR_MESSAGE5 CHAR(33) INIT('ERROR IN EXECUTING ASSIGNMENT    ');   00710000
+ DCL ERR_MESSAGE13 CHAR(12) INIT('OTHER ERRORS');                       00720000
+ DCL ERR_MESSAGE14 CHAR(40) INIT('ERROR IN RETURNING TO CICS  ');       00730000
+ DCL ERR_O004 CHAR(27) INIT('Invalid use of function key');             00740000
+ DCL ERR_O057 CHAR(70) INIT                                             00741000
+ ('You are not authorized to use the function for this Country Number');00742000
+ DCL ERR_O071 CHAR(27) INIT('Fill in the selection field');             00750000
+ DCL ERR_O072 CHAR(25) INIT('Country number is invalid');               00760000
+ DCL ERR_O079 CHAR(70) INIT                                             00761000
+ ('Not allowed to maintain serv. refs as no activity report created');  00762000
+ DCL ERR_O098 CHAR(23) INIT('Invalid command entered');                 00770000
+ DCL ERR_O030 CHAR(24) INIT('Already on first page');/* SOC RB01301  */ 00771068
+ DCL ERR_O031 CHAR(23) INIT('Already on last page'); /* EOC RB01301  */ 00772068
+0/********************************************************************/ 00780000
+ /*  CONSTANTS                                                       */ 00790000
+ /********************************************************************/ 00800000
+ DCL XCTL_CODE          CHAR(2) INIT('0E04'X);                          00810000
+0/********************************************************************/ 00820000
+ /*                 BUILD IN FUNCTIONS                               */ 00830000
+ /********************************************************************/ 00840000
+0DCL (LENGTH,                                                           00850000
+      STRING,                                                           00860000
+      SUBSTR,                                                           00870000
+      VERIFY,                                                           00880000
+      DECIMAL,                                                          00890000
+      DATETIME,                                                         00900000
+      CHAR,                                                             00910000
+      NULL,                                                             00911000
+      CSTG,                                                             00920000
+      ADDR)   BUILTIN;                                                  00930000
+1/********************************************************************/ 00940000
+ /*                   M A I N   P R O C E S S I N G                  */ 00950000
+ /*                                                                  */ 00960000
+ /********************************************************************/ 00970000
+0RCBM20O.MSG_LINEO = '';                                                00980000
+                                                                        00990000
+ IF EIBCALEN = 0 THEN                                                   00991000
+ DO;                                                                    00992000
+ /*EXEC CICS XCTL PROGRAM('RCBC20P'); */              /* SOC RB01338 */ 00993075
+   EXEC CICS XCTL PROGRAM('RCBC00P');                 /* EOC RB01338 */ 00993175
+ END;                                                                   00994000
+                                                                        00995000
+ IF HEADER.NEXT = '99' THEN                                             01010000
+ DO;                                                                    01020000
+   HEADER.NEXT = '00';                                                  01030000
+   RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;                            01050000
+   CALL RCBC20M_SEND_MAP;                                               01051000
+ END;                                                                   01052000
+                                                                        01053000
+ /*IF HEADER.NEXT = 'H1'                              /* SOC RB01301 */ 01054000
+ IF HEADER.NEXT = 'H1' & EIBTRNID ¬= 'RC20' THEN      /* EOC RB01301 */ 01054100
+ DO;                                                                    01055000
+   HEADER.NEXT = '00';                                                  01056000
+   IF WRK_COUNTRY_NUMBER = '001' THEN                                   01056100
+     RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;                          01056200
+   ELSE                                                                 01056300
+     RCBM20O.COUNTRY_NUMBERO = WRK_COUNTRY_NUMBER;                      01057000
+   CALL RCBC20M_SEND_MAP;                                               01058000
+ END;                                                                   01059000
+                                                                        01059100
+ SELECT (EIBAID);                                                       01060000
+   WHEN (DFHPF1,DFHPF13)                                                01061000
+     CALL RCBC20M_HELP_MAP;                                             01062000
+                                                                        01063000
+   WHEN (DFHPF3,DFHPF15)                                                01070000
+   DO;                                                                  01080000
+   /*IF HEADER.NEXT = 'H1' THEN */                    /* SOC RB01301 */ 01090000
+     IF HEADER.NEXT = 'H1'| HEADER.NEXT = 'H2' THEN   /* EOC RB01301 */ 01091000
+     DO;                                                                01100000
+       HEADER.NEXT = '00';                                              01110000
+       RCBM20O.COUNTRY_NUMBERO = WRK_COUNTRY_NUMBER;                    01112000
+       CALL RCBC20M_SEND_MAP;                                           01120000
+     END;                                                               01130000
+                                                                        01140000
+     HEADER.NEXT = 'H1';                                                01141000
+     EXEC CICS XCTL                                                     01142000
+        PROGRAM('RCBC00P')                                              01143000
+        COMMAREA(COMMAREA)                                              01144000
+        LENGTH(CSTG(COMMAREA))                                          01145000
+        RESP(RESPONSE)                                                  01146000
+        RESP2(CODE_EXPLAIN);                                            01147000
+                                                                        01200000
+   END;                                                                 01210000
+                                                                        01210100
+   WHEN (DFHPF7,DFHPF19)                              /* SOC RB01301 */ 01210200
+    DO;                                                                 01210300
+     IF HEADER.NEXT = 'H2' THEN                                         01210400
+        CALL RCBC20M_HELP_MAP;                                          01210500
+     ELSE                                                               01210600
+     DO;                                                                01210700
+       IF HEADER.NEXT = 'H1' THEN                                       01210800
+        DO;                                                             01210900
+          RCBH20O.MSG_LINEO       = ERR_O030;                           01211200
+          CALL RCBC20M_HELP_MAP;                                        01211400
+        END;                                                            01211500
+        ELSE                                                            01211600
+        DO;                                                             01211700
+          RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;                     01212300
+          RCBM20I.SEL_FIELDL      = -1;                                 01212400
+          CALL RCBC20M_SEND_MAP_CSR;                                    01212500
+        END;                                                            01212600
+     END;                                                               01212700
+    END;                                                                01212800
+                                                                        01213000
+   WHEN (DFHPF8,DFHPF20)                                                01220000
+    DO;                                                                 01220100
+     IF HEADER.NEXT = 'H1' THEN                                         01221000
+        CALL RCBC20M_HELP_02_MAP;                                       01230000
+     ELSE                                                               01230100
+     DO;                                                                01230200
+       IF HEADER.NEXT = 'H2' THEN                                       01230300
+        DO;                                                             01230400
+          RCBH220O.MSG_LINEO       = ERR_O031;                          01230700
+          CALL RCBC20M_HELP_02_MAP;                                     01230900
+        END;                                                            01231000
+        ELSE                                                            01231100
+        DO;                                                             01231200
+          RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;                     01231300
+          RCBM20I.SEL_FIELDL      = -1;                                 01231400
+          CALL RCBC20M_SEND_MAP_CSR;                                    01231500
+        END;                                                            01231800
+     END;                                                               01231900
+    END;                                              /* EOC RB01301 */ 01232000
+                                                                        01251000
+   WHEN (DFHENTER)                                                      01260000
+   DO;                                                /* SOC RB01301 */ 01261000
+   /*IF HEADER.NEXT = 'H1' THEN */                                      01270000
+     IF HEADER.NEXT = 'H1' | HEADER.NEXT = 'H2' THEN  /* EOC RB01301 */ 01271000
+     DO;                                                                01280000
+       RCBM20O.COUNTRY_NUMBERO = WRK_COUNTRY_NUMBER;                    01281000
+       HEADER.NEXT = '00';                                              01290000
+       CALL RCBC20M_SEND_MAP;                                           01300000
+     END;                                                               01310000
+     ELSE DO;                                                           01320000
+       CALL RCBC20M_REC_RCBM20;                                         01330000
+       CALL RCBC20M_LINK;                                               01340000
+     END;                                                               01350000
+   END;                                                   /* RB01301 */ 01360000
+                                                                        01361000
+   WHEN (DFHCLEAR)                                                      01370000
+   DO;                                                                  01380000
+     EXEC CICS SEND                                                     01390000
+        CONTROL                                                         01400000
+        ERASE                                                           01410000
+        FREEKB;                                                         01420000
+     EXEC CICS RETURN;                                                  01430000
+   END;                                                                 01440000
+                                                                        01450000
+   OTHERWISE                                                            01460000
+   /*DO;                                                                01461000
+      RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;       /* SOC RB01301 */ 01462000
+   /* RCBM20O.MSG_LINEO       = ERR_O004;                               01463000
+      RCBM20I.SEL_FIELDL      = -1;                                     01464000
+      CALL RCBC20M_SEND_MAP_CSR;                                        01465000
+   END;*/                                                               01466000
+   DO;                                                                  01470000
+     IF (HEADER.NEXT = 'H1' & EIBTRNID = 'RC20') THEN                   01470100
+      DO;                                                               01470300
+          RCBH20O.MSG_LINEO        = ERR_O004;                          01470400
+          CALL RCBC20M_HELP_MAP;                                        01490000
+      END;                                                              01490100
+     IF (HEADER.NEXT = 'H2' & EIBTRNID = 'RC20') THEN                   01490200
+      DO;                                                               01490300
+          RCBH220O.MSG_LINEO       = ERR_O004;                          01490400
+          CALL RCBC20M_HELP_02_MAP;                                     01490500
+      END;                                                              01490600
+      ELSE                                                              01490700
+      DO;                                                               01490800
+         RCBM20O.COUNTRY_NUMBERO = HEADER.IOPUCTY;                      01491000
+         RCBM20I.SEL_FIELDL      = -1;                                  01493000
+         RCBM20O.MSG_LINEO       = ERR_O004;                            01493100
+         CALL RCBC20M_SEND_MAP_CSR;                                     01494000
+      END;                                            /* EOC RB01301 */ 01495000
+   END;                                                                 01500000
+                                                                        01510000
+ END;                                                                   01520000
+1/********************************************************************/ 02060000
+ /*      RECEIVE MAP RCB20M                                          */ 02070000
+ /********************************************************************/ 02080000
+0RCBC20M_REC_RCBM20 : PROC;                                             02090000
+                                                                        02100000
+ EXEC CICS RECEIVE                  /* RECEIVE DRIVER MAP       */      02110000
+    MAP('RCBM20')                                                       02120000
+    MAPSET('RCBM20')                                                    02130000
+    RESP(RESPONSE)                                                      02140000
+    RESP2(CODE_EXPLAIN);                                                02150000
+                                                                        02160000
+ SELECT(RESPONSE);                  /* CHECK RESPONSE           */      02170000
+   WHEN(DFHRESP(NORMAL))                                                02180000
+   DO;                                                                  02190000
+     CALL RCBC20M_VALIDATE_MAP;                                         02200000
+   END;                                                                 02210000
+                                                                        02220000
+   OTHERWISE                                                            02230000
+   DO;                                                                  02240000
+      RCBM20O.MSG_LINEO = ERR_MESSAGE3;                                 02250000
+      CALL RCBC20M_SEND_MAP;                                            02260000
+   END;                                                                 02270000
+ END;                                                                   02280000
+                                                                        02290000
+0END RCBC20M_REC_RCBM20;                                                02300000
+1/********************************************************************/ 02310000
+ /*      VALIDATE MAP RCBM20                                         */ 02320000
+ /********************************************************************/ 02330000
+0RCBC20M_VALIDATE_MAP: PROC;                                            02340000
+                                                                        02350000
+ HEADER.RET_CODE = '';                                                  02360000
+ HEADER.SUB_CODE = '';                                                  02370000
+ ERROR_FLAG      = FALSE;                                               02371000
+                                                                        02380000
+ IF RCBM20I.SEL_FIELDL = 0                                              02390000
+  | RCBM20I.SEL_FIELDI = ' '                                            02400000
+ /*| VERIFY(RCBM20I.SEL_FIELDI, '123456789A') ¬= 0 THEN*/ /* RB01281 */ 02410067
+  | VERIFY(RCBM20I.SEL_FIELDI, '123456789ABC') ¬= 0 THEN /* RB01301 */  02411067
+ DO;                                                                    02420000
+   RCBM20O.MSG_LINEO  = ERR_O071;                                       02430000
+   RCBM20I.SEL_FIELDL = -1;                                             02440000
+   RCBM20O.SEL_FIELDC = DFHRED;                                         02450000
+   ERROR_FLAG         = TRUE;                                           02460000
+ END;                                                                   02470000
+                                                                        02480000
+ IF WRK_COUNTRY_NUMBER ¬= RCBM20I.COUNTRY_NUMBERI THEN                  02490000
+ DO;                                                                    02500000
+   SEL_OPT = '9';                                                       02510000
+   WRK_COUNTRY_NUMBER = RCBM20I.COUNTRY_NUMBERI;                        02520000
+                                                                        02530000
+   EXEC CICS LINK                                                       02540000
+      PROGRAM('RCBC99P')                                                02550000
+      COMMAREA(COMMAREA)                                                02560000
+      LENGTH(CSTG(COMMAREA));                                           02570000
+                                                                        02580000
+   IF ASCA_STOP_FLAG = TRUE THEN                                        02716100
+   DO;                                                                  02716200
+     RCBM20O.MSG_LINEO       = ERR_O079;                                02716300
+     RCBM20O.COUNTRY_NUMBERC = DFHRED;                                  02716400
+     RCBM20I.COUNTRY_NUMBERL = -1;                                      02716500
+     WRK_COUNTRY_NUMBER      = '001';                                   02716600
+     ERROR_FLAG              = TRUE;                                    02716700
+   END;                                                                 02716800
+                                                                        02716900
+   IF RCB025_FLAG = FALSE THEN                                          02717000
+   DO;                                                                  02717100
+     RCBM20O.MSG_LINEO =                                                02718000
+                     'Parameter RCB025 is missing for this country';    02719000
+     RCBM20O.COUNTRY_NUMBERC = DFHRED;                                  02719100
+     RCBM20I.COUNTRY_NUMBERL = -1;                                      02719200
+     WRK_COUNTRY_NUMBER      = '001';                                   02719300
+     ERROR_FLAG              = TRUE;                                    02719400
+   END;                                                                 02719600
+                                                                        02719700
+   IF RCB098_FLAG = FALSE THEN                                          02719800
+   DO;                                                                  02719900
+     RCBM20O.MSG_LINEO =                                                02720000
+                     'Parameter RCB098 is missing for this country';    02720100
+     RCBM20O.COUNTRY_NUMBERC = DFHRED;                                  02720200
+     RCBM20I.COUNTRY_NUMBERL = -1;                                      02720300
+     WRK_COUNTRY_NUMBER      = '001';                                   02720400
+     ERROR_FLAG              = TRUE;                                    02720500
+   END;                                                                 02720700
+                                                                        02720800
+ /*IF OK_FLAG = FALSE THEN  */                                          02720900
+ /*DO;  */                                                              02721000
+ /*  RCBM20O.MSG_LINEO       = ERR_O057; */                             02721100
+ /*  RCBM20I.COUNTRY_NUMBERL = -1;  */                                  02721200
+ /*  RCBM20O.COUNTRY_NUMBERC = DFHRED; */                               02721300
+ /*  WRK_COUNTRY_NUMBER      = '001'; */                                02721400
+ /*  ERROR_FLAG              = TRUE; */                                 02721500
+ /*END;*/                                                               02721600
+                                                                        02721700
+   IF CTY_OK_FLAG = FALSE THEN                                          02721800
+   DO;                                                                  02721900
+     RCBM20O.MSG_LINEO       = ERR_O072;                                02722000
+     RCBM20I.COUNTRY_NUMBERL = -1;                                      02722100
+     RCBM20O.COUNTRY_NUMBERC = DFHRED;                                  02722200
+     WRK_COUNTRY_NUMBER      = '001';                                   02722300
+     ERROR_FLAG              = TRUE;                                    02722400
+     CALL RCBC20M_SEND_MAP_CSR;                                         02722500
+   END;                                                                 02722600
+                                                                        02722700
+   WRK_COUNTRY_NUMBER = RCBM20I.COUNTRY_NUMBERI;                        02722800
+ END;                                                                   02722900
+                                                                        02723000
+ IF ERROR_FLAG = TRUE THEN                                              02723300
+ DO;                                                                    02723500
+   CALL RCBC20M_SEND_MAP_CSR;                                           02723900
+ END;                                                                   02724000
+                                                                        02724100
+0END RCBC20M_VALIDATE_MAP;                                              02725000
+1/********************************************************************/ 03620000
+ /*      LINK TO NEXT PROGRAM                                        */ 03630000
+ /********************************************************************/ 03640000
+0RCBC20M_LINK: PROC;                                                    03650000
+                                                                        03660000
+ HEADER.NEXT = '99';                                                    03670000
+                                                                        03680000
+ SELECT (RCBM20I.SEL_FIELDI);                                           03690000
+                                                                        03700000
+   WHEN ('1')                                                           03710000
+     EXEC CICS XCTL                                                     03720000
+        PROGRAM('RCBC21P')                                              03730000
+        COMMAREA(COMMAREA)                                              03740000
+        LENGTH(CSTG(COMMAREA))                                          03750000
+        RESP(RESPONSE)                                                  03760000
+        RESP2(CODE_EXPLAIN);                                            03770000
+                                                                        03780000
+   WHEN ('2')                                                           03790000
+     EXEC CICS XCTL                                                     03800000
+        PROGRAM('RCBC23P')                                              03810000
+        COMMAREA(COMMAREA)                                              03820000
+        LENGTH(CSTG(COMMAREA))                                          03830000
+        RESP(RESPONSE)                                                  03840000
+        RESP2(CODE_EXPLAIN);                                            03850000
+                                                                        03860000
+   WHEN ('3')                                                           03870000
+     EXEC CICS XCTL                                                     03880000
+        PROGRAM('RCBC24P')                                              03890000
+        COMMAREA(COMMAREA)                                              03900000
+        LENGTH(CSTG(COMMAREA))                                          03910000
+        RESP(RESPONSE)                                                  03920000
+        RESP2(CODE_EXPLAIN);                                            03930000
+                                                                        03940000
+   WHEN ('4')                                                           03950000
+     EXEC CICS XCTL                                                     03960000
+        PROGRAM('RCBC25P')                                              03970000
+        COMMAREA(COMMAREA)                                              03980000
+        LENGTH(CSTG(COMMAREA))                                          03990000
+        RESP(RESPONSE)                                                  04000000
+        RESP2(CODE_EXPLAIN);                                            04010000
+                                                                        04011000
+   WHEN ('5')                                                           04012000
+     EXEC CICS XCTL                                                     04013000
+        PROGRAM('RCBC26P')                                              04014000
+        COMMAREA(COMMAREA)                                              04015000
+        LENGTH(CSTG(COMMAREA))                                          04016000
+        RESP(RESPONSE)                                                  04017000
+        RESP2(CODE_EXPLAIN);                                            04018000
+                                                                        04019000
+   WHEN ('6')                                                           04019100
+     EXEC CICS XCTL                                                     04019200
+        PROGRAM('RCBC27P')                                              04019300
+        COMMAREA(COMMAREA)                                              04019400
+        LENGTH(CSTG(COMMAREA))                                          04019500
+        RESP(RESPONSE)                                                  04019600
+        RESP2(CODE_EXPLAIN);                                            04019700
+                                                                        04019800
+   WHEN ('7')                                                           04019900
+     EXEC CICS XCTL                                                     04020000
+        PROGRAM('RCBC28P')                                              04020100
+        COMMAREA(COMMAREA)                                              04020200
+        LENGTH(CSTG(COMMAREA))                                          04020300
+        RESP(RESPONSE)                                                  04020400
+        RESP2(CODE_EXPLAIN);                                            04020500
+                                                                        04020600
+   WHEN ('8')                                                           04020700
+     EXEC CICS XCTL                                                     04020800
+        PROGRAM('RCBC29P')                                              04020900
+        COMMAREA(COMMAREA)                                              04021000
+        LENGTH(CSTG(COMMAREA))                                          04021100
+        RESP(RESPONSE)                                                  04021200
+        RESP2(CODE_EXPLAIN);                                            04021300
+                                                                        04021400
+   WHEN ('9')                                                           04021500
+     EXEC CICS XCTL                                                     04021600
+        PROGRAM('RCBC30P')                                              04021700
+        COMMAREA(COMMAREA)                                              04021800
+        LENGTH(CSTG(COMMAREA))                                          04021900
+        RESP(RESPONSE)                                                  04022000
+        RESP2(CODE_EXPLAIN);                                            04022100
+                                                                        04022200
+   WHEN ('A')                                    /* SOC RB01281 */      04022300
+     EXEC CICS XCTL                                                     04022400
+        PROGRAM('RCBC31P')                                              04022500
+        COMMAREA(COMMAREA)                                              04022600
+        LENGTH(CSTG(COMMAREA))                                          04022700
+        RESP(RESPONSE)                                                  04022800
+        RESP2(CODE_EXPLAIN);                     /* EOC RB01281 */      04022900
+                                                                        04030000
+   WHEN ('B')                                         /* SOC RB01301 */ 04040000
+     EXEC CICS XCTL                                                     04050000
+        PROGRAM('RCBC32P')                                              04060000
+        COMMAREA(COMMAREA)                                              04070000
+        LENGTH(CSTG(COMMAREA))                                          04080000
+        RESP(RESPONSE)                                                  04090000
+        RESP2(CODE_EXPLAIN);                                            04100000
+                                                                        04120000
+   WHEN ('C')                                                           04130000
+     EXEC CICS XCTL                                                     04140000
+        PROGRAM('RCBC35P')                                              04150000
+        COMMAREA(COMMAREA)                                              04160000
+        LENGTH(CSTG(COMMAREA))                                          04170000
+        RESP(RESPONSE)                                                  04180000
+        RESP2(CODE_EXPLAIN);                                            04190000
+                                                      /* EOC RB01301 */ 04200000
+ END;                                                                   04210000
+ SELECT(RESPONSE);                       /* CHECK RESPONSE           */ 04360000
+    WHEN(DFHRESP(NORMAL));                                              04370000
+    WHEN(DFHRESP(LENGERR))               /* LENGTH ERROR             */ 04380000
+    DO;                                                                 04390000
+      COMMAREA_LENGTH = EIBCALEN;                                       04400000
+      EXEC CICS RETURN                                                  04410000
+         TRANSID('RC20')                                                04420000
+         COMMAREA(COMMAREA)                                             04430000
+         LENGTH(COMMAREA_LENGTH);                                       04440000
+    END;                                                                04450000
+    OTHERWISE                                                           04460000
+    DO;                                                                 04470000
+      PIC_EXPLAIN = RESPONSE;                                           04480000
+      SUB_CODE = PIC_EXPLAIN;                                           04490000
+      PIC_EXPLAIN = CODE_EXPLAIN;                                       04500000
+      RET_CODE = PIC_EXPLAIN;                                           04510000
+      RCBM20O.MSG_LINEO = ERR_MESSAGE13                                 04520000
+                        || ' ' || SUB_CODE || ' ' || RET_CODE;          04530000
+      CALL RCBC20M_SEND_MAP;                                            04540000
+    END;                                                                04550000
+ END;                                                                   04560000
+                                                                        04570000
+0END RCBC20M_LINK;                                                      04580000
+1/********************************************************************/ 04581000
+ /*      SEND MAP                                                    */ 04582000
+ /********************************************************************/ 04583000
+0RCBC20M_SEND_MAP: PROC;                                                04584000
+                                                                        04585000
+0EXEC CICS SEND                                                         04586000
+    MAP('RCBM20')                                                       04587000
+    MAPSET('RCBM20')                                                    04588000
+    FREEKB                                                              04589000
+    ERASE;                                                              04589100
+                                                                        04589200
+0EXEC CICS RETURN                                                       04589300
+    TRANSID('RC20')                                                     04589400
+    COMMAREA(COMMAREA)                                                  04589500
+    LENGTH(CSTG(COMMAREA))                                              04589600
+    RESP(RESPONSE)                                                      04589700
+    RESP2(CODE_EXPLAIN);                                                04589800
+                                                                        04589900
+ SELECT(RESPONSE);                       /* CHECK RESPONSE           */ 04590000
+    WHEN(DFHRESP(NORMAL));                                              04590100
+    WHEN(DFHRESP(LENGERR))               /* LENGTH ERROR             */ 04590200
+                                                                        04590300
+    DO;                                                                 04590400
+      COMMAREA_LENGTH = EIBCALEN;                                       04590500
+      EXEC CICS RETURN                                                  04590600
+         TRANSID('RC20')                                                04590700
+         COMMAREA(COMMAREA)                                             04590800
+         LENGTH(COMMAREA_LENGTH);                                       04590900
+    END;                                                                04591000
+    OTHERWISE                                                           04591100
+    DO;                                                                 04591200
+      RCBM20O.MSG_LINEO = ERR_MESSAGE14;                                04591300
+      CALL RCBC20M_SEND_MAP;                                            04591400
+    END;                                                                04591500
+ END;                                                                   04591600
+                                                                        04591700
+0END RCBC20M_SEND_MAP;                                                  04591800
+1/********************************************************************/ 04591900
+ /*      SEND HELP MAP                                               */ 04592000
+ /********************************************************************/ 04592100
+0RCBC20M_HELP_MAP: PROC;                                                04592200
+                                                                        04592300
+ HEADER.NEXT = 'H1';                                                    04592400
+                                                                        04592500
+0EXEC CICS SEND                                                         04592600
+    MAP('RCBH20')                                                       04592700
+    MAPSET('RCBM20')                                                    04592800
+    FREEKB                                                              04592900
+    ERASE;                                                              04593000
+                                                                        04593100
+0EXEC CICS RETURN                                                       04593200
+    TRANSID('RC20')                                                     04593300
+    COMMAREA(COMMAREA)                                                  04593400
+    LENGTH(CSTG(COMMAREA))                                              04593500
+    RESP(RESPONSE)                                                      04593600
+    RESP2(CODE_EXPLAIN);                                                04593700
+                                                                        04593800
+ SELECT(RESPONSE);                       /* CHECK RESPONSE           */ 04593900
+    WHEN(DFHRESP(NORMAL));                                              04594000
+    WHEN(DFHRESP(LENGERR))               /* LENGTH ERROR             */ 04594100
+                                                                        04594200
+    DO;                                                                 04594300
+      COMMAREA_LENGTH = EIBCALEN;                                       04594400
+      EXEC CICS RETURN                                                  04594500
+         TRANSID('RC20')                                                04594600
+         COMMAREA(COMMAREA)                                             04594700
+         LENGTH(COMMAREA_LENGTH);                                       04594800
+    END;                                                                04594900
+                                                                        04595000
+    OTHERWISE                                                           04595100
+    DO;                                                                 04595200
+      RCBM20O.MSG_LINEO = ERR_MESSAGE14;                                04595300
+      CALL RCBC20M_SEND_MAP;                                            04595400
+    END;                                                                04595500
+ END;                                                                   04595600
+                                                                        04595700
+0END RCBC20M_HELP_MAP;                                                  04595800
+1/********************************************************************/ 04595900
+ /*      SEND HELP MAP                                /* SOC RB01301 */ 04596000
+ /********************************************************************/ 04596100
+0RCBC20M_HELP_02_MAP: PROC;                                             04596200
+                                                                        04596300
+ HEADER.NEXT = 'H2';                                                    04596400
+                                                                        04596500
+0EXEC CICS SEND                                                         04596600
+    MAP('RCBH220')                                                      04596700
+    MAPSET('RCBM20')                                                    04596800
+    FREEKB                                                              04596900
+    ERASE;                                                              04597000
+                                                                        04597100
+0EXEC CICS RETURN                                                       04597200
+    TRANSID('RC20')                                                     04597300
+    COMMAREA(COMMAREA)                                                  04597400
+    LENGTH(CSTG(COMMAREA))                                              04597500
+    RESP(RESPONSE)                                                      04597600
+    RESP2(CODE_EXPLAIN);                                                04597700
+                                                                        04597800
+ SELECT(RESPONSE);                       /* CHECK RESPONSE           */ 04597900
+    WHEN(DFHRESP(NORMAL));                                              04598000
+    WHEN(DFHRESP(LENGERR))               /* LENGTH ERROR             */ 04598100
+                                                                        04598200
+    DO;                                                                 04598300
+      COMMAREA_LENGTH = EIBCALEN;                                       04598400
+      EXEC CICS RETURN                                                  04598500
+         TRANSID('RC20')                                                04598600
+         COMMAREA(COMMAREA)                                             04598700
+         LENGTH(COMMAREA_LENGTH);                                       04598800
+    END;                                                                04598900
+                                                                        04599000
+    OTHERWISE                                                           04599100
+    DO;                                                                 04599200
+      RCBM20O.MSG_LINEO = ERR_MESSAGE14;                                04599300
+      CALL RCBC20M_SEND_MAP;                                            04599400
+    END;                                                                04599500
+ END;                                                                   04599600
+                                                                        04599700
+0END RCBC20M_HELP_02_MAP;                             /* EOC RB01301 */ 04599800
+1/*********************************************************************/04599900
+ /*      SEND MAP WITH CURSOR SET                                    */ 04600000
+ /********************************************************************/ 04610000
+0RCBC20M_SEND_MAP_CSR : PROC;                                           04620000
+                                                                        04630000
+0EXEC CICS SEND                                                         04690000
+    MAP('RCBM20')                                                       04700000
+    MAPSET('RCBM20')                                                    04710000
+    CURSOR                                                              04720000
+    FREEKB                                                              04730000
+    ERASE;                                                              04731000
+                                                                        04740000
+0EXEC CICS RETURN                                                       04750000
+    TRANSID('RC20')                                                     04760000
+    COMMAREA(COMMAREA)                                                  04770000
+    LENGTH(CSTG(COMMAREA));                                             04780000
+                                                                        04790000
+0END RCBC20M_SEND_MAP_CSR;                                              04800000
+1/*******************************************************************/  04810000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  04820000
+ /*******************************************************************/  04830000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  04840000
+  $DAIMOD (RCBC20M);                     /* MODULE TO BE COMPILED   */  04850000
+0/*******************************************************************/  04860000
+ /* END OF ABR BLOCK '                                              */  04870000
+ /*******************************************************************/  04880000
+0 END RCBC20M;                                                          04890000

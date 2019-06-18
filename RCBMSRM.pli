@@ -1,0 +1,2141 @@
+1/* RCBMSRM - UPDATE STATISTICS MESSAGE TABLE                        */
+ /********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBMSRM                                       */
+ /*                                                                  */
+ /* PROGRAM NAME     : RCBMSRM                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLISQL                                        */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : THIS PROGRAM UPDATES THE STATISTICS TABLE     */
+ /*                    OF "KEY COUNT" MESSAGES.                      */
+ /*                                                                  */
+ /* INPUT            : - DB2   : RCBT0540_MSG_ISSUE                  */
+ /*                  : - FILE  : RCBCTRY - TOTAL SET OF COUNTRIES    */
+ /*                                                                  */
+ /* OUTPUT           : - DB2   : RCBT0575_SDATE                      */
+ /*                  :         : RCBT0580_STATS                      */
+ /*                  : - FILE  : RCB0M10 - MESSAGE FILE              */
+ /*                                                                  */
+ /* EXTERNAL MODULES : RCB0E1M - COMMON ERROR ROUTINE                */
+ /*                  : RCB004M - DATE CALCULATION ROUTINE            */
+ /*                  : RCB0M1M - COMMON MESSAGE ROUTINE              */
+ /*                  : RCB0T1M - RETRIEVE SYSTEM DATE                */
+ /*                                                                  */
+ /* MESSAGES         : NONE                                          */
+ /*                                                                  */
+ /* DEPENDENCIES     : MESSAGES MUST HAVE BEEN LOADED FROM THE       */
+ /*                    MESSAGE FILES INTO TABLE RCBT0540.            */
+ /*                                                                  */
+ /* FREQUENCY        : AFTER EACH TOTAL CEDS PROCESS CYCLE           */
+ /*                                                                  */
+ /*  MAINTENANCE LOG :                                               */
+ /*  ---------------                                                 */
+ /*                                                                  */
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */
+ /*  --------------------------------------------------------------  */
+ /*14-09-1993 | ----         | CEDS INITIAL DEVELOPMENT              */
+ /*11-04-1997 | PTM1036      | CORRECTED PROLOG                      */
+ /*16-06-1998 | PTM1184      | CHANGES FOR USA NSS EXTRACT           */
+ /*29-09-1998 | PTM1198      | MULTIPLE RUNS OF SAME PROC            */
+ /*05-11-1998 | ---          | ADD MESSAGES FOR PROCESSES :          */
+ /*           | RA01176      | - CEDS-US OU INPUT INTERFACE (UO01)   */
+ /*           | RC01188      | - SERVICE REFERENCE (UR01, UR02)      */
+ /*           | RA01201      | - ENTITLED SOFTWARE (UF01)            */
+ /*           | RA01207      | - LOCAL MACHINE CONTRACT (UL01)       */
+ /*           | RA01214      | - CCMS INTERFACE (UT01, DS01, DS02)   */
+ /*           |              | - CPP/S CUSTOMER EXTRACT (DP03)       */
+ /*09-04-1999 | RA01217      | NEW INTERFACE TO BMT                  */
+ /*09-04-1999 | RA01218      | NEW INTERFACE TO BMT                  */
+ /*14-06-1999 | PTM1245      | NO RCBBSA0 MSG0003 ISSUED             */
+ /*15-08-2000 | PTM1331      | USE COUNTRY SET PARAMETER             */
+ /*31-10-2000 | RA01225      | CONFIGURABLE SERVICES                 */
+ /*2002-09-30 | RC01234      | CEDS ENHANCEMENTS                     */
+ /*2002-02-12 | RA01236      | NEW MA AND CISCO SERVICEPAC FILE      */
+ /*2003-06-11 | RA01238      | ER-HUB BATCH INTERFACE                */
+ /*2003-07-22 | RA01239      | BMT SW BATCH INTERFACE                */
+ /*2004-06-11 | RB01247      | SUPPORT SOFTWARE MA COMTRACTS         */
+ /*2005-04-06 | RC01271      | CSDW BATCH INTERFACE                  */
+ /*2012-30-07 | CEDS00000588 | LOOP CHANGE TO HANDLE 42 COUNTRY CODES*/
+ /*2014-12-04 | RC01348      | PCEDSP-0514 : CHANGES DONE TO HANDLE  */
+ /*           |              | INACTIVE COUNTRIES ON TABLE           */
+ /*           |              | RCBT0540_MSG_ISSUE                    */
+ /*2015-18-05 | CEDS00000742 | MISSING UI33 ERROR MESSAGES           */
+ /********************************************************************/
+1RCBMSRM: PROC
+          OPTIONS (MAIN)
+          REORDER;
+0DEFAULT RANGE (*)        STATIC;
+1/********************************************************************/
+ /*  PARAMETERS                                                      */
+ /********************************************************************/
+0DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */
+0DCL PTR_RETURN_AREA         PTR;
+1/********************************************************************/
+ /* EXTERNAL ENTRIES                                                 */
+ /********************************************************************/
+0DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */
+ DCL RCB0M1M   ENTRY  EXTERNAL;            /* COMMON MSG ROUTINE     */
+ DCL RCB0T1M   ENTRY  EXTERNAL;            /* RETRIEVE SYSTEM DATE   */
+ DCL RCB004M   ENTRY  EXTERNAL;            /* DATE CALC ROUTINE      */
+1/********************************************************************/
+ /* FILES                                                            */
+ /********************************************************************/
+ DCL RCBCTRY FILE RECORD INPUT;                     /* CTRYNO'S     */
+ DCL RCB0M10 FILE RECORD OUTPUT;                    /* MESSAGE FILE */
+0/********************************************************************/
+ /* EXTERNAL PARAMETER INTERFACES                                    */
+ /********************************************************************/
+0DCL 1 PARM_INT_AREA,
+      %INCLUDE (RCBZ01S);;
+0DCL 1 PARM_RETURN_AREA,
+      %INCLUDE (RCBZ02S);;
+0DCL 1 DATE_AREA,
+      %INCLUDE (RCBZ03S);;
+1/********************************************************************/
+ /* DB2 SELECT STRUCTURES                                            */
+ /********************************************************************/
+ DCL 1 SELECT_SEL1,
+       5 COUNTRY_NUMBER      CHAR (03),
+       5 PROC_ID             CHAR (04),
+       5 ID_SOURCE_PROG      CHAR (08),
+       5 RUN_NUMBER          CHAR (26),
+       5 MESSAGE_NUMBER      CHAR (04),
+       5 MSG_VAR_VALUE_6     CHAR (25),
+       5 MSG_VAR_VALUE_7     CHAR (25),
+       5 MSG_VAR_VALUE_9     CHAR (25);
+ DCL 1 SELECT_SEL1_I,
+       5 INDNULL(8)  FIXED BIN(15,0);
+
+ DCL 1 SELECT_SEL2,
+       5 COUNTRY_NUMBER      CHAR (03),
+       5 PROC_ID             CHAR (04),
+       5 ID_SOURCE_PROG      CHAR (08),
+       5 RUN_NUMBER          CHAR (26),
+       5 MESSAGE_NUMBER      CHAR (04),
+       5 MSG_VAR_CODE_6      CHAR (02),
+       5 MSG_VAR_VALUE_6     CHAR (25),
+       5 MSG_VAR_CODE_7      CHAR (02),
+       5 MSG_VAR_VALUE_7     CHAR (25),
+       5 MSG_VAR_CODE_8      CHAR (02),
+       5 MSG_VAR_VALUE_8     CHAR (25);
+ DCL 1 SELECT_SEL2_I,
+       5 INDNULL(11) FIXED BIN(15,0);
+
+ DCL 1 SELECT_SEL3,
+       5 COUNTRY_NUMBER      CHAR (03),
+       5 PROC_ID             CHAR (04),
+       5 ID_SOURCE_PROG      CHAR (08),
+       5 RUN_NUMBER          CHAR (26),
+       5 MESSAGE_NUMBER      CHAR (04),
+       5 MSG_VAR_VALUE_6     CHAR (25),
+       5 MSG_VAR_VALUE_7     CHAR (25);
+ DCL 1 SELECT_SEL3_I,
+       5 INDNULL(7) FIXED BIN(15,0);
+
+ DCL 1 SELECT_RCBV0575_SDATE,
+       %INCLUDE (RCB575S);;
+
+ DCL 1 SELECT_RCBV0580_STATS,
+       %INCLUDE (RCB580S);;
+
+ DCL 1 SELECT_CURS1,
+       5 COUNT                  FIXED BIN (31,0),
+       5 COUNTRY_NUMBER         CHAR (03),
+       5 MESSAGE_NUMBER         CHAR (04);
+
+1/********************************************************************/
+ /*  PROGRAM CONTROL PARAMETERS                                      */
+ /********************************************************************/
+0/********************************************************************/
+ /*  BIT SWITCHES                                                    */
+ /********************************************************************/
+0DCL TRUE                             BIT (1) INIT ('1'B);
+0DCL FALSE                            BIT (1) INIT ('0'B);
+0DCL SWITCH_EOC0                      BIT (1) INIT ('0'B);
+0DCL SWITCH_EOC1                      BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0003_FOUND             BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0004_FOUND             BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0148_FOUND             BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0003_AGAIN             BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0004_AGAIN             BIT (1) INIT ('0'B);
+0DCL SWITCH_MSG0148_AGAIN             BIT (1) INIT ('0'B);
+0DCL SWITCH_EOF_RCBCTRY               BIT (1) INIT ('0'B);
+0/********************************************************************/
+ /*  TABLES TO INDICATE WHICH COUNTS MUST BE READ                    */
+ /*                                                                  */
+ /*  IN R90 IT WILL BE DETERMINED IF THE PROGRAM IS RUNNING IN AN    */
+ /*  APG ENVIRONMENT. IF SO, THE PROGRAM NAMES FOR US01, US03 AND    */
+ /*  US04 WILL BE CHANGED IN TAB_MSG0003 TO THE CORRESPONDING APG    */
+ /*  PROGRAM NAMES.                                                  */
+ /*                                                                  */
+ /********************************************************************/
+                                                      /* SOC RC01234 */
+ DCL   MAX_DIM_TAB_CTRY      FIXED BIN (15,0)   INIT (42);
+ DCL   DIM_TAB_CTRY          FIXED BIN (15,0);
+
+ DCL 1 TAB_CTRY,
+       5 AREA_IND            CHAR (01),
+       5 CTRYNO (42)         CHAR (03);
+
+ DCL TAB_CTRY_LINE           CHAR (127) DEF(TAB_CTRY);
+ DCL TAB_CTRY_TEMP           CHAR (80) INIT ('');
+                                                      /* EOC RC01234  */
+
+                                                  /* SOC CEDS00000742 */
+ /* DCL  DIM_TAB_MSG0003  FIXED BIN (15,0)    INIT(28);*/ /* PTM1184  */
+ DCL   DIM_TAB_MSG0003    FIXED BIN (15,0)    INIT(30);
+
+ /* DCL 1 R_TAB_MSG0003 (28)    CHAR (36)                             */
+ DCL 1 R_TAB_MSG0003 (30)    CHAR (36)
+                                                  /* EOC CEDS00000742 */
+                             INIT ('UM01RCBBEAPRCBBEA4',
+                                   'UM02RCBBDBPRCBBDA0',
+                                   'US01RCBBAAPRBDGCM0 CUSTOMER',
+                                   'US02RCBBNBPRBDGCM0 CUSTOMER',
+                                   'US03RCBBCAPVSDDI0',
+                                   'US03RCBBCAPVSDDO0',
+                                   'US04RCBBFAPVSDDI0',
+                                   'US04RCBBFAPVSDDO0',
+                                   'US05RCBA99PRCBAAC0',
+                                   'UE01RCBBGBPRCBBGA0',
+                                   'UC01RCBBKAPRCBBKA0',
+                                   'UC02RCBBLAPRCBBLA0',
+                                   'UC03RCBBVAPRCBBVA0', /*  RA01238 */
+                                   'UP01RCBBBAPRCBBBA5',
+                                                      /* SOC RA01176 */
+                                   'UO01RCBBQAPRCBBQA0 OU INTF',
+                                                      /* EOC RA01176 */
+                                   'UR01RCBBJBPRCBBJA0', /*  RC01188 */
+                                   'UR02RCBBMBPRCBBMA0', /*  RC01188 */
+                                   'UF01RCBBRAPRCBBRA0', /*  RA01201 */
+                                                      /* SOC RA01207 */
+                                   'UL01RCBBKAPRCBBKA0', /*  PTM1245 */
+                                                      /* EOC RA01207 */
+                                   'UT01RCBBTAPRCBBTA0', /*  RA01214 */
+                                                      /* SOC PTM1184 */
+                                   'UI01RCBBIDPRCBBID0',
+                                   'UI02RCBBIEPRCBBIE0',
+                                   'UI03RCBBIFPRCBBIF0',
+                                                      /* EOC PTM1184 */
+                                                      /* SOC RA01236 */
+                                   'UI13RCBBIFPRCBBIF0',
+                                   'UI23RCBBIFPRCBBIF0',
+                                                      /* EOC RA01236 */
+                                                      /* SOC RA01225 */
+                                                 /* SOC CEDS00000742 */
+                                   'UI33RCBBIFPRCBBIB1',
+                                   'UI33RCBBIFPRCBBIC1',
+                                                 /* EOC CEDS00000742 */
+                                   'UI05RCBBIGPRCBBIG0',
+                                   'UI06RCBBIKPRCBBII1',
+                                   'UI07RCBBIHPRCBBIH0');
+                                                      /* EOC RA01225 */
+                                                 /* SOC CEDS00000742 */
+ /* DCL 1 TAB_MSG0003 (28)      DEFINED (R_TAB_MSG0003),             */
+ DCL 1 TAB_MSG0003 (30)      DEFINED (R_TAB_MSG0003),
+                                                 /* EOC CEDS00000742 */
+       5 PROC_ID             CHAR (04),
+       5 PGMNAME             CHAR (07),
+       5 VALUE_6             CHAR (25);
+
+ DCL   DIM_TAB_MSG0148       FIXED BIN (15,0)    INIT(35);/* PTM1184 */
+
+                                                 /* SOC CEDS00000742 */
+ /* DCL 1 R_TAB_MSG0148 (35)    CHAR (19)                            */
+ DCL 1 R_TAB_MSG0148 (37)    CHAR (19)
+                                                 /* EOC CEDS00000742 */
+                             INIT ('UM01RCBBEGPRCBV0070',
+                                   'UM02RCBBDEPRCBV0080',
+                                   'US01RCBBAHPRCBV0010',
+                                   'US02RCBBANPRCBV0450',
+                                   'US03RCBBCPPRCBV0050',
+                                   'US03RCBBCRPRCBV0110',
+                                   'US03RCBBCYPRCBV0260',
+                                   'US04RCBBFOPRCBV0060',
+                                   'US04RCBBFVPRCBV0270',
+                                   'UE01RCBBGTPRCBV0240',
+                                   'UC01RCBBGTPRCBV0240',
+                                   'UC02RCBBLHPRCBV0210',
+                                   'UP01RCBBBHPRCBV0020',
+                                   'UR01RCBBJCPRCBV0470', /* RC01188 */
+                                   'UR02RCBBMCPRCBV0400', /* RC01188 */
+                                                      /* SOC RA01201 */
+                                   'UF01RCBBRGPRCBV0060',
+                                   'UF01RCBBRHPRCBV0180',
+                                   'UF01RCBBRIPRCBV0180',
+                                   'UF01RCBBRJPRCBV0200',
+                                   'UF01RCBBRKPRCBV0320',
+                                                      /* EOC RA01201 */
+                                   'UL01RCBBGTPRCBV0240', /* RA01207 */
+                                   'UT01RCBBTDPRCBV0660', /* RA01214 */
+                                                      /* SOC PTM1184 */
+                                   'UI01RCBBIAPRCBV0011',
+                                   'UI01RCBBIBPRCBV0051',
+                                   'UI02RCBBIBPRCBV0051',
+                                   'UI03RCBBIBPRCBV0051',
+                                   'UI03RCBBICPRCBV0241',
+                                                      /* EOC PTM1184 */
+                                                      /* SOC RA01236 */
+                                   'UI13RCBBIBPRCBV0051',
+                                   'UI13RCBBICPRCBV0241',
+                                   'UI23RCBBIBPRCBV0051',
+                                   'UI23RCBBICPRCBV0241',
+                                                      /* EOC RA01236 */
+                                                 /* SOC CEDS00000742 */
+                                   'UI33RCBBIBPRCBV0051',
+                                   'UI33RCBBICPRCBV0241',
+                                                 /* EOC CEDS00000742 */
+                                                      /* SOC RA01225 */
+                                   'UI05RCBBIBPRCBV0051',
+                                   'UI06RCBBILPRCBV0680',
+                                   'UI07RCBBIBPRCBV0051',
+                                   'UI07RCBBICPRCBV0241');
+                                                      /* EOC RA01225 */
+                                                 /* SOC CEDS00000742 */
+ /* DCL 1 TAB_MSG0148 (35)      DEFINED (R_TAB_MSG0148),             */
+ DCL 1 TAB_MSG0148 (35)      DEFINED (R_TAB_MSG0148),
+                                                 /* EOC CEDS00000742 */
+       5 PROC_ID             CHAR (04),
+       5 PGMNAME             CHAR (07),
+       5 TABNAME             CHAR (08);
+                                                          /* RC01271 */
+ DCL   DIM_TAB_MSG0004       FIXED BIN (15,0)    INIT(30);/* RA01239 */
+
+ DCL 1 R_TAB_MSG0004 (30)      CHAR (26)                  /* RA01239 */
+                               INIT ('DR01RCBDRAPRCBDRA1RCBV0040',
+                                     'DR02RCBDRBPRCBDRB1RCBV0020',
+                                     'DR03RCBDRCPRCBDRC1RCBV0070',
+                                     'DR04RCBDRDPRCBDRD1RCBV0080',
+                                     'DR05RCBDRGPRCBDRGXRCBV0010',
+                                     'DR06RCBDRJPRCBDRJXRCBV0050',
+                                     'DR07RCBDRMPRCBDRMXRCBV0060',
+                                     'DC01RCBDCCPRCBDCC3',
+                                     'DC02RCBDCCPRCBDCC3',
+                                     'DB01RCBDBAPRCBDBA1RCBV0040',
+                                     'DB02RCBDBDPRCBDBD3RCBV0110',
+                                     'DP01RCBDPCPRCBDPC3RCBV0050',
+                                     'DP02RCBDPDPRCBDPD1',
+                                     'DP03RCBDPHPRCBDPH3RCBV0010',
+                                     'DS01RCBDSCPRCBDSC3',
+                                     'DS02RCBDSFPRCBDSF3',
+                                                      /* SOC RA01217 */
+                                     'DT01RCBDTCPRCBDTC3RCBV0050',
+                                     'DT02RCBDTDPRCBDTD0RCBV0040',
+                                     'DT03RCBDTGPRCBDTG3RCBV0010',
+                                     'DT04RCBDTJPRCBDTJ3RCBV0070',
+                                     'DT05RCBDTKPRCBDTK1RCBV0470',
+                                     'DT06RCBDTLPRCBDTL1RCBV0475',
+                                                      /* EOC RA01217 */
+                                                      /* SOC RA01239 */
+                                     'DT07RCBDTOPRCBDTO3RCBV0080',
+                                     'DT08RCBDTRPRCBDTR3RCBV0060',
+                                                      /* EOC RA01239 */
+                                                      /* SOC RA01218 */
+                                     'DU01RCBDUAPRCBDUA1',
+                                     'DU01RCBDUAPRCBDUA2',
+                                     'DU01RCBDUAPRCBDUA3',
+                                     'DU01RCBDUAPRCBDUAE',
+                                                      /* EOC RA01218 */
+                                                      /* SOC RB01247 */
+                                     'DU02RCBDUEPRCBDUE0',
+                                                      /* EOC RB01247 */
+                                                      /*SOC RC01271*/
+                                     'DW01RCBDWCPRCBDWC3');
+                                                      /*EOC RC01271*/
+
+ DCL 1 TAB_MSG0004 (29)      DEFINED (R_TAB_MSG0004),     /* RA01239 */
+       5 PROC_ID             CHAR (04),
+       5 PGMNAME             CHAR (07),
+       5 VALUE_6             CHAR (07),
+       5 TABNAME             CHAR (08);
+
+0/********************************************************************/
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */
+ /********************************************************************/
+ DCL WRK_INDNULL           FIXED BIN(15,0);
+ DCL WRK_DATE              CHAR (10);
+ DCL WRK_CYCLE_TS          CHAR (26);
+ DCL WRK_CYCLE_TS1         CHAR (26);
+ DCL WRK_CYCLE_DATE        CHAR (10) DEF WRK_CYCLE_TS1;
+ DCL WRK_COUNT             CHAR (10);
+ DCL WRK_COUNT_B           CHAR (10);
+ DCL WRK_COUNT_BIN         FIXED BIN (31,0);
+ DCL WRK_COUNT_PIC10       PIC 'ZZ,ZZZ,ZZ9';
+ DCL WRK_COUNT_PIC10_B     PIC 'ZZ,ZZZ,ZZ9' BASED(ADDR(WRK_COUNT_B));
+ DCL SAVE_CNT_6            PIC 'ZZ,ZZZ,ZZ9';
+ DCL SAVE_CNT_7            PIC 'ZZ,ZZZ,ZZ9';
+ DCL SAVE_CNT_8            PIC 'ZZ,ZZZ,ZZ9';
+ DCL SAVE_CNT_9            PIC 'ZZ,ZZZ,ZZ9';
+
+ DCL WRK_COUNTRY_NUMBER    CHAR (03);
+ DCL WRK_PROC_ID           CHAR (04);
+ DCL WRK_MESSAGE_NUMBER    CHAR (04);
+ DCL WRK_COUNT_ON          CHAR (25);
+ DCL WRK_PGMNAME           CHAR (07);
+
+ DCL I                     FIXED BIN (15,0);
+ DCL J                     FIXED BIN (15,0);
+
+1/********************************************************************/
+ /*  BUILTIN FUNCTIONS                                               */
+ /********************************************************************/
+0DCL (ADDR,
+      LOW,
+      NULL,
+      DATE,
+      STRING,
+      SUBSTR,
+      VERIFY)   BUILTIN;
+1/********************************************************************/
+ /* ON ERROR CONDITIONS                                              */
+ /********************************************************************/
+0%INCLUDE (RCB0E0M);
+  END;
+1/********************************************************************/
+ /* ON ENDFILE                                                       */
+ /********************************************************************/
+0ON ENDFILE (RCBCTRY)
+  BEGIN;
+    SWITCH_EOF_RCBCTRY = TRUE;
+  END;
+1/********************************************************************/
+ /* DB2/SQL SQLCA                                                    */
+ /********************************************************************/
+0 EXEC SQL
+    INCLUDE SQLCA
+    ;
+0/********************************************************************/
+ /* DB2/SQL CURSORS                                                  */
+ /********************************************************************/
+ /*                                                                  */
+ /* CURSOR FOR SELECTING ALL STATISTICS FOR COUNT PER MSG NUMBER.    */
+ /* THESE RECORDS HAVE A PROC_ID EQUAL TO 'XXXX'.                    */
+ /*                                                                  */
+ /********************************************************************/
+ EXEC SQL
+    DECLARE CURS0
+    CURSOR FOR
+         SELECT   *
+         FROM     RCBV0580_STATS
+         WHERE    PROC_ID        = 'XXXX'
+         AND      COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+    FOR UPDATE OF COUNT_30
+                 ,COUNT_29
+                 ,COUNT_28
+                 ,COUNT_27
+                 ,COUNT_26
+                 ,COUNT_25
+                 ,COUNT_24
+                 ,COUNT_23
+                 ,COUNT_22
+                 ,COUNT_21
+                 ,COUNT_20
+                 ,COUNT_19
+                 ,COUNT_18
+                 ,COUNT_17
+                 ,COUNT_16
+                 ,COUNT_15
+                 ,COUNT_14
+                 ,COUNT_13
+                 ,COUNT_12
+                 ,COUNT_11
+                 ,COUNT_10
+                 ,COUNT_9
+                 ,COUNT_8
+                 ,COUNT_7
+                 ,COUNT_6
+                 ,COUNT_5
+                 ,COUNT_4
+                 ,COUNT_3
+                 ,COUNT_2
+                 ,COUNT_1
+ ;
+
+ EXEC SQL
+    DECLARE CURS1
+    CURSOR FOR
+    SELECT     COUNT (*)
+              ,COUNTRY_NUMBER
+              ,MESSAGE_NUMBER
+    FROM       RCBV0540_MSG_ISSUE
+    WHERE      COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+    GROUP BY   COUNTRY_NUMBER
+              ,MESSAGE_NUMBER
+ ;
+
+ /********************************************************************/
+ /*                                                                  */
+ /* CURSOR FOR SELECTING ALL STATISTICS FOR MESAAGE 0003             */
+ /*                                                                  */
+ /********************************************************************/
+ EXEC SQL
+    DECLARE CURS0003
+    CURSOR FOR
+    SELECT   COUNTRY_NUMBER
+            ,PROC_ID
+            ,ID_SOURCE_PROG
+            ,RUN_NUMBER
+            ,MESSAGE_NUMBER
+            ,MSG_VAR_VALUE_6
+            ,MSG_VAR_VALUE_7
+            ,MSG_VAR_VALUE_9
+    FROM     RCBV0540_MSG_ISSUE
+    WHERE    MESSAGE_NUMBER   = '0003'
+     AND     COUNTRY_NUMBER   = :WRK_COUNTRY_NUMBER
+     AND     PROC_ID          = :WRK_PROC_ID
+     AND     ID_SOURCE_PROG   = :WRK_PGMNAME
+     AND     MSG_VAR_VALUE_6  = :WRK_COUNT_ON
+ ;
+ EXEC SQL
+    DECLARE CURS0148
+    CURSOR FOR
+      SELECT   COUNTRY_NUMBER
+              ,PROC_ID
+              ,ID_SOURCE_PROG
+              ,RUN_NUMBER
+              ,MESSAGE_NUMBER
+              ,MSG_VAR_CODE_6
+              ,MSG_VAR_VALUE_6
+              ,MSG_VAR_CODE_7
+              ,MSG_VAR_VALUE_7
+              ,MSG_VAR_CODE_8
+              ,MSG_VAR_VALUE_8
+      FROM     RCBV0540_MSG_ISSUE
+      WHERE    MESSAGE_NUMBER   = '0148'
+        AND    COUNTRY_NUMBER   = :WRK_COUNTRY_NUMBER
+        AND    ID_SOURCE_PROG   = :WRK_PGMNAME
+        AND    PROC_ID          = :WRK_PROC_ID
+ ;
+ EXEC SQL
+    DECLARE CURS0004
+    CURSOR FOR
+    SELECT   COUNTRY_NUMBER
+            ,PROC_ID
+            ,ID_SOURCE_PROG
+            ,RUN_NUMBER
+            ,MESSAGE_NUMBER
+            ,MSG_VAR_VALUE_6
+            ,MSG_VAR_VALUE_7
+    FROM     RCBV0540_MSG_ISSUE
+    WHERE    MESSAGE_NUMBER   = '0004'
+     AND     COUNTRY_NUMBER   = :WRK_COUNTRY_NUMBER
+     AND     PROC_ID          = :WRK_PROC_ID
+     AND     ID_SOURCE_PROG   = :WRK_PGMNAME
+     AND     MSG_VAR_VALUE_6  = :WRK_COUNT_ON
+ ;
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /********************************************************************/
+
+ CALL R90_INIT_COMMON;
+
+ DO J = 1 TO DIM_TAB_CTRY;       /* DO FOR ALL COUNTRIES */
+
+   CALL R91_INIT_CTRY;
+   CALL R92_SET_DATE;
+
+ /********************************************************************/
+ /*                 PROCESS 0003 MESSAGES                            */
+ /********************************************************************/
+
+   DO I = 1 TO DIM_TAB_MSG0003;
+
+     CALL R71_READ_MSG0003;
+
+     IF SWITCH_MSG0003_FOUND
+     THEN
+       DO;
+         CALL R61_PROCESS_MSG0003;
+       END;
+     ELSE
+       DO;
+         CALL R62_DUMMY_MSG0003;
+       END;
+
+   END;
+
+ /********************************************************************/
+ /*                 PROCESS 0148 MESSAGES                            */
+ /********************************************************************/
+
+   DO I = 1 TO DIM_TAB_MSG0148;
+
+     CALL R73_READ_MSG0148;
+
+     IF SWITCH_MSG0148_FOUND
+     THEN
+       DO;
+         CALL R63_PROCESS_MSG0148;
+       END;
+     ELSE
+       DO;
+         CALL R64_DUMMY_MSG0148;
+       END;
+
+   END;
+
+ /********************************************************************/
+ /*                 PROCESS 0004 MESSAGES                            */
+ /********************************************************************/
+
+   DO I = 1 TO DIM_TAB_MSG0004;
+
+     CALL R74_READ_MSG0004;
+
+     IF SWITCH_MSG0004_FOUND
+     THEN
+       DO;
+         CALL R65_PROCESS_MSG0004;
+       END;
+     ELSE
+       DO;
+         CALL R66_DUMMY_MSG0004;
+       END;
+
+   END;
+
+
+   /******************************************************************/
+   /*               UPDATE THE COUNTS PER MESSAGE STATISTICS         */
+   /*                                                                */
+   /*  FIRST ALL COUNTS PER MSG (IE. PROC_ID = 'XXXX') WILL BE       */
+   /*  SHIFTED AND THE NEW COUNT SET TO ZERO. THIS BECAUSE CURS1     */
+   /*  WILL ONLY RETURN COUNT (*) RECORDS FOR MESSAGES WHICH HAVE    */
+   /*  BEEN ISSUED.                                                  */
+   /*                                                                */
+   /******************************************************************/
+
+   CALL R93_INIT_CURS0;
+
+   DO WHILE (¬SWITCH_EOC0);
+      CALL R80_SET_CNT_PER_MSG_TO_0;
+      CALL R81_FETCH_CURS0;
+   END;
+
+   CALL R94_END_CURS0;
+
+   CALL R95_INIT_CURS1;
+
+   DO WHILE (¬SWITCH_EOC1);
+      CALL R82_PROC_CNT_PER_MSG;
+      CALL R83_FETCH_CURS1;
+   END;
+
+   CALL R96_END_CURS1;
+
+ END;   /* FOR ALL COUNTRIES */
+
+ CALL R99_END_COMMON;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R53_UPDATE_STATISTICS                         */
+ /*                                                                  */
+ /* DESCRIPTION      : UPDATE THE STATISTICS TABLE                   */
+ /*                                                                  */
+ /********************************************************************/
+ R53_UPDATE_STATISTICS: PROC;
+
+ SELECT_RCBV0580_STATS = '';
+
+ EXEC SQL
+      SELECT *
+      INTO   :SELECT_RCBV0580_STATS
+      FROM   RCBV0580_STATS
+      WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+      AND    PROC_ID        = :WRK_PROC_ID
+      AND    MESSAGE_NUMBER = :WRK_MESSAGE_NUMBER
+      AND    COUNT_ON       = :WRK_COUNT_ON
+ ;
+ SELECT (SQLCA.SQLCODE);
+
+   WHEN (0)
+     DO;                                     /* SHIFT ALL ENTRIES */
+                                             /* AND FILL NEW      */
+       EXEC SQL
+            UPDATE RCBV0580_STATS
+            SET   COUNT_30 = :SELECT_RCBV0580_STATS.COUNT_29
+                 ,COUNT_29 = :SELECT_RCBV0580_STATS.COUNT_28
+                 ,COUNT_28 = :SELECT_RCBV0580_STATS.COUNT_27
+                 ,COUNT_27 = :SELECT_RCBV0580_STATS.COUNT_26
+                 ,COUNT_26 = :SELECT_RCBV0580_STATS.COUNT_25
+                 ,COUNT_25 = :SELECT_RCBV0580_STATS.COUNT_24
+                 ,COUNT_24 = :SELECT_RCBV0580_STATS.COUNT_23
+                 ,COUNT_23 = :SELECT_RCBV0580_STATS.COUNT_22
+                 ,COUNT_22 = :SELECT_RCBV0580_STATS.COUNT_21
+                 ,COUNT_21 = :SELECT_RCBV0580_STATS.COUNT_20
+                 ,COUNT_20 = :SELECT_RCBV0580_STATS.COUNT_19
+                 ,COUNT_19 = :SELECT_RCBV0580_STATS.COUNT_18
+                 ,COUNT_18 = :SELECT_RCBV0580_STATS.COUNT_17
+                 ,COUNT_17 = :SELECT_RCBV0580_STATS.COUNT_16
+                 ,COUNT_16 = :SELECT_RCBV0580_STATS.COUNT_15
+                 ,COUNT_15 = :SELECT_RCBV0580_STATS.COUNT_14
+                 ,COUNT_14 = :SELECT_RCBV0580_STATS.COUNT_13
+                 ,COUNT_13 = :SELECT_RCBV0580_STATS.COUNT_12
+                 ,COUNT_12 = :SELECT_RCBV0580_STATS.COUNT_11
+                 ,COUNT_11 = :SELECT_RCBV0580_STATS.COUNT_10
+                 ,COUNT_10 = :SELECT_RCBV0580_STATS.COUNT_9
+                 ,COUNT_9  = :SELECT_RCBV0580_STATS.COUNT_8
+                 ,COUNT_8  = :SELECT_RCBV0580_STATS.COUNT_7
+                 ,COUNT_7  = :SELECT_RCBV0580_STATS.COUNT_6
+                 ,COUNT_6  = :SELECT_RCBV0580_STATS.COUNT_5
+                 ,COUNT_5  = :SELECT_RCBV0580_STATS.COUNT_4
+                 ,COUNT_4  = :SELECT_RCBV0580_STATS.COUNT_3
+                 ,COUNT_3  = :SELECT_RCBV0580_STATS.COUNT_2
+                 ,COUNT_2  = :SELECT_RCBV0580_STATS.COUNT_1
+                 ,COUNT_1  = :WRK_COUNT
+            WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+            AND    PROC_ID        = :WRK_PROC_ID
+            AND    MESSAGE_NUMBER = :WRK_MESSAGE_NUMBER
+            AND    COUNT_ON       = :WRK_COUNT_ON
+            ;
+       SELECT (SQLCA.SQLCODE);
+         WHEN (0);
+         OTHERWISE
+           DO;
+             CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                                 'DB2',
+                                 '#001');
+           END;
+       END;
+     END;
+
+   WHEN (+100)                    /* NOT FOUND --> INSERT NEW ONE */
+     DO;
+       SELECT_RCBV0580_STATS           = '';
+       SELECT_RCBV0580_STATS.COUNTRY_NUMBER = WRK_COUNTRY_NUMBER;
+       SELECT_RCBV0580_STATS.PROC_ID   = WRK_PROC_ID;
+       SELECT_RCBV0580_STATS.MESSAGE_NUMBER = WRK_MESSAGE_NUMBER;
+       SELECT_RCBV0580_STATS.COUNT_ON  = WRK_COUNT_ON;
+       SELECT_RCBV0580_STATS.COUNT_1   = WRK_COUNT;
+
+       EXEC SQL
+            INSERT INTO RCBV0580_STATS
+            VALUES (:SELECT_RCBV0580_STATS)
+       ;
+       SELECT (SQLCA.SQLCODE);
+         WHEN (0);
+         OTHERWISE
+           DO;
+             CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                                 'DB2',
+                                 '#002');
+           END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#003');
+     END;
+ END;
+
+ END R53_UPDATE_STATISTICS;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R61_PROCESS_MSG0003                           */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS A SPECIFIC COUNT (0003) MESSAGE REC   */
+ /*                                                                  */
+ /********************************************************************/
+ R61_PROCESS_MSG0003: PROC;
+
+  WRK_PROC_ID          = TAB_MSG0003.PROC_ID (I);
+  WRK_MESSAGE_NUMBER   = '0003';
+  WRK_COUNT_ON         = TAB_MSG0003.VALUE_6 (I);
+                                                      /* SOC PTM1245 */
+ SELECT (WRK_PROC_ID);       /* CHANGE RCBBKA0 TO RCBBSAO            */
+   WHEN ('UL01')             /* BEFORE UPDATING STATISTICS TABLE 580 */
+     DO;
+       IF WRK_COUNT_ON = 'RCBBKA0'
+       THEN DO;
+         WRK_COUNT_ON = 'RCBBSA0';
+       END;
+     END;
+   OTHERWISE;
+ END;                                                 /* EOC PTM1245 */
+
+ SELECT (SELECT_SEL1.MSG_VAR_VALUE_6);
+   WHEN ('RCBBDA0',
+         'RCBBEA4',
+         'RCBBID0',                                       /* PTM1184 */
+         'RCBBIE0',                                       /* PTM1184 */
+         'RCBBIF0',                                       /* PTM1184 */
+         'RCBBJA0',                                       /* RC01188 */
+         'RCBBMA0',                                       /* RC01188 */
+         'RCBBSA0',                                       /* RA01207 */
+         'RCBBQA0',                                       /* RA01176 */
+         'RCBBKA0',
+         'RCBBLA0')
+     DO;
+       WRK_COUNT        =  SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_7,1,10);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('RBDGCM0 CUSTOMER',
+         'RCBBAO0 CUSTOMER',                              /* PTM1184 */
+         'RCBAAC0',
+         'RCBBBA5',
+         'RCBBRA0',                                       /* RA01201 */
+         'RCBBTA0',                                       /* RA01214 */
+         'RCBBGA0')
+     DO;
+       WRK_COUNT        =  SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_9,1,10);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('VSDDI0',
+         'VSDDO0')
+     DO;
+
+       IF SELECT_SEL1.PROC_ID = 'US03'
+       THEN
+        DO;
+         WRK_COUNT        =  SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_9,1,10);
+        END;
+       ELSE
+        DO;
+         WRK_COUNT        =  SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_7,1,10);
+        END;
+
+       CALL R53_UPDATE_STATISTICS;
+     END;
+
+   OTHERWISE;
+ END;
+
+ END R61_PROCESS_MSG0003;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R62_DUMMY_MSG0003                             */
+ /*                                                                  */
+ /* DESCRIPTION      : UPDATE STATISTICS ALSO IF A PROCESS DID NOT   */
+ /*                    RUN                                           */
+ /*                                                                  */
+ /********************************************************************/
+ R62_DUMMY_MSG0003: PROC;
+
+  WRK_PROC_ID          = TAB_MSG0003.PROC_ID (I);
+  WRK_MESSAGE_NUMBER   = '0003';
+  WRK_COUNT_ON         = TAB_MSG0003.VALUE_6 (I);
+  WRK_COUNT            = ' ';
+
+  CALL R53_UPDATE_STATISTICS;
+
+ END R62_DUMMY_MSG0003;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R63_PROCESS_MSG0148                           */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS A SPECIFIC COUNT (0148) MESSAGE REC   */
+ /*                                                                  */
+ /*                    THIS MESSAGE CONSISTS OF THREE PARTS:         */
+ /*                                                                  */
+ /*                    CODE_6:  INSERT COUNT                         */
+ /*                    CODE_7:  UPDATE COUNT                         */
+ /*                    CODE_8:  DELETE COUNT                         */
+ /*                                                                  */
+ /*                    AND WILL THEREFORE BE SPLITTED INTO THREE     */
+ /*                    SEPERATE RECORDS FOR THE STATISTICS TABLE     */
+ /*                                                                  */
+ /********************************************************************/
+ R63_PROCESS_MSG0148: PROC;
+
+ WRK_PROC_ID          = TAB_MSG0148.PROC_ID (I);
+ WRK_MESSAGE_NUMBER   = '0148';
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' INSERTS ';
+ WRK_COUNT       =   SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_6,1,10);
+
+ CALL R53_UPDATE_STATISTICS;
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' UPDATES ';
+ WRK_COUNT       =   SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_7,1,10);
+
+ CALL R53_UPDATE_STATISTICS;
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' DELETES ';
+ WRK_COUNT       =   SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_8,1,10);
+
+ CALL R53_UPDATE_STATISTICS;
+
+ END R63_PROCESS_MSG0148;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R64_DUMMY_MSG0148                             */
+ /*                                                                  */
+ /* DESCRIPTION      : UPDATE STATISTICS ALSO IF A PROCESS DID NOT   */
+ /*                    RUN                                           */
+ /*                                                                  */
+ /********************************************************************/
+ R64_DUMMY_MSG0148: PROC;
+
+ WRK_PROC_ID          = TAB_MSG0148.PROC_ID (I);
+ WRK_MESSAGE_NUMBER   = '0148';
+ WRK_COUNT            = ' ';
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' INSERTS ';
+ CALL R53_UPDATE_STATISTICS;
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' UPDATES ';
+ CALL R53_UPDATE_STATISTICS;
+
+ WRK_COUNT_ON    =   TAB_MSG0148.TABNAME (I) || ' DELETES ';
+ CALL R53_UPDATE_STATISTICS;
+
+ END R64_DUMMY_MSG0148;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R65_PROCESS_MSG0004                           */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS A SPECIFIC COUNT (0004) MESSAGE REC   */
+ /*                                                                  */
+ /********************************************************************/
+ R65_PROCESS_MSG0004: PROC;
+
+ WRK_PROC_ID         = TAB_MSG0004.PROC_ID (I);
+ WRK_MESSAGE_NUMBER  = '0004';
+ WRK_COUNT_ON        = TAB_MSG0004.VALUE_6 (I);
+
+ WRK_COUNT           =   SUBSTR (SELECT_SEL3.MSG_VAR_VALUE_7,1,10);
+
+ CALL R53_UPDATE_STATISTICS;
+
+                 /* ALSO UPDATE STATISTICS OF TABLE COUNTS */
+                 /* DEPENDING ON PROC_ID                   */
+
+ SELECT (WRK_PROC_ID);
+   WHEN ('DR01')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0040_OU
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#004');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR02')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0020_EMPLOYEE
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#005');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR03'
+        ,'DT04')                                          /* RA01217 */
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0070_HW_PO
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#006');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR04')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0080_SW_PO
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#007');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR05'
+        ,'DT03')                                          /* RA01217 */
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0010_CUSTOMER
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#008');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR06'
+        ,'DN01'                                           /* PTM1184 */
+        ,'DT01')                                          /* RA01217 */
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0050_HW_PR
+            WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#009');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DR07')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0060_SW_PR
+            WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#010');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DB01')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0040_OU
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#011');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DB02')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0110_HW_STATUS
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#012');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DP01')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0050_HW_PR
+            WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#013');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DP03')
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0010_CUSTOMER
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#014');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;
+   WHEN ('DT02')                                      /* SOC RA01217 */
+     DO;
+       EXEC SQL
+            SELECT COUNT (*)
+            INTO   :WRK_COUNT_BIN
+            FROM   RCBV0040_OU
+            WHERE  :WRK_DATE BETWEEN EFFECTIVE_DATE AND END_DATE
+              AND  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+       ;
+       IF SQLCA.SQLCODE ¬= 0
+       THEN
+         DO;
+           CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#015');
+         END;
+
+       WRK_COUNT_PIC10    = WRK_COUNT_BIN;
+       WRK_COUNT          = WRK_COUNT_PIC10;
+       WRK_MESSAGE_NUMBER = 'CEDS';
+       WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+       CALL R53_UPDATE_STATISTICS;
+     END;                                             /* EOC RA01217 */
+   OTHERWISE;
+ END;
+
+ END R65_PROCESS_MSG0004;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R66_DUMMY_MSG0004                             */
+ /*                                                                  */
+ /* DESCRIPTION      : UPDATE STATISTICS ALSO IF A PROCESS DID NOT   */
+ /*                    RUN                                           */
+ /*                                                                  */
+ /********************************************************************/
+ R66_DUMMY_MSG0004: PROC;
+
+ WRK_PROC_ID         = TAB_MSG0004.PROC_ID (I);
+ WRK_MESSAGE_NUMBER = '0004';
+ WRK_COUNT_ON        = TAB_MSG0004.VALUE_6 (I);
+
+ WRK_COUNT           = ' ';
+
+ CALL R53_UPDATE_STATISTICS;
+
+ IF TAB_MSG0004.TABNAME (I) ¬= ' '  /* TABLE COUNTS */
+ THEN
+   DO;
+     WRK_MESSAGE_NUMBER = 'CEDS';
+     WRK_COUNT_ON       = TAB_MSG0004.TABNAME (I);
+     CALL R53_UPDATE_STATISTICS;
+   END;
+
+ END R66_DUMMY_MSG0004;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R71_READ_MSG0003                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ A MSG0003 RECORD                         */
+ /*                                                                  */
+ /********************************************************************/
+ R71_READ_MSG0003: PROC;
+
+ WRK_PROC_ID          = TAB_MSG0003.PROC_ID (I);
+ WRK_PGMNAME          = TAB_MSG0003.PGMNAME (I);
+ WRK_COUNT_ON         = TAB_MSG0003.VALUE_6 (I);
+ SAVE_CNT_7           = 0;
+ SAVE_CNT_9           = 0;
+ SWITCH_MSG0003_FOUND = FALSE;
+ SWITCH_MSG0003_AGAIN= FALSE;
+
+ EXEC SQL OPEN CURS0003;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#016');
+     END;
+ END;
+
+ CALL R71A_FETCH_CURS3;
+ DO WHILE (SWITCH_MSG0003_AGAIN);
+   CALL R71A_FETCH_CURS3;
+ END;
+
+ EXEC SQL CLOSE CURS0003;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#017');
+     END;
+ END;
+
+ END R71_READ_MSG0003;
+
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R71A_FETCH_CURS3                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ MSG0003 RECORDS                          */
+ /*                                                                  */
+ /********************************************************************/
+ R71A_FETCH_CURS3: PROC;
+
+ EXEC SQL FETCH CURS0003 INTO :SELECT_SEL1 :SELECT_SEL1_I.INDNULL;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+       SWITCH_MSG0003_FOUND = TRUE;
+       SWITCH_MSG0003_AGAIN = TRUE;
+       WRK_COUNT_PIC10  = SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_7,1,9);
+       SAVE_CNT_7       = SAVE_CNT_7 + WRK_COUNT_PIC10;
+       IF SELECT_SEL1_I.INDNULL(8) = 0
+       THEN DO;
+         WRK_COUNT_PIC10 = SUBSTR (SELECT_SEL1.MSG_VAR_VALUE_9,1,9);
+         SAVE_CNT_9     = SAVE_CNT_9 + WRK_COUNT_PIC10;
+       END;
+     END;
+   WHEN (+100)
+     DO;
+       IF SWITCH_MSG0003_FOUND = TRUE
+       THEN DO;
+         SWITCH_MSG0003_AGAIN = FALSE;
+         WRK_COUNT                   = SAVE_CNT_7;
+         SELECT_SEL1.MSG_VAR_VALUE_7 = WRK_COUNT;
+         IF SELECT_SEL1_I.INDNULL(8) = 0
+         THEN DO;
+           WRK_COUNT                 = SAVE_CNT_9;
+           SELECT_SEL1.MSG_VAR_VALUE_9 = WRK_COUNT;
+         END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#018');
+     END;
+ END;
+ END R71A_FETCH_CURS3;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R73_READ_MSG0148                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ MSG0148                                  */
+ /*                                                                  */
+ /********************************************************************/
+ R73_READ_MSG0148: PROC;
+
+ WRK_COUNTRY_NUMBER   = TAB_CTRY.CTRYNO (J);
+ WRK_PGMNAME          = TAB_MSG0148.PGMNAME (I);
+ WRK_PROC_ID          = TAB_MSG0148.PROC_ID (I);
+ SAVE_CNT_6           = 0;
+ SAVE_CNT_7           = 0;
+ SAVE_CNT_8           = 0;
+ SWITCH_MSG0148_FOUND = FALSE;
+ SWITCH_MSG0148_AGAIN = FALSE;
+
+ EXEC SQL OPEN CURS0148;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#019');
+     END;
+ END;
+
+ CALL R73A_FETCH_CURS8;
+ DO WHILE (SWITCH_MSG0148_AGAIN);
+   CALL R73A_FETCH_CURS8;
+ END;
+
+ EXEC SQL CLOSE CURS0148;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#020');
+     END;
+ END;
+
+
+
+ END R73_READ_MSG0148;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R73A_FETCH_CURS8                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ MSG0148 RECORDS                          */
+ /*                                                                  */
+ /********************************************************************/
+ R73A_FETCH_CURS8: PROC;
+
+ EXEC SQL FETCH CURS0148 INTO :SELECT_SEL2 :SELECT_SEL2_I.INDNULL;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+       SWITCH_MSG0148_FOUND = TRUE;
+       SWITCH_MSG0148_AGAIN = TRUE;
+       WRK_COUNT_PIC10  = SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_6,1,9);
+       SAVE_CNT_6       = SAVE_CNT_6 + WRK_COUNT_PIC10;
+       WRK_COUNT_PIC10  = SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_7,1,9);
+       SAVE_CNT_7       = SAVE_CNT_7 + WRK_COUNT_PIC10;
+       WRK_COUNT_PIC10  = SUBSTR (SELECT_SEL2.MSG_VAR_VALUE_8,1,9);
+       SAVE_CNT_8       = SAVE_CNT_9 + WRK_COUNT_PIC10;
+     END;
+   WHEN (+100)
+     DO;
+       IF SWITCH_MSG0148_FOUND = TRUE
+       THEN DO;
+         SWITCH_MSG0148_AGAIN = FALSE;
+         WRK_COUNT                   = SAVE_CNT_6;
+         SELECT_SEL2.MSG_VAR_VALUE_6 = WRK_COUNT;
+         WRK_COUNT                   = SAVE_CNT_7;
+         SELECT_SEL2.MSG_VAR_VALUE_7 = WRK_COUNT;
+         WRK_COUNT                   = SAVE_CNT_8;
+         SELECT_SEL2.MSG_VAR_VALUE_8 = WRK_COUNT;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#021');
+     END;
+ END;
+ END R73A_FETCH_CURS8;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R74_READ_MSG0004                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ MSG0004                                  */
+ /*                                                                  */
+ /********************************************************************/
+ R74_READ_MSG0004: PROC;
+
+ WRK_PROC_ID          = TAB_MSG0004.PROC_ID (I);
+ WRK_PGMNAME          = TAB_MSG0004.PGMNAME (I);
+ WRK_COUNT_ON         = TAB_MSG0004.VALUE_6 (I);
+ SAVE_CNT_7           = 0;
+ SWITCH_MSG0004_FOUND = FALSE;
+ SWITCH_MSG0004_AGAIN = FALSE;
+
+ EXEC SQL OPEN CURS0004;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#022');
+     END;
+ END;
+
+ CALL R74A_FETCH_CURS4;
+ DO WHILE (SWITCH_MSG0004_AGAIN);
+   CALL R74A_FETCH_CURS4;
+ END;
+
+ EXEC SQL CLOSE CURS0004;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#023');
+     END;
+ END;
+
+
+
+ END R74_READ_MSG0004;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R74A_FETCH_CURS4                              */
+ /*                                                                  */
+ /* DESCRIPTION      : READ MSG0004 RECORDS                          */
+ /*                                                                  */
+ /********************************************************************/
+ R74A_FETCH_CURS4: PROC;
+
+ EXEC SQL FETCH CURS0004 INTO :SELECT_SEL3 :SELECT_SEL3_I.INDNULL;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+       SWITCH_MSG0004_FOUND = TRUE;
+       SWITCH_MSG0004_AGAIN = TRUE;
+       WRK_COUNT_B      = SUBSTR (SELECT_SEL3.MSG_VAR_VALUE_7,4,10);
+       SAVE_CNT_7       = SAVE_CNT_7 + WRK_COUNT_PIC10_B;
+     END;
+   WHEN (+100)
+     DO;
+       IF SWITCH_MSG0004_FOUND = TRUE
+       THEN DO;
+         SWITCH_MSG0004_AGAIN = FALSE;
+         SELECT_SEL3.MSG_VAR_VALUE_7 = SAVE_CNT_7;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#024');
+     END;
+ END;
+ END R74A_FETCH_CURS4;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R80_SET_CNT_PER_MSG_TO_0                      */
+ /*                                                                  */
+ /* DESCRIPTION      : SET THE COUNT FIELD OF THE STATISTICS TABLE   */
+ /*                    TO ZERO FOR ALL COUNT PER MESSAGE STATISTICS  */
+ /*                    RECORDS.                                      */
+ /*                                                                  */
+ /********************************************************************/
+ R80_SET_CNT_PER_MSG_TO_0: PROC;
+
+ EXEC SQL
+      UPDATE RCBV0580_STATS
+      SET   COUNT_30 = :SELECT_RCBV0580_STATS.COUNT_29
+           ,COUNT_29 = :SELECT_RCBV0580_STATS.COUNT_28
+           ,COUNT_28 = :SELECT_RCBV0580_STATS.COUNT_27
+           ,COUNT_27 = :SELECT_RCBV0580_STATS.COUNT_26
+           ,COUNT_26 = :SELECT_RCBV0580_STATS.COUNT_25
+           ,COUNT_25 = :SELECT_RCBV0580_STATS.COUNT_24
+           ,COUNT_24 = :SELECT_RCBV0580_STATS.COUNT_23
+           ,COUNT_23 = :SELECT_RCBV0580_STATS.COUNT_22
+           ,COUNT_22 = :SELECT_RCBV0580_STATS.COUNT_21
+           ,COUNT_21 = :SELECT_RCBV0580_STATS.COUNT_20
+           ,COUNT_20 = :SELECT_RCBV0580_STATS.COUNT_19
+           ,COUNT_19 = :SELECT_RCBV0580_STATS.COUNT_18
+           ,COUNT_18 = :SELECT_RCBV0580_STATS.COUNT_17
+           ,COUNT_17 = :SELECT_RCBV0580_STATS.COUNT_16
+           ,COUNT_16 = :SELECT_RCBV0580_STATS.COUNT_15
+           ,COUNT_15 = :SELECT_RCBV0580_STATS.COUNT_14
+           ,COUNT_14 = :SELECT_RCBV0580_STATS.COUNT_13
+           ,COUNT_13 = :SELECT_RCBV0580_STATS.COUNT_12
+           ,COUNT_12 = :SELECT_RCBV0580_STATS.COUNT_11
+           ,COUNT_11 = :SELECT_RCBV0580_STATS.COUNT_10
+           ,COUNT_10 = :SELECT_RCBV0580_STATS.COUNT_9
+           ,COUNT_9  = :SELECT_RCBV0580_STATS.COUNT_8
+           ,COUNT_8  = :SELECT_RCBV0580_STATS.COUNT_7
+           ,COUNT_7  = :SELECT_RCBV0580_STATS.COUNT_6
+           ,COUNT_6  = :SELECT_RCBV0580_STATS.COUNT_5
+           ,COUNT_5  = :SELECT_RCBV0580_STATS.COUNT_4
+           ,COUNT_4  = :SELECT_RCBV0580_STATS.COUNT_3
+           ,COUNT_3  = :SELECT_RCBV0580_STATS.COUNT_2
+           ,COUNT_2  = :SELECT_RCBV0580_STATS.COUNT_1
+           ,COUNT_1  = '         0'
+      WHERE CURRENT OF CURS0
+ ;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#025');
+     END;
+ END;
+
+ END R80_SET_CNT_PER_MSG_TO_0;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R81_FETCH_CURS0                               */
+ /*                                                                  */
+ /* DESCRIPTION      : FETCH A RECORD FROM CURSOR0                   */
+ /*                                                                  */
+ /********************************************************************/
+ R81_FETCH_CURS0: PROC;
+
+ EXEC SQL
+      FETCH CURS0
+      INTO :SELECT_RCBV0580_STATS
+ ;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   WHEN (+100)
+     DO;
+       SWITCH_EOC0 = TRUE;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#026');
+     END;
+ END;
+
+ END R81_FETCH_CURS0;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R82_PROC_CNT_PER_MSG                          */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS A COUNT PER MESSAGE RECORD            */
+ /*                                                                  */
+ /********************************************************************/
+ R82_PROC_CNT_PER_MSG: PROC;
+
+ WRK_PROC_ID          = 'XXXX';
+ WRK_MESSAGE_NUMBER   = SELECT_CURS1.MESSAGE_NUMBER;
+ WRK_COUNT_ON         = ' ';
+ WRK_COUNT_PIC10      = SELECT_CURS1.COUNT;
+ WRK_COUNT            = WRK_COUNT_PIC10;
+
+ EXEC SQL
+      UPDATE RCBV0580_STATS
+      SET    COUNT_1        = :WRK_COUNT
+      WHERE  COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+      AND    PROC_ID        = :WRK_PROC_ID
+      AND    MESSAGE_NUMBER = :WRK_MESSAGE_NUMBER
+      AND    COUNT_ON       = :WRK_COUNT_ON
+      ;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   WHEN (+100)                         /* NOT FOUND --> INSERT */
+     DO;
+       SELECT_RCBV0580_STATS                = '';
+       SELECT_RCBV0580_STATS.COUNTRY_NUMBER = WRK_COUNTRY_NUMBER;
+       SELECT_RCBV0580_STATS.PROC_ID        = WRK_PROC_ID;
+       SELECT_RCBV0580_STATS.MESSAGE_NUMBER = WRK_MESSAGE_NUMBER;
+       SELECT_RCBV0580_STATS.COUNT_1        = WRK_COUNT;
+
+       EXEC SQL
+            INSERT INTO RCBV0580_STATS
+            VALUES (:SELECT_RCBV0580_STATS)
+       ;
+
+       SELECT (SQLCA.SQLCODE);
+         WHEN (0);
+         OTHERWISE
+           DO;
+             CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                                 'DB2',
+                                 '#027');
+           END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#028');
+     END;
+ END;
+
+ END R82_PROC_CNT_PER_MSG;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R83_FETCH_CURS1                               */
+ /*                                                                  */
+ /* DESCRIPTION      : FETCH A RECORD FROM CURSOR1                   */
+ /*                                                                  */
+ /********************************************************************/
+ R83_FETCH_CURS1: PROC;
+
+ EXEC SQL
+      FETCH CURS1
+      INTO :SELECT_CURS1
+ ;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+   WHEN (+100)
+     DO;
+       SWITCH_EOC1 = TRUE;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#029');
+     END;
+ END;
+
+ END R83_FETCH_CURS1;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R90_INIT_COMMON                               */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALIZE VARIABLES                          */
+ /*                                                                  */
+ /********************************************************************/
+ R90_INIT_COMMON: PROC;
+
+ PTR_INT_AREA     = ADDR (PARM_INT_AREA);
+ PTR_RETURN_AREA  = ADDR (PARM_RETURN_AREA);
+
+ PARM_INT_AREA.MSG_REQUEST       = 'O';
+ PARM_INT_AREA.MSG_TARGET        = 'F';
+ PARM_INT_AREA.MSG_AREA          = '';
+ PARM_INT_AREA.ERR_AREA          = '';
+ PARM_INT_AREA.ID_SOURCE_APPL    = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG    = 'RCBMSGP';
+ PARM_INT_AREA.ID_MOD_PATH (1)   = 'RCBMSRM';
+ PARM_INT_AREA.ID_MOD_LEVEL      = 1;
+ PARM_INT_AREA.PTR_PCB_IO        = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT       = NULL;
+ PARM_INT_AREA.SYSTEM_TYPE       = 'B';
+
+ CALL RCB0M1M(PTR_INT_AREA);                /* OPEN MESSAGE FILE     */
+
+ CALL RCB0T1M(PTR_INT_AREA);                /* RETRIEVE SYSTEM DATE  */
+
+ WRK_DATE = PARM_INT_AREA.SYSTEM_DATE;
+
+ TAB_CTRY_LINE = '';                                      /* RC01234 */
+ READ FILE (RCBCTRY) INTO (TAB_CTRY_TEMP);                /* RC01234 */
+
+ IF SWITCH_EOF_RCBCTRY
+ THEN
+   DO;
+     PARM_INT_AREA.COUNTRY_NUMBER   = '';
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0013';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBCTRY';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBMSRM_ERROR (NULL,
+                        'OTHER',
+                        '#030');
+   END;
+
+                                                      /* SOC RC01234 */
+ /*SUBSTR(TAB_CTRY_LINE,1,80) = TAB_CTRY_TEMP;        /* CEDS00000588*/
+ SUBSTR(TAB_CTRY_LINE,1,72) = TAB_CTRY_TEMP;          /* CEDS00000588*/
+
+ READ FILE (RCBCTRY) INTO (TAB_CTRY_TEMP);
+
+ IF ¬SWITCH_EOF_RCBCTRY
+                                                  /* SOC CEDS00000588*/
+ /* & VERIFY(SUBSTR(TAB_CTRY_TEMP,1,1), '123') = 0  THEN */
+ THEN                                             /* EOC CEDS00000588*/
+   DO;
+                                                  /* SOC CEDS00000588*/
+ /*  SUBSTR(TAB_CTRY_LINE,77,51) = SUBSTR(TAB_CTRY_TEMP,2,51); */
+     SUBSTR(TAB_CTRY_LINE,73,55) = SUBSTR(TAB_CTRY_TEMP,1,55);
+                                                  /* EOC CEDS00000588*/
+   END;
+                                                      /* EOC RC01234 */
+
+ DO J = 1 TO MAX_DIM_TAB_CTRY WHILE (TAB_CTRY.CTRYNO  (J) ¬= ' ');
+ END;
+
+ DIM_TAB_CTRY = J - 1;
+
+ IF TAB_CTRY.AREA_IND = '2'    /* APG COUNTRY */
+ THEN
+   DO;
+     TAB_MSG0003.PGMNAME (3) = 'RCBBNAP';
+     TAB_MSG0003.PGMNAME (5) = 'RCBBOAP';
+     TAB_MSG0003.PGMNAME (6) = 'RCBBOAP';
+     TAB_MSG0003.PGMNAME (7) = 'RCBBPAP';
+     TAB_MSG0003.PGMNAME (8) = 'RCBBPAP';
+   END;
+ ELSE                                                 /* SOC PTM1184 */
+   DO;
+   IF TAB_CTRY.AREA_IND = '3'  /* USA COUNTRY */
+   THEN
+     DO;
+       TAB_MSG0003.PGMNAME (3) = 'RCBBAOP';
+       TAB_MSG0003.VALUE_6 (3) = 'RCBBAO0 CUSTOMER';
+       TAB_MSG0003.PROC_ID (15)= 'UI01';
+       TAB_MSG0004.PROC_ID (6) = 'DN01';
+       TAB_MSG0004.PGMNAME (6) = 'RCBDNCP';
+       TAB_MSG0004.VALUE_6 (6) = 'RCBDNCX';
+       TAB_MSG0004.TABNAME (6) = 'RCBV0050';
+     END;
+                                                      /* EOC PTM1184 */
+   END;
+
+ /********************************************************************/
+ /* GET TIMESTAMP AT WHICH CEDS RUN CYCLE STARTED.                   */
+ /* ALL MESSAGES IN TABLE RCBV0540_MSG_ISSUE WHICH HAVE A TIMESTAMP  */
+ /* WHICH IS OLDER THEN THIS STARTING TIMESTAMP WILL BE DELETED FROM */
+ /* RCBV0540_MSG_ISSUE BECAUSE IT ARE OLD MESSAGES WHICH HAVE BEEN   */
+ /* ISSUED BEFORE THIS RUN CYCLE STARTED.                            */
+ /********************************************************************/
+
+ EXEC SQL                                     /* GET CYCLE TIMESTAMP */
+      SELECT SUBSTR (PARAMETER_VALUE,1,26)
+        INTO :WRK_CYCLE_TS
+        FROM RCBV0500_PARM
+        WHERE PARAMETER_NUMBER = 'RCBCYC'
+ ;
+
+ IF (SQLCA.SQLCODE) ¬= 0
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                         'DB2',
+                         'M031');
+   END;
+
+                                                        /* SOC PTM1331*/
+ DO J = 1 TO DIM_TAB_CTRY;
+   WRK_COUNTRY_NUMBER = TAB_CTRY.CTRYNO(J);
+   EXEC SQL                                     /* DELETE OLD MESSAGES*/
+     DELETE FROM RCBV0540_MSG_ISSUE
+       WHERE RUN_NUMBER < :WRK_CYCLE_TS
+       AND   COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER ;
+   SELECT (SQLCA.SQLCODE);
+     WHEN (0,+100);
+     OTHERWISE
+     DO;
+   CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                     'DB2',
+                          '#032');
+     END;
+   END;
+ END;
+
+                                                        /* SOC RC01348*/
+ /*------------------------------------------------------------------*/
+ /* DELETE ALL RECORDS WHICH ARE OLDER THAN 30 DAYS. THIS IS TO      */
+ /* ENSURE THAT ALL RECORDS FOR INACTIVE COUNTRIES ARE DELETED AFTER */
+ /* 30 DAYS TO PREVENT THE REJECTION TABLE(RCBV0540_MSG_ISSUE) FROM  */
+ /* REACHING ITS MAXIMUM CAPACITY.                                   */
+ /********************************************************************/
+ WRK_CYCLE_TS1 = WRK_CYCLE_TS;
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';
+ DATE_AREA.WD_FUNCTION    = 'C';
+ DATE_AREA.WD_PERIOD_TYPE = 'D';
+ DATE_AREA.WD_PERIOD      = -30;
+ DATE_AREA.WD_IN_DATE     = WRK_CYCLE_DATE;
+ CALL RCB004M (ADDR(DATE_AREA));
+ WRK_CYCLE_DATE = DATE_AREA.WD_OUT_DATE;
+
+ IF DATE_AREA.WD_STATUS ¬= ' '
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (NULL,
+                         'OTHER',
+                         '#042');
+   END;
+
+ EXEC SQL
+   DELETE FROM RCBV0540_MSG_ISSUE
+     WHERE RUN_NUMBER < :WRK_CYCLE_TS1 ;
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0,+100);
+   OTHERWISE
+   DO;
+ CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                   'DB2',
+                        '#043');
+   END;
+ END;
+                                                        /* EOC RC01348*/
+ WRK_CYCLE_TS1 = WRK_CYCLE_TS;
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';
+ DATE_AREA.WD_FUNCTION    = 'C';
+ DATE_AREA.WD_PERIOD_TYPE = 'W';
+ DATE_AREA.WD_PERIOD      = 1;
+ DATE_AREA.WD_IN_DATE     = WRK_CYCLE_DATE;
+ CALL RCB004M (ADDR(DATE_AREA));
+
+ IF DATE_AREA.WD_STATUS ¬= ' '
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (NULL,
+                         'OTHER',
+                         '#033');
+   END;
+
+ WRK_CYCLE_DATE = DATE_AREA.WD_OUT_DATE;
+
+
+ EXEC SQL                                     /* DELETE OLD MESSAGES*/
+   DELETE FROM RCBV0540_MSG_ISSUE
+     WHERE RUN_NUMBER < :WRK_CYCLE_TS1
+     AND   COUNTRY_NUMBER = '';
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0,+100);
+   OTHERWISE
+   DO;
+ CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                   'DB2',
+                        '#034');
+   END;
+ END;
+                                                        /* EOC PTM1331*/
+
+ END R90_INIT_COMMON;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R91_INIT_CTRY                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : INIT A NEW COUNTRY                            */
+ /*                                                                  */
+ /********************************************************************/
+ R91_INIT_CTRY: PROC;
+
+ WRK_COUNTRY_NUMBER = TAB_CTRY.CTRYNO (J);
+
+ END R91_INIT_CTRY;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R92_SET_DATE                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : SET THE NEW DATE IN TABLE RCBT0575_SDATE      */
+ /*                                                                  */
+ /********************************************************************/
+ R92_SET_DATE: PROC;
+
+ SELECT_RCBV0575_SDATE = '';
+
+ EXEC SQL
+      SELECT *
+      INTO :SELECT_RCBV0575_SDATE
+      FROM RCBV0575_SDATE
+      WHERE COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+ ;
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+       EXEC SQL
+            UPDATE RCBV0575_SDATE
+            SET   DATE_30  = :SELECT_RCBV0575_SDATE.DATE_29
+                 ,DATE_29  = :SELECT_RCBV0575_SDATE.DATE_28
+                 ,DATE_28  = :SELECT_RCBV0575_SDATE.DATE_27
+                 ,DATE_27  = :SELECT_RCBV0575_SDATE.DATE_26
+                 ,DATE_26  = :SELECT_RCBV0575_SDATE.DATE_25
+                 ,DATE_25  = :SELECT_RCBV0575_SDATE.DATE_24
+                 ,DATE_24  = :SELECT_RCBV0575_SDATE.DATE_23
+                 ,DATE_23  = :SELECT_RCBV0575_SDATE.DATE_22
+                 ,DATE_22  = :SELECT_RCBV0575_SDATE.DATE_21
+                 ,DATE_21  = :SELECT_RCBV0575_SDATE.DATE_20
+                 ,DATE_20  = :SELECT_RCBV0575_SDATE.DATE_19
+                 ,DATE_19  = :SELECT_RCBV0575_SDATE.DATE_18
+                 ,DATE_18  = :SELECT_RCBV0575_SDATE.DATE_17
+                 ,DATE_17  = :SELECT_RCBV0575_SDATE.DATE_16
+                 ,DATE_16  = :SELECT_RCBV0575_SDATE.DATE_15
+                 ,DATE_15  = :SELECT_RCBV0575_SDATE.DATE_14
+                 ,DATE_14  = :SELECT_RCBV0575_SDATE.DATE_13
+                 ,DATE_13  = :SELECT_RCBV0575_SDATE.DATE_12
+                 ,DATE_12  = :SELECT_RCBV0575_SDATE.DATE_11
+                 ,DATE_11  = :SELECT_RCBV0575_SDATE.DATE_10
+                 ,DATE_10  = :SELECT_RCBV0575_SDATE.DATE_9
+                 ,DATE_9   = :SELECT_RCBV0575_SDATE.DATE_8
+                 ,DATE_8   = :SELECT_RCBV0575_SDATE.DATE_7
+                 ,DATE_7   = :SELECT_RCBV0575_SDATE.DATE_6
+                 ,DATE_6   = :SELECT_RCBV0575_SDATE.DATE_5
+                 ,DATE_5   = :SELECT_RCBV0575_SDATE.DATE_4
+                 ,DATE_4   = :SELECT_RCBV0575_SDATE.DATE_3
+                 ,DATE_3   = :SELECT_RCBV0575_SDATE.DATE_2
+                 ,DATE_2   = :SELECT_RCBV0575_SDATE.DATE_1
+                 ,DATE_1   = :WRK_DATE
+            WHERE COUNTRY_NUMBER = :WRK_COUNTRY_NUMBER
+            ;
+       SELECT (SQLCA.SQLCODE);
+         WHEN (0);
+         OTHERWISE
+           DO;
+             CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                                 'DB2',
+                                 '#035');
+           END;
+       END;
+     END;
+   WHEN (+100)
+     DO;
+       SELECT_RCBV0575_SDATE                = '';
+       SELECT_RCBV0575_SDATE.COUNTRY_NUMBER = WRK_COUNTRY_NUMBER;
+       SELECT_RCBV0575_SDATE.DATE_1         = WRK_DATE;
+
+       EXEC SQL
+            INSERT INTO RCBV0575_SDATE
+            VALUES (:SELECT_RCBV0575_SDATE)
+       ;
+       SELECT (SQLCA.SQLCODE);
+         WHEN (0);
+         OTHERWISE
+           DO;
+             CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                                 'DB2',
+                                 '#036');
+           END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#037');
+     END;
+ END;
+
+ END R92_SET_DATE;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R93_INIT_CURS0                                */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIAL ACTIONS FOR CURSOR0                   */
+ /*                                                                  */
+ /********************************************************************/
+ R93_INIT_CURS0: PROC;
+
+ EXEC SQL
+      OPEN CURS0
+ ;
+
+ IF (SQLCA.SQLCODE) ¬= 0
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                         'DB2',
+                         '#038');
+   END;
+
+ SWITCH_EOC0 = FALSE;
+
+ CALL R81_FETCH_CURS0;  /* FETCH FIRST RECORD */
+
+ END R93_INIT_CURS0;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R94_END_CURS0                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : ENDING ACTIONS FOR CURSOR0                    */
+ /*                                                                  */
+ /********************************************************************/
+ R94_END_CURS0: PROC;
+
+ EXEC SQL
+      CLOSE CURS0
+ ;
+
+ IF (SQLCA.SQLCODE) ¬= 0
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                         'DB2',
+                         '#039');
+   END;
+
+ END R94_END_CURS0;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R95_INIT_CURS1                                */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIAL ACTIONS FOR CURSOR1                   */
+ /*                                                                  */
+ /********************************************************************/
+ R95_INIT_CURS1: PROC;
+
+ EXEC SQL
+      OPEN CURS1
+ ;
+
+ IF (SQLCA.SQLCODE) ¬= 0
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                         'DB2',
+                         '#040');
+   END;
+
+ SWITCH_EOC1 = FALSE;
+
+ CALL R83_FETCH_CURS1;  /* FETCH FIRST RECORD */
+
+ END R95_INIT_CURS1;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R96_END_CURS1                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : ENDING ACTIONS FOR CURSOR1                    */
+ /*                                                                  */
+ /********************************************************************/
+ R96_END_CURS1: PROC;
+
+ EXEC SQL
+      CLOSE CURS1
+ ;
+
+ IF (SQLCA.SQLCODE) ¬= 0
+ THEN
+   DO;
+     CALL RCBMSRM_ERROR (ADDR (SQLCA),
+                         'DB2',
+                         '#041');
+   END;
+
+ END R96_END_CURS1;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R99_END_COMMON                                */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R99_END_COMMON: PROC;
+                                    /* PROGRAM SUCC. ENDED           */
+ PARM_INT_AREA.MESSAGE_TYPE         = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER       = '9999';
+ PARM_INT_AREA.MSG_VAR_CODES        = ' ';
+ CALL RCB0M1M (PTR_INT_AREA);
+                                    /* CLOSE MESSAGE FILE            */
+ PARM_INT_AREA.MSG_REQUEST = 'C';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ END R99_END_COMMON;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBMSRM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /********************************************************************/
+0RCBMSRM_ERROR: PROC   (PTR_ERROR,
+                        ERR_TYPE,
+                        CALL_ID);
+0DCL PTR_ERROR    PTR;
+ DCL ERR_TYPE     CHAR(8);
+ DCL CALL_ID      CHAR(4);
+0PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;
+ PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;
+ PARM_INT_AREA.CALL_ID        = CALL_ID;
+0CALL RCB0E1M (PTR_INT_AREA);
+0END RCBMSRM_ERROR;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBMSRM);                      /* MODULE TO BE COMPILED   */
+0/*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+0END RCBMSRM;

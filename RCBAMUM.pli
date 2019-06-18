@@ -1,0 +1,1072 @@
+ /* RCBAMUM - CHGS TO INSTALLED PRODUCTS (3) - EXTRACT (APG ONLY)    */ 00015012
+ /*                                                                  */ 00020005
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030005
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040005
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050005
+ /*                                                                  */ 00060005
+ /********************************************************************/ 00070005
+ /* PROGRAM          : RCBAMUM                                       */ 00080005
+ /*                                                                  */ 00090005
+ /* LANGUAGE         : PLI                                           */ 00100005
+ /*                                                                  */ 00110005
+ /* TYPE             : LINKABLE MODULE                               */ 00120005
+ /*                                                                  */ 00130005
+ /* DESCRIPTION      : THIS PROGRAM CHECKS THE INCOMING INFO         */ 00140005
+ /*                    FROM AN APG  'CHGS TO INSTALLED PRODUCTS'     */ 00150005
+ /*                    TRANSACTION.                                  */ 00160005
+ /*                    THE TRANSACTION IS TRANSLATED INTO INTERNAL   */ 00170005
+ /*                    CEDS TRANSACTIONS, WHICH ARE ADDED            */ 00180005
+ /*                    TO THE CEDS ACTION FILE.                      */ 00190005
+ /*                                                                  */ 00200005
+ /*                    PROCESSING WILL ONLY TAKE PLACE IF CSTAC IS   */ 00210005
+ /*                    '3' OR '4' AND THE PRODUCT IS REQUESTED BY    */ 00220005
+ /*                    CEDS.                                         */ 00230005
+ /*                                                                  */ 00240005
+ /* NOTE (1)         : IF CAGAA ¬= CAGXA AND CAGAA = '6' THEN        */ 00250005
+ /*                       DVXAM + 1 DAY WILL BE USED AS EFF. DATE    */ 00260005
+ /*                    ELSE                                          */ 00270005
+ /*                       DVXAH WILL BE USED AS EFF. DATE            */ 00280005
+ /*                                                                  */ 00290005
+ /*                                                                  */ 00300005
+ /* INPUT            : - APG   : TRANSACTION : 103                   */ 00310005
+ /*                                                                  */ 00320005
+ /* OUTPUT           : 'REF_RCBT0110' RECORD                         */ 00330005
+ /*                    'CRT_RCBT0220' RECORD                         */ 00340005
+ /*                    'CRT_RCBT0380' RECORD                         */ 00350005
+ /*                                                                  */ 00360005
+ /*                  : RCBAAC0  -  CEDS ACTION FILE                  */ 00370005
+ /*                                                                  */ 00380005
+ /* EXTERNAL MODULES : RCB004M  -  CONVERT DATE                      */ 00390005
+ /*                    RCB011M  -  DETERMINE TPWAR OR TPMNT          */ 00400005
+ /*                    RCB017M  -  CHECK PRODUCT TYPE REQUESTED      */ 00410005
+ /*                    RCB0E1M  -  COMMON ERROR ROUTINE              */ 00420005
+ /*                    RCB0M1M  -  COMMON MESSAGE ROUTINE            */ 00430005
+ /*                                                      SOC PTM1038 */ 00440005
+ /*                    RCB022M  -  CHECK HOUSE KEEP DATE             */ 00450005
+ /*                                                      EOC PTM1038 */ 00460005
+ /*                    RCB023M  -  RETRIEVE APPLICABLE SLC   PTM1072 */ 00470005
+ /*                                                                  */ 00480005
+ /* MESSAGES         : 0010                                          */ 00490005
+ /*                  : 0012                                          */ 00500005
+ /*                  : 0107                                          */ 00510005
+ /*                                                                  */ 00520005
+ /* DEPENDENCIES     : -                                             */ 00530005
+ /*                                                                  */ 00540005
+ /* FREQUENCY        : -                                             */ 00550005
+ /*                                                                  */ 00560005
+ /* MAINTENANCE LOG    :                                             */ 00570005
+ /* ---------------                                                  */ 00580005
+ /*                                                                  */ 00590005
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00600005
+ /* --------------------------------------------------------------   */ 00610005
+ /*  1991-10-08 | ----         | CEDS INITIAL DEVELOPMENT            */ 00620005
+ /*  1993-04-29 | RC1032       | MCO AND TABLE CHANGES               */ 00630005
+ /*  1994-07-25 | PTM 529      | SEE PTM DESCRIPTION                 */ 00640005
+ /*  1994-11-15 | RC01116      | STORE TYPE OF WARRANTY              */ 00650005
+ /*  1995-09-07 | RB01140      | IMPROVE PERFORMANCE :               */ 00660005
+ /*             |              | MOVE HW_REQUEST_CEDS TO RCBT0070    */ 00670005
+ /*  1997-05-05 | PTM1038      | CORRECT NAMES                       */ 00680005
+ /*  1997-10-13 | PTM1072      | RETRIEVE SLC'S FOR RENTAL AND WAR-  */ 00690005
+ /*             |              |   RANTY, OTHER WED SETUP            */ 00700005
+ /*  1997-10-24 | PTM1097      | YEAR 2000                           */ 00710005
+ /*  2004-06-29 | RB01242      | INCREASE LENGTH OF SERIAL NUMBER    */ 00720005
+ /*  2007-04-19 | RB01281      | CHANGES FOR FLEXIBLE WARRANTY       */ 00730005
+ /*             |              | MACHINES                            */ 00740005
+ /*  2007-08-20 | CEDS00000336 | CHANGES TO HANDLE FLEXIBLE WARRANTY */ 00750005
+ /*             |              | MACHINES WHEN THERE IS NO VALID     */ 00760005
+ /*             |              | INSTALL DATE FROM WTAAS.            */ 00770005
+ /*  2007-10-19 | CEDS00000352 | PERFORMANCE ISSUE OVER CEDS 3.3 QF  */ 00780005
+ /*             |              | FLEXIBLE WARRANTY                   */ 00790005
+ /*  2008-05-15 | CEDS00000377 | NULL VALUES FOR SLC FROM RCBT0690   */ 00800005
+ /*             |              | HANDLED                             */ 00810005
+ /*  2008-05-15 | CEDS00000345 | F_SPLT_DATE IS NOT ALLOWED TO       */ 00820005
+ /*             |              | EXCEED WARRANTY_EXP_DATE            */ 00830005
+ /*  2008-05-26 | CEDS00000399 | PERFORMANCE FIX OVER CEDS 3.3 QF    */ 00840005
+ /*             |              | FLEXIBLE WARRANTY RECTIFIED         */ 00850005
+ /********************************************************************/ 00860005
+1RCBAMUM: PROC (PTR_RCBABNS,                                            00870005
+                PTR_CTRY_CNT,                                           00880005
+                PTR_INT_AREA)                                           00890005
+          REORDER;                                                      00900005
+0DEFAULT RANGE (*)        STATIC;                                       00910005
+1/********************************************************************/ 00920005
+ /*  PARAMETERS                                                      */ 00930005
+ /********************************************************************/ 00940005
+0DCL PTR_RCBABNS          POINTER;                                      00950005
+ DCL PTR_CTRY_CNT         POINTER;                                      00960005
+ DCL PTR_INT_AREA         POINTER;                                      00970005
+ DCL PTR_RETURN_AREA      POINTER;                     /* SOC RB01281 */00980005
+ DCL PTR_DATE_AREA        POINTER;              /* RCB004M DATE CHECK */00990005
+ DCL RETCODE              FIXED BIN(31);                                01000005
+                                                                        01010005
+ DCL 1 DATE_AREA,                                        /* DATE AREA */01020005
+       %INCLUDE (RCBZ03S);;                                             01030005
+ DCL 1 RETURN_AREA,                                    /* RETURN AREA */01040005
+       %INCLUDE (RCBZ02S);;                            /* EOC RB01281 */01050005
+ DCL 1 PARM_RCBABN0    BASED (PTR_RCBABNS), /* APG TRANSACTION RCRD  */ 01060005
+       %INCLUDE (RRDDBNA);;                                             01070005
+ DCL 1 PARM_INT_AREA   BASED (PTR_INT_AREA),                            01080005
+       %INCLUDE (RCBZ01S);;                                             01090005
+ DCL 1 PARM_CNT        BASED (PTR_CTRY_CNT),                            01100005
+       %INCLUDE (RCBA00S1);,                                            01110005
+       3 TXN_NBR,                                                       01120005
+       %INCLUDE (RCBA00S2);;                                            01130005
+1/********************************************************************/ 01140005
+ /* FILE DECLARATIONS (NON GSAM)                                     */ 01150005
+ /********************************************************************/ 01160005
+ DCL RCBAMB0  FILE RECORD INPUT;  /* TABLE 690 RECORDS- CEDS00000352 */ 01170005
+0DCL RCBAAC0  FILE RECORD OUTPUT;            /* CEDS ACTION FILE     */ 01180005
+1/********************************************************************/ 01190005
+ /* EXTERNAL ENTRIES                                                 */ 01200005
+ /********************************************************************/ 01210005
+0DCL RCB004M   ENTRY  EXTERNAL;                                         01220005
+ DCL RCB011M   ENTRY  EXTERNAL;                                         01230005
+ DCL RCB0E1M   ENTRY  EXTERNAL;                                         01240005
+ DCL RCB0M1M   ENTRY  EXTERNAL;                                         01250005
+ DCL RCB017M   ENTRY  EXTERNAL;                                         01260005
+ DCL RCBI50M   ENTRY  EXTERNAL;                           /* RB01281 */ 01270005
+                                                      /* SOC PTM1038 */ 01280005
+ DCL RCB022M   ENTRY  EXTERNAL;                                         01290005
+                                                      /* EOC PTM1038 */ 01300005
+ DCL RCB023M   ENTRY  EXTERNAL;                           /* PTM1072 */ 01310005
+1/********************************************************************/ 01320005
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 01330005
+ /********************************************************************/ 01340005
+0DCL 1 PARM_RCBZ02S,                        /* RETURN AREA BB        */ 01350005
+     %INCLUDE (RCBZ02S);;                                               01360005
+ DCL 1 PARM_RCBZ03S,                        /* RETURN AREA DATE CONV */ 01370005
+     %INCLUDE (RCBZ03S);;                                               01380005
+ DCL 1 PARM_RCBZ23S,                        /* RETURN AREA RCB011M   */ 01390005
+     %INCLUDE (RCBZ23S);;                                               01400005
+ DCL 1 PARM_RCBZ32S,                        /* RETURN AREA RCB023M   */ 01410005
+     %INCLUDE (RCBZ32S);;                                 /* PTM1072 */ 01420005
+                                                      /* SOC RB01281 */ 01430005
+ /********************************************************************/ 01440005
+ /* DB2 TABLE STRUCTURES                                             */ 01450005
+ /********************************************************************/ 01460005
+ DCL PTR_RCBV500    PTR;               /* PTR PARAMETER ROW          */ 01470005
+ DCL PTR_RCBV500I   PTR;               /* PTR NULL-IND. PARAMETER    */ 01480005
+ DCL 1 TB_RCBV500,                     /* PARAMETER ROW              */ 01490005
+       %INCLUDE (RCB500S);;                                             01500005
+ DCL 1 TB_RCBV500_I,                   /* NULL-IND. PARAMETER        */ 01510005
+       %INCLUDE (RCB500SI);;                                            01520005
+ DCL 1 FILE_RCBAMB0,        /* SORTED UNLOAD FILE */ /* CEDS00000352 */ 01530005
+      %INCLUDE (RCBBCAS);;                           /* CEDS00000352 */ 01540005
+                                                      /* EOC RB01281 */ 01550005
+1/********************************************************************/ 01560005
+ /*  RECORD STRUCTURES FOR OUTPUT FILES                              */ 01570005
+ /********************************************************************/ 01580005
+0DCL 1 REC_HEADER,                                                      01590005
+       %INCLUDE (RCBAACS);,                                             01600005
+       3 TXN_NBR,                                                       01610005
+       %INCLUDE (RCBA00S2);,                                            01620005
+       3 UPSTR_INFO,                                                    01630005
+       %INCLUDE (RCBA00S3);;                             /* PTM 529 */  01640005
+ DCL 1 REC_TRAILER,                                                     01650005
+       %INCLUDE (RCBAACS);,                                             01660005
+       3 TXN_NBR,                                                       01670005
+       %INCLUDE (RCBA00S2);;                                            01680005
+ DCL 1 REC_REF0110,                                                     01690005
+       %INCLUDE (RCBAACS);,                                             01700005
+       %INCLUDE (RCB110S);,                                             01710005
+       %INCLUDE (RCB110SI);;                                            01720005
+ DCL 1 REC_CRT0220,                                                     01730005
+       %INCLUDE (RCBAACS);,                                             01740005
+       %INCLUDE (RCB220S);,                                             01750005
+       %INCLUDE (RCB220SI);;                                            01760005
+ DCL 1 REC_CRT0380,                                                     01770005
+       %INCLUDE (RCBAACS);,                                             01780005
+       %INCLUDE (RCB380S);,                                             01790005
+       %INCLUDE (RCB380SI);;                                            01800005
+1/********************************************************************/ 01810005
+ /*  POINTERS                                                        */ 01820005
+ /********************************************************************/ 01830005
+0DCL PTR_RCBZ02S                POINTER;                                01840005
+ DCL PTR_RCBZ03S                POINTER;                                01850005
+ DCL PTR_RCBZ23S                POINTER;                                01860005
+ /********************************************************************/ 01870005
+ /*  PROGRAM CONTROL PARAMETERS                       /* SOC RB01281 */ 01880005
+ /********************************************************************/ 01890005
+ DCL 1 TB_RCB063        BASED(PTR_RCBV500),     /* FLEXIBLE WARRANTY */ 01900005
+       %INCLUDE (RCBP63S);;                           /* EOC RB01281 */ 01910005
+1/********************************************************************/ 01920005
+ /*  BIT SWITCHES                                /* SOC CEDS00000352 */ 01930005
+ /********************************************************************/ 01940005
+ DCL SWITCH_EMPTY_T690 BIT (1)   INIT ('0'B);                           01950005
+ DCL EOF_RCBAMB0       BIT (1)   INIT ('0'B);                           01960005
+0DCL TRUE              BIT (1)   INIT ('1'B);                           01970005
+ DCL FALSE             BIT (1)   INIT ('0'B);    /* EOC CEDS00000352 */ 01980005
+1/********************************************************************/ 01990005
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 02000005
+ /********************************************************************/ 02010005
+0DCL WRK_LEVEL                  FIXED BIN (15);                         02020005
+ DCL WRK_MOD_NAME               CHAR (08)        INIT ('RCBAMUM');      02030005
+ DCL WRK_ORIGIN                 CHAR (02);                              02040005
+ DCL WRK_SEQUENCE_NUMBER        CHAR (28);                              02050005
+ DCL WRK_HW_REQUEST_CEDS        CHAR (01);                              02060005
+ DCL WRK_RCBT0070_EFF_DATE      CHAR (10);              /* RB01140  */  02070005
+ DCL WRK_TXN_DATE               CHAR (10);                              02080005
+ DCL WRK_EFFECTIVE_DATE         CHAR (10);                              02090005
+ DCL WRK_HKP_DATE               CHAR (10);                              02100005
+ DCL WRK_DATE_PIC_YYDDD         PIC '99999';                            02110005
+ DCL WRK_WARRANTY_EXP_DATE      CHAR (10);                              02120005
+ DCL WRK_HI3                    CHAR(3);              /* SOC PTM1072 */ 02130005
+ DCL WRK_LOW3                   CHAR(3);              /* SOC RB01281 */ 02140005
+ DCL WRK_F_TOW                  CHAR(01) INIT('');                      02150005
+ DCL WRK_F_SPLT_DATE            CHAR (10);                              02160005
+ DCL SWITCH_F_SLC               BIT (01)  INIT ('0'B);                  02170005
+ DCL WRK_F_TYPE_OF_WARRANTY     BIT  (01) INIT('0'B); /* EOC RB01281 */ 02180005
+ DCL WRK_VALID_INST_DATE       BIT (1)   INIT ('1'B);/* CEDS00000336 */ 02190005
+ DCL 1 WRK_TPMNT,                                                       02200005
+     %INCLUDE(RCBZ99S);;                              /* EOC PTM1072 */ 02210005
+ DCL I,J,K               FIXED BIN(31)   INIT(0);/* SOC CEDS00000352 */ 02220005
+ DCL 1 T690_ARRAY(REC_COUNT) CTL,                                       02230005
+        2 A_COUNTRY    CHAR(3),                                         02240005
+        2 A_TYPE       CHAR(4),                                         02250005
+        2 A_MODEL      CHAR(3),                                         02260005
+        2 A_B_W_MNTHS  DEC FIXED(3,0),                                  02270005
+        2 A_SLC_NULLIND CHAR(1),                     /* CEDS00000377 */ 02280005
+        2 A_SLC        CHAR(3),                                         02290005
+        2 A_EFF_DATE   CHAR(10),                                        02300005
+        2 A_END_DATE   CHAR(10);                                        02310005
+ /********************************************************************/ 02320005
+ /* ON ENDFILE                                                       */ 02330005
+ /********************************************************************/ 02340005
+ ON ENDFILE (RCBAMB0)                                                   02350005
+   BEGIN;                                                               02360005
+     EOF_RCBAMB0 = TRUE;                                                02370005
+   END;                                                                 02380005
+0/********************************************************************/ 02390005
+ /*  COUNTS                                                          */ 02400005
+ /********************************************************************/ 02410005
+ DCL REC_COUNT           FIXED BIN(31)   INIT(0);/* EOC CEDS00000352 */ 02420005
+1/********************************************************************/ 02430005
+ /*  BUILTIN FUNCTIONS                                               */ 02440005
+ /********************************************************************/ 02450005
+0DCL ADDR       BUILTIN;                                                02460005
+ DCL NULL       BUILTIN;                                                02470005
+ DCL SUBSTR     BUILTIN;                                                02480005
+ DCL HIGH       BUILTIN;                                                02490005
+ DCL VERIFY     BUILTIN;                                                02500005
+1/********************************************************************/ 02510005
+ /*  ON ERROR CONDITIONS                                             */ 02520005
+ /********************************************************************/ 02530005
+0%INCLUDE (RCB0E0M);                                                    02540005
+  END;                                                                  02550005
+1/********************************************************************/ 02560005
+ /*                 S T A R T   P R O C E S S I N G                  */ 02570005
+ /********************************************************************/ 02580005
+0CALL RCBAMUM_INIT_COMMON;                                              02590005
+ IF (PARM_RCBABN0.CSTAC = '3' | PARM_RCBABN0.CSTAC = '4')               02600005
+ THEN                                                                   02610005
+   DO;                                                                  02620005
+     CALL RCBAMUM_INIT_PROCESS;                                         02630005
+     CALL RCBAMUM_CHECK_REQUESTED;                                      02640005
+     IF WRK_HW_REQUEST_CEDS = '1'                                       02650005
+     THEN                                                               02660005
+       DO;                                                              02670005
+         CALL RCBAMUM_WRITE_HEADER;                                     02680005
+         CALL RCBAMUM_CREATE_REF0110;                                   02690005
+         CALL RCBAMUM_WRITE_REF0110;                                    02700005
+         CALL RCBAMUM_CREATE_CRT0220;                                   02710005
+         IF REC_CRT0220.TYPE_OF_WARRANTY = '' /* JUST CREATED 220    */ 02720005
+         THEN                                 /* INDICATES NO WAR    */ 02730005
+           DO;                                        /* SOC PTM1072 */ 02740005
+             IF VERIFY(REC_CRT0220.TYPE_OF_MAINT,TPMNT_ST1)=0           02750005
+             THEN DO;                                                   02760005
+               PARM_RCBZ32S.INAREA = REC_CRT0220, BY NAME;              02770005
+               PARM_RCBZ32S.MODEL = PARM_RCBABN0.CMMAB;                 02780005
+               PARM_RCBZ32S.END_DATE = REC_CRT0220.END_DATE;            02790005
+               CALL RCB023M(ADDR(PARM_RCBZ32S),                         02800005
+                            PTR_INT_AREA);                              02810005
+               IF PARM_RCBZ32S.SERVICE_LVL_CODE_1 ¬= WRK_HI3            02820005
+               THEN DO;                                                 02830005
+                 REC_CRT0220.SERVICE_LVL_CODE =                         02840005
+                                   PARM_RCBZ32S.SERVICE_LVL_CODE_1;     02850005
+                 REC_CRT0220.INDNULL(7) = 0;                            02860005
+               END;                                                     02870005
+             END;                                     /* EOC PTM1072 */ 02880005
+             CALL RCBAMUM_WRITE_CRT0220;                                02890005
+           END;                                                         02900005
+         ELSE                              /* IT INDICATES WARRANTY  */ 02910005
+           DO;                             /* CALCULATE WED AND SLC'S*/ 02920005
+                                                      /* SOC PTM1072 */ 02930005
+             PARM_RCBZ32S.INAREA = REC_CRT0220, BY NAME;                02940005
+             PARM_RCBZ32S.MODEL = PARM_RCBABN0.CMMAB;                   02950005
+             PARM_RCBZ32S.END_DATE = REC_CRT0220.END_DATE;              02960005
+             PARM_RCBZ32S.TYPE_OF_WARRANTY =                            02970005
+                                  REC_CRT0220.TYPE_OF_WARRANTY;         02980005
+             CALL RCB023M(ADDR(PARM_RCBZ32S),                           02990005
+                          PTR_INT_AREA);                                03000005
+             IF REC_CRT0220.END_DATE = ''  /* NO WED FROM SOF */        03010005
+             THEN DO;                                                   03020005
+               IF PARM_RCBZ32S.END_DATE = ''                            03030005
+               THEN                                                     03040005
+                  PARM_RCBZ32S.END_DATE = PARM_RCBZ32S.EFFECTIVE_DATE;  03050005
+               REC_CRT0220.END_DATE = PARM_RCBZ32S.END_DATE;            03060005
+               REC_CRT0220.WARRANTY_EXP_DATE = PARM_RCBZ32S.END_DATE;   03070005
+               WRK_WARRANTY_EXP_DATE = PARM_RCBZ32S.END_DATE;           03080005
+             END;                                                       03090005
+                                             /* CHECK WED >= HK. DATE */03100005
+             CALL RCB022M (ADDR (PARM_RCBABN0.RCYAA),   /* CTRYNO    */ 03110005
+                           ADDR (REC_CRT0220.END_DATE), /* WED       */ 03120005
+                           ADDR (WRK_HKP_DATE),                         03130005
+                           PTR_INT_AREA);             /* EOC PTM1072 */ 03140005
+             IF WRK_HKP_DATE = ''            /* I.E. WED >= HK. DATE */ 03150005
+             THEN                                                       03160005
+               DO;                                    /* SOC PTM1072 */ 03170005
+                 CALL RCBAMUM_DET_WAR_SLC; /* SET UP THE SLC(S)      */ 03180005
+               END;                                   /* EOC PTM1072 */ 03190005
+           END;                                                         03200005
+         IF PARM_RCBABN0.CAGAA ¬= PARM_RCBABN0.CAGXA                    03210005
+         THEN                                                           03220005
+           DO;                                                          03230005
+             CALL RCBAMUM_CREATE_CRT0380;                               03240005
+             CALL RCBAMUM_WRITE_CRT0380;                                03250005
+           END;                                                         03260005
+         CALL RCBAMUM_WRITE_TRAILER;                                    03270005
+       END;                                                             03280005
+   END;                                                                 03290005
+ CALL RCBAMUM_END_PGM;                                                  03300005
+1/********************************************************************/ 03310005
+ /*      CREATE A REF_RCBT0110 RECORD                                */ 03320005
+ /********************************************************************/ 03330005
+0RCBAMUM_CREATE_REF0110 : PROC;                                         03340005
+                                                                        03350005
+ REC_REF0110.COUNTRY_ID             =  PARM_RCBABN0.RCYAA;              03360005
+ REC_REF0110.EFFECTIVE_DATE_TXN     =  WRK_EFFECTIVE_DATE;              03370005
+ REC_REF0110.REC_ID.TABLE_NUMBER    = '0110';                           03380005
+ REC_REF0110.REC_ID.ACTION          = 'R';                              03390005
+ REC_REF0110.REC_ID.SOURCE_SYSTEM   = 'S';                              03400005
+ REC_REF0110.REC_ID.PROCESS_TYPE    = 'M';                              03410005
+ REC_REF0110.REC_ID.SOURCE_TXN_ID   = PARM_RCBABN0.RPGAD;               03420005
+                                                                        03430005
+ REC_REF0110.PRODUCT_TYPE           = PARM_RCBABN0.CMAAB;               03440005
+ REC_REF0110.ORIGIN                 = WRK_ORIGIN;                       03450005
+ REC_REF0110.SEQUENCE_NUMBER        = WRK_SEQUENCE_NUMBER;              03460005
+ REC_REF0110.COUNTRY_NUMBER         =  PARM_RCBABN0.RCYAA;              03470005
+ REC_REF0110.EFFECTIVE_DATE         = WRK_EFFECTIVE_DATE;               03480005
+                                                                        03490005
+ END RCBAMUM_CREATE_REF0110;                                            03500005
+1/********************************************************************/ 03510005
+ /*      CREATE A CRT_RCBT0220 RECORD                                */ 03520005
+ /*      IF CMCAB(SEE NOTE) INDICATES A TYPE OF WARRANTY (DETERMINED */ 03530005
+ /*      BY RCB011M).                                                */ 03540005
+ /*      IF THE WED (DVWAB) IS NOT GIVEN THEN IT WILL BE             */ 03550005
+ /*      CALCULATED BY RCB012M.                                      */ 03560005
+ /*                                                                  */ 03570005
+ /*      IF TYPE OF MAINTENANCE IS FILLED THEN TYPE OF WARRANTY WILL */ 03580005
+ /*      NOT BE FILLED, SO ITS INDNULL (06) MUST BE SET TO -1.       */ 03590005
+ /*                                                                  */ 03600005
+ /*      IF TYPE OF WARRANTY IS FILLED THEN TYPE OF MAINTENANCE WILL */ 03610005
+ /*      NOT BE FILLED, SO ITS INDNULL (05) MUST BE SET TO -1.       */ 03620005
+ /*                                                                  */ 03630005
+ /* NOTE:                                                            */ 03640005
+ /*      IF CMCXD NOT BLANK THEN THE VALUE OF CMCXD WILL BE TAKEN    */ 03650005
+ /*      INSTEAD OF CMCAB.                                           */ 03660005
+ /*                                                                  */ 03670005
+ /********************************************************************/ 03680005
+0RCBAMUM_CREATE_CRT0220 : PROC;                                         03690005
+                                                                        03700005
+ WRK_F_TYPE_OF_WARRANTY             = FALSE;         /* CEDS00000352 */ 03710005
+                                                                        03720005
+ REC_CRT0220.COUNTRY_ID             =  PARM_RCBABN0.RCYAA;              03730005
+ REC_CRT0220.EFFECTIVE_DATE_TXN     =  WRK_EFFECTIVE_DATE;              03740005
+ REC_CRT0220.REC_ID.TABLE_NUMBER    = '0220';                           03750005
+ REC_CRT0220.REC_ID.ACTION          = 'I';                              03760005
+ REC_CRT0220.REC_ID.SOURCE_SYSTEM   = 'S';                              03770005
+ REC_CRT0220.REC_ID.PROCESS_TYPE    = 'M';                              03780005
+ REC_CRT0220.REC_ID.SOURCE_TXN_ID   = PARM_RCBABN0.RPGAD;               03790005
+                                                                        03800005
+ REC_CRT0220.PRODUCT_TYPE           = PARM_RCBABN0.CMAAB;               03810005
+ REC_CRT0220.ORIGIN                 = WRK_ORIGIN;                       03820005
+ REC_CRT0220.SEQUENCE_NUMBER        = WRK_SEQUENCE_NUMBER;              03830005
+ REC_CRT0220.COUNTRY_NUMBER         = PARM_RCBABN0.RCYAA;               03840005
+ REC_CRT0220.SERVICE_LVL_CODE       = '';             /* SOC PTM1072 */ 03850005
+ REC_CRT0220.INDNULL(7)             = -1;             /* EOC PTM1072 */ 03860005
+ PARM_RCBZ23S.CUSTOMER_NUMBER       = PARM_RCBABN0.RCUAF;               03870005
+0IF PARM_RCBABN0.CMCXD ¬= ' '                                           03880005
+ THEN                                                                   03890005
+   PARM_RCBZ23S.VALUE               = PARM_RCBABN0.CMCXD;               03900005
+ ELSE                                                                   03910005
+   PARM_RCBZ23S.VALUE               = PARM_RCBABN0.CMCAB;               03920005
+ CALL RCB011M (PTR_RCBZ23S,                                             03930005
+               PTR_INT_AREA);                                           03940005
+ IF PARM_RCBZ23S.TPMNT_DEFAULTED     /* ISSUE DEFAULTED MESSAGE      */ 03950005
+ THEN                                                                   03960005
+   DO;                                                                  03970005
+     CALL RCBAMUM_ISSUE_MSG_0010;                                       03980005
+   END;                                                                 03990005
+ IF PARM_RCBZ23S.TPMNT_IND           /* IT WAS A TYPE OF MAINTENANCE */ 04000005
+ THEN                                                                   04010005
+   DO;                                                                  04020005
+     REC_CRT0220.TYPE_OF_MAINT = PARM_RCBZ23S.TPMNT_WAR_VALUE;          04030005
+     REC_CRT0220.END_DATE      = '9999-12-31';                          04040005
+     REC_CRT0220.INDNULL (06)  = -1;            /* TYPE OF WARRANTY  */ 04050005
+     REC_CRT0220.INDNULL (08)  = -1;            /* WARRANTY EXP DATE */ 04060005
+     REC_CRT0220.F_TYPE_OF_WARRANTY     = '';         /* SOC RB01281 */ 04070005
+     REC_CRT0220.INDNULL(13)            = -1;                           04080005
+     REC_CRT0220.F_SPLT_DATE            = '';                           04090005
+     REC_CRT0220.INDNULL(14)            = -1;         /* EOC RB01281 */ 04100005
+   END;                                                                 04110005
+ ELSE                                /* IT WAS A TYPE OF WARRANTY    */ 04120005
+   DO;                                                     /* RC01116 */04130005
+     REC_CRT0220.TYPE_OF_WARRANTY = PARM_RCBZ23S.TPMNT_WAR_VALUE;       04140005
+     REC_CRT0220.INDNULL (05)     = -1;                                 04150005
+     IF PARM_RCBABN0.DVWAB ¬= 0      /* WED WAS GIVEN                */ 04160005
+     THEN                                                               04170005
+       DO;                                            /* SOC PTM1097 */ 04180005
+         PARM_RCBZ03S.WD_IN_FORMAT  = 'YYDDD';    /* CONVERT WED */     04190005
+         PARM_RCBZ03S.WD_OUT_FORMAT = 'ISO';                            04200005
+         PARM_RCBZ03S.WD_FUNCTION   = 'C';                              04210005
+         WRK_DATE_PIC_YYDDD         =  PARM_RCBABN0.DVWAB;              04220005
+         PARM_RCBZ03S.WD_IN_DATE    =  WRK_DATE_PIC_YYDDD;              04230005
+         CALL RCB004M (PTR_RCBZ03S);                                    04240005
+         IF PARM_RCBZ03S.WD_STATUS = ' '                                04250005
+         THEN                                                           04260005
+           DO;                                                          04270005
+             WRK_WARRANTY_EXP_DATE =                                    04280005
+                         SUBSTR (PARM_RCBZ03S.WD_OUT_DATE,1,10);        04290005
+           END;                                                         04300005
+         ELSE                                                           04310005
+           DO;                                                          04320005
+             CALL RCBAMUM_INVALID_DATE_MSG (PARM_RCBZ03S.WD_STATUS,     04330005
+                                            WRK_DATE_PIC_YYDDD);        04340005
+             CALL RCBAMUM_ERROR (NULL,                                  04350005
+                                'OTHER',                                04360005
+                                '#001');                                04370005
+           END;                                                         04380005
+                                                                        04390005
+         IF WRK_WARRANTY_EXP_DATE < WRK_EFFECTIVE_DATE                  04400005
+         THEN                                                           04410005
+           DO;                                           /* DVXAM +1 */ 04420005
+             WRK_WARRANTY_EXP_DATE = WRK_EFFECTIVE_DATE; /* OR DVXAH */ 04430005
+           END;                                                         04440005
+                                                                        04450005
+         REC_CRT0220.WARRANTY_EXP_DATE = WRK_WARRANTY_EXP_DATE;         04460005
+         REC_CRT0220.END_DATE = WRK_WARRANTY_EXP_DATE; /* EOC PTM1097 */04470005
+       END;                                                             04480005
+     ELSE                            /* CALCULATE WED                */ 04490005
+       DO;                                                /* RC01116 */ 04500005
+         /* BLANK ENDDATE SO RCB023M WILL CALCULATE WED      PTM1072 */ 04510005
+         REC_CRT0220.END_DATE = '';                                     04520005
+       END;                                                             04530005
+     IF WRK_VALID_INST_DATE = TRUE                   /* CEDS00000336 */ 04540005
+             & SWITCH_EMPTY_T690 = FALSE             /* CEDS00000352 */ 04550005
+     THEN                                            /* CEDS00000336 */ 04560005
+       CALL RCBAMUM_RETRIEVE_FLEX_WARR;               /* SOC RB01281 */ 04570005
+     IF WRK_F_TYPE_OF_WARRANTY = TRUE                                   04580005
+     THEN                                                               04590005
+       DO;                                                              04600005
+         REC_CRT0220.F_TYPE_OF_WARRANTY = WRK_F_TOW;                    04610005
+         REC_CRT0220.INDNULL(13) = 99;               /* CEDS00000345 */ 04620005
+         WRK_F_SPLT_DATE = RCBAMUM_CALC_DATE(                           04630005
+                 WRK_EFFECTIVE_DATE,'M',T690_ARRAY.A_B_W_MNTHS(I));     04640005
+                                                     /* CEDS00000352 */ 04650005
+         REC_CRT0220.F_SPLT_DATE = RCBAMUM_CALC_DATE(                   04660005
+                                               WRK_F_SPLT_DATE,'D',-1); 04670005
+         REC_CRT0220.INDNULL(14) =  99;              /* CEDS00000345 */ 04680005
+         IF (REC_CRT0220.F_SPLT_DATE <=          /* SOC CEDS00000345 */ 04690005
+                                 REC_CRT0220.WARRANTY_EXP_DATE)         04700005
+         THEN                                                           04710005
+           DO;                                                          04720005
+            REC_CRT0220.INDNULL(13) = 0;                                04730005
+            REC_CRT0220.INDNULL(14) = 0;                                04740005
+           END;                                  /* EOC CEDS00000345 */ 04750005
+             IF T690_ARRAY.A_SLC(I)  ¬= WRK_LOW3     /* CEDS00000352 */ 04760005
+             & T690_ARRAY.A_SLC_NULLIND(I) ¬= 'FF'X  /* CEDS00000377 */ 04770005
+             & REC_CRT0220.F_SPLT_DATE <=            /* CEDS00000345 */ 04780005
+                 REC_CRT0220.WARRANTY_EXP_DATE       /* CEDS00000345 */ 04790005
+             THEN                                                       04800005
+               DO;                                                      04810005
+                 REC_CRT0220.SERVICE_LVL_CODE =                         04820005
+                             T690_ARRAY.A_SLC(I);    /* CEDS00000352 */ 04830005
+                 REC_CRT0220.INDNULL(7) = 0;                            04840005
+                 SWITCH_F_SLC = TRUE;                                   04850005
+               END;                                                     04860005
+       END;                                                             04870005
+     ELSE                          /* NOT A FLEXIBLE WARRANTY MACHINE */04880005
+       DO;                                                              04890005
+         REC_CRT0220.INDNULL(13) = -1;                /* FLEXIBLE TOW */04900005
+         REC_CRT0220.INDNULL(14) = -1;         /* FLEXIBLE SPILT DATE */04910005
+       END;                                             /* EOC RB01281*/04920005
+   END;                                                                 04930005
+ REC_CRT0220.EFFECTIVE_DATE = WRK_EFFECTIVE_DATE;                       04940005
+                                                                        04950005
+ END RCBAMUM_CREATE_CRT0220;                                            04960005
+1/********************************************************************/ 04970005
+ /*      DETERMINE WARRANTY SLC VALUES                   SOC PTM1072 */ 04980005
+ /*                                                                  */ 04990005
+ /*                                                                  */ 05000005
+ /*                                                                  */ 05010005
+ /*      IN THE CREATE RCT0220 ROUTINE TEH EFFECTIVE DATE HAS BEEN   */ 05020005
+ /*      CHANGED FROM WRK_EFFECTIVE DATE TO DVIAA (INSTALLATION?)    */ 05030005
+ /*      IN CASE THE BOX IS UNDER WARRANTY                           */ 05040005
+ /*      THEREFOR USING SLC FROM THAT DATE IS ALLOWED                */ 05050005
+ /*                                                                  */ 05060005
+ /********************************************************************/ 05070005
+ RCBAMUM_DET_WAR_SLC: PROC;                                             05080005
+                                                                        05090005
+ IF PARM_RCBZ32S.SERVICE_LVL_CODE_1 ¬= WRK_HI3                          05100005
+ THEN DO;                                                               05110005
+   IF SWITCH_F_SLC = FALSE                                 /* RB01281 */05120005
+   THEN DO;                                                /* RB01281 */05130005
+      REC_CRT0220.SERVICE_LVL_CODE =                                    05140005
+                       PARM_RCBZ32S.SERVICE_LVL_CODE_1;                 05150005
+      REC_CRT0220.INDNULL(7) = 0;                                       05160005
+   END;                                                    /* RB01281 */05170005
+   REC_CRT0220.WARRANTY_EXP_DATE =                                      05180005
+                     PARM_RCBZ32S.END_DATE;                             05190005
+   IF PARM_RCBZ32S.SERVICE_LVL_CODE_2 ¬= WRK_HI3                        05200005
+     THEN DO;                                                           05210005
+       REC_CRT0220.END_DATE = PARM_RCBZ32S.END_DATE_1;                  05220005
+       CALL RCBAMUM_WRITE_CRT0220;                                      05230005
+       REC_CRT0220.EFFECTIVE_DATE =                                     05240005
+                   PARM_RCBZ32S.START_DATE_2;                           05250005
+       REC_CRT0220.END_DATE = PARM_RCBZ32S.END_DATE;                    05260005
+       REC_CRT0220.SERVICE_LVL_CODE =                                   05270005
+                         PARM_RCBZ32S.SERVICE_LVL_CODE_2;               05280005
+     END;                                                               05290005
+ END;                                                                   05300005
+ ELSE                                                                   05310005
+   DO;                                                                  05320005
+     IF SWITCH_F_SLC = TRUE                          /* SOC RB01281 */  05330005
+     THEN                                                               05340005
+         REC_CRT0220.INDNULL(7)          = 0;                           05350005
+     ELSE                                                               05360005
+         REC_CRT0220.INDNULL(7)          = -1;       /* EOC RB01281 */  05370005
+   END;                                                                 05380005
+ CALL RCBAMUM_WRITE_CRT0220;                                            05390005
+ END RCBAMUM_DET_WAR_SLC;                             /* EOC PTM1072 */ 05400005
+1/********************************************************************/ 05410005
+ /*      CREATE A CRT_RCBT0380 RECORD                                */ 05420005
+ /********************************************************************/ 05430005
+0RCBAMUM_CREATE_CRT0380 : PROC;                                         05440005
+                                                                        05450005
+ REC_CRT0380.COUNTRY_ID             =  PARM_RCBABN0.RCYAA;              05460005
+ REC_CRT0380.EFFECTIVE_DATE_TXN     =  WRK_EFFECTIVE_DATE;              05470005
+ REC_CRT0380.REC_ID.TABLE_NUMBER    = '0380';                           05480005
+ REC_CRT0380.REC_ID.ACTION          = 'I';                              05490005
+ REC_CRT0380.REC_ID.SOURCE_SYSTEM   = 'S';                              05500005
+ REC_CRT0380.REC_ID.PROCESS_TYPE    = 'M';                              05510005
+ REC_CRT0380.REC_ID.SOURCE_TXN_ID   = PARM_RCBABN0.RPGAD;               05520005
+                                                                        05530005
+ REC_CRT0380.PRODUCT_TYPE           = PARM_RCBABN0.CMAAB;               05540005
+ REC_CRT0380.ORIGIN                 = WRK_ORIGIN;                       05550005
+ REC_CRT0380.SEQUENCE_NUMBER        = WRK_SEQUENCE_NUMBER;              05560005
+ REC_CRT0380.COUNTRY_NUMBER         = PARM_RCBABN0.RCYAA;               05570005
+ IF PARM_RCBABN0.CAGAA ¬= ' '                                           05580005
+ THEN                                                                   05590005
+   DO;                                                                  05600005
+     REC_CRT0380.TYPE_OF_AGREEMENT = PARM_RCBABN0.CAGAA;                05610005
+     REC_CRT0380.INDNULL (05)      = 0;                                 05620005
+   END;                                                                 05630005
+ ELSE                                                                   05640005
+   DO;                                                                  05650005
+     REC_CRT0380.INDNULL (05) = -1;                                     05660005
+   END;                                                                 05670005
+ REC_CRT0380.EFFECTIVE_DATE         = WRK_EFFECTIVE_DATE;               05680005
+ REC_CRT0380.END_DATE               = '9999-12-31';                     05690005
+                                                                        05700005
+ END RCBAMUM_CREATE_CRT0380;                                            05710005
+1/********************************************************************/ 05720005
+ /*      WRITE HEADER RECORD TO CEDS ACTION FILE                     */ 05730005
+ /********************************************************************/ 05740005
+0RCBAMUM_WRITE_HEADER : PROC;                                           05750005
+ REC_HEADER.TXN_NBR = PARM_CNT.TXN_NBR;                                 05760005
+ REC_HEADER.UPSTR_INFO.UPSTR_RUN_DATE = PARM_INT_AREA.RUN_DATE;         05770005
+                                                       /* PTM 529 */    05780005
+0WRITE FILE (RCBAAC0) FROM (REC_HEADER);                                05790005
+0PARM_CNT.CNT_RCBAAC0_W = PARM_CNT.CNT_RCBAAC0_W + 1;                   05800005
+0PARM_CNT.CNT_BLKS_W    = PARM_CNT.CNT_BLKS_W + 1;                      05810005
+0END RCBAMUM_WRITE_HEADER;                                              05820005
+1/********************************************************************/ 05830005
+ /*      WRITE REF_RCBT0110 RECORD TO CEDS ACTION FILE               */ 05840005
+ /********************************************************************/ 05850005
+0RCBAMUM_WRITE_REF0110 : PROC;                                          05860005
+0WRITE FILE (RCBAAC0) FROM (REC_REF0110);                               05870005
+0PARM_CNT.CNT_RCBAAC0_W = PARM_CNT.CNT_RCBAAC0_W + 1;                   05880005
+0END RCBAMUM_WRITE_REF0110;                                             05890005
+1/********************************************************************/ 05900005
+ /*      WRITE CRT_RCBT0220 RECORD TO CEDS ACTION FILE               */ 05910005
+ /********************************************************************/ 05920005
+0RCBAMUM_WRITE_CRT0220 : PROC;                                          05930005
+0WRITE FILE (RCBAAC0) FROM (REC_CRT0220);                               05940005
+0PARM_CNT.CNT_RCBAAC0_W = PARM_CNT.CNT_RCBAAC0_W + 1;                   05950005
+0END RCBAMUM_WRITE_CRT0220;                                             05960005
+1/********************************************************************/ 05970005
+ /*      WRITE CRT_RCBT0380 RECORD TO CEDS ACTION FILE               */ 05980005
+ /********************************************************************/ 05990005
+0RCBAMUM_WRITE_CRT0380 : PROC;                                          06000005
+0WRITE FILE (RCBAAC0) FROM (REC_CRT0380);                               06010005
+0PARM_CNT.CNT_RCBAAC0_W = PARM_CNT.CNT_RCBAAC0_W + 1;                   06020005
+0END RCBAMUM_WRITE_CRT0380;                                             06030005
+1/********************************************************************/ 06040005
+ /*      WRITE TRAILER RECORD TO CEDS ACTION FILE                    */ 06050005
+ /********************************************************************/ 06060005
+0RCBAMUM_WRITE_TRAILER : PROC;                                          06070005
+ REC_TRAILER.TXN_NBR = PARM_CNT.TXN_NBR;                                06080005
+0WRITE FILE (RCBAAC0) FROM (REC_TRAILER);                               06090005
+0PARM_CNT.CNT_RCBAAC0_W = PARM_CNT.CNT_RCBAAC0_W + 1;                   06100005
+0END RCBAMUM_WRITE_TRAILER;                                             06110005
+1/********************************************************************/ 06120005
+ /*      INIT COMMON                                                 */ 06130005
+ /********************************************************************/ 06140005
+0RCBAMUM_INIT_COMMON : PROC;                                            06150005
+0                                        /* SET LEVEL AND MOD NAME   */ 06160005
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            06170005
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     06180005
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = WRK_MOD_NAME;                  06190005
+ PARM_INT_AREA.COUNTRY_NUMBER          = PARM_RCBABN0.RCYAA;            06200005
+                                                                        06210005
+0END RCBAMUM_INIT_COMMON;                                               06220005
+1/********************************************************************/ 06230005
+ /*                                                                  */ 06240005
+ /* MODULE NAME     : RCBAMUM_CHECK_REQUESTED                        */ 06250005
+ /*                                                                  */ 06260005
+ /* DESCRIPTION     : CHECK WHETHER A PRODUCT IS CURRENTLY           */ 06270005
+ /*                   REQUESTED BY CEDS (THAT MEANS THAT HW_REQUEST_ */ 06280005
+ /*                   CEDS EQ. '1' AND THE COMPLETION DATE ¬= BLANK) */ 06290005
+ /*                                                                  */ 06300005
+ /*                   IF THE PRODUCT IS CURRENTLY REQUESTED THE TXN  */ 06310005
+ /*                   EFFECTIVE DATE MUST BE >= EFFECTIVE DATE OF    */ 06320005
+ /*                   THE RCBT0070 RECORD. IF NOT IT WILL BE SET TO  */ 06330005
+ /*                   THIS DATE AND MESSAGE 0170 WILL BE ISSUED.     */ 06340005
+ /*                                                                  */ 06350005
+ /*               '0'  A  '1' (HW_REQUEST_CEDS)                      */ 06360005
+ /*   T0070 :  |------||------------------------>                    */ 06370005
+ /*               B                                                  */ 06380005
+ /*   TXN   :     |----------------------------->                    */ 06390005
+ /*                                                                  */ 06400005
+ /*   TXN EFFECTIVE DATE WILL BE SET FROM B TO A                     */ 06410005
+ /*                                                                  */ 06420005
+ /********************************************************************/ 06430005
+0RCBAMUM_CHECK_REQUESTED : PROC;                                        06440005
+0CALL RCB017M (PARM_RCBABN0.RCYAA,           /* COUNTRY NUMBER */       06450005
+               PARM_RCBABN0.CMAAB,           /* PRODUCT_TYPE   */       06460005
+               WRK_TXN_DATE,                                            06470005
+               WRK_HW_REQUEST_CEDS,                                     06480005
+               WRK_RCBT0070_EFF_DATE,                   /* RB01140  */  06490005
+               PTR_INT_AREA);                                           06500005
+0IF (WRK_RCBT0070_EFF_DATE ¬= '' &                      /* RB01140  */  06510005
+     WRK_EFFECTIVE_DATE < WRK_RCBT0070_EFF_DATE)        /* RB01140  */  06520005
+ THEN                                                                   06530005
+   DO;                                                                  06540005
+     CALL RCBAMUM_ISSUE_MSG_0170;                                       06550005
+     WRK_EFFECTIVE_DATE = WRK_RCBT0070_EFF_DATE;        /* RB01140  */  06560005
+   END;                                                                 06570005
+0END RCBAMUM_CHECK_REQUESTED;                                           06580005
+1/********************************************************************/ 06590005
+ /*      INITIALIZE                                                  */ 06600005
+ /*      CONVERT ALL DATES                                           */ 06610005
+ /********************************************************************/ 06620005
+0RCBAMUM_INIT_PROCESS : PROC;                                           06630005
+0REC_HEADER                        =  '';                               06640005
+ REC_TRAILER                       =  '';                               06650005
+ REC_HEADER.REC_ID.TABLE_NUMBER    =  '0000';                           06660005
+ REC_TRAILER.REC_ID.TABLE_NUMBER   =  '9999';                           06670005
+ REC_HEADER.COUNTRY_ID             =  PARM_RCBABN0.RCYAA;               06680005
+ REC_TRAILER.COUNTRY_ID            =  PARM_RCBABN0.RCYAA;               06690005
+ REC_REF0110                       =  '';                               06700005
+ REC_CRT0220                       =  '';                               06710005
+ REC_CRT0380                       =  '';                               06720005
+ REC_CRT0380.INDNULL (*)           =  99;                               06730005
+                                                                        06740005
+ PARM_RCBZ32S              = '';                          /* PTM1072 */ 06750005
+0PTR_RCBZ02S               =  ADDR (PARM_RCBZ02S);                      06760005
+ PTR_RCBZ03S               =  ADDR (PARM_RCBZ03S);                      06770005
+ PTR_RCBZ23S               =  ADDR (PARM_RCBZ23S);                      06780005
+ PTR_RCBV500               =  ADDR (TB_RCBV500);      /* SOC RB01281 */ 06790005
+ PTR_RCBV500I              =  ADDR (TB_RCBV500_I);                      06800005
+ PTR_RETURN_AREA           =  ADDR (RETURN_AREA);     /* EOC RB01281 */ 06810005
+                                                                        06820005
+0PARM_RCBZ03S                =  '';                                     06830005
+ PARM_RCBZ03S.WD_IN_FORMAT   = 'YYDDD';                                 06840005
+ PARM_RCBZ03S.WD_OUT_FORMAT  = 'ISO';                                   06850005
+ PARM_RCBZ03S.WD_FUNCTION    = 'C';                                     06860005
+ IF PARM_RCBABN0.DVIAA = 0                        /* SOC CEDS00000336 */06870005
+ THEN                                                                   06880005
+   WRK_VALID_INST_DATE = FALSE;                   /* EOC CEDS00000336 */06890005
+ WRK_DATE_PIC_YYDDD          = PARM_RCBABN0.DVXAH;                      06900005
+ PARM_RCBZ03S.WD_IN_DATE     = WRK_DATE_PIC_YYDDD;                      06910005
+ CALL RCB004M (PTR_RCBZ03S);                                            06920005
+ IF PARM_RCBZ03S.WD_STATUS = ' '                                        06930005
+ THEN                                                                   06940005
+   DO;                                                                  06950005
+     WRK_TXN_DATE = SUBSTR (PARM_RCBZ03S.WD_OUT_DATE,1,10);             06960005
+   END;                                                                 06970005
+ ELSE                                                                   06980005
+   DO;                                                                  06990005
+     CALL RCBAMUM_INVALID_DATE_MSG (PARM_RCBZ03S.WD_STATUS,             07000005
+                                    WRK_DATE_PIC_YYDDD);                07010005
+     CALL RCBAMUM_ERROR (NULL,                                          07020005
+                        'OTHER',                                        07030005
+                        '#002');                                        07040005
+   END;                                                                 07050005
+                                                                        07060005
+ PARM_INT_AREA.RUN_DATE                = WRK_TXN_DATE;                  07070005
+                                                                        07080005
+0IF PARM_RCBABN0.CAGAA ¬= PARM_RCBABN0.CAGXA &   /* CHECK WHICH DATE  */07090005
+    PARM_RCBABN0.CAGAA  = '6' &                  /* MUST BE USED AS   */07100005
+    PARM_RCBABN0.DVXAM ¬=  0                     /* EFFECTIVE DATE    */07110005
+ THEN                                                                   07120005
+   DO;                                                                  07130005
+     PARM_RCBZ03S                =  '';                                 07140005
+     WRK_DATE_PIC_YYDDD          =  PARM_RCBABN0.DVXAM;  /* ADD 1 DAY */07150005
+     PARM_RCBZ03S.WD_IN_DATE     =  WRK_DATE_PIC_YYDDD;                 07160005
+     PARM_RCBZ03S.WD_IN_FORMAT   =  'YYDDD';                            07170005
+     PARM_RCBZ03S.WD_OUT_FORMAT  =  'ISO';                              07180005
+     PARM_RCBZ03S.WD_FUNCTION    =  'C';                                07190005
+     PARM_RCBZ03S.WD_PERIOD      =  +1;                                 07200005
+     PARM_RCBZ03S.WD_PERIOD_TYPE =  'D';                                07210005
+     CALL RCB004M (PTR_RCBZ03S);                                        07220005
+     IF PARM_RCBZ03S.WD_STATUS = ' '                                    07230005
+     THEN                                                               07240005
+        DO;                                                             07250005
+          WRK_EFFECTIVE_DATE = SUBSTR (PARM_RCBZ03S.WD_OUT_DATE,1,10);  07260005
+        END;                                                            07270005
+     ELSE                                                               07280005
+        DO;                                                             07290005
+          CALL RCBAMUM_INVALID_DATE_MSG (PARM_RCBZ03S.WD_STATUS,        07300005
+                                         WRK_DATE_PIC_YYDDD);           07310005
+          CALL RCBAMUM_ERROR (NULL,                                     07320005
+                             'OTHER',                                   07330005
+                             '#003');                                   07340005
+        END;                                                            07350005
+   END;                                                                 07360005
+ ELSE                                                                   07370005
+   DO;                                                                  07380005
+     WRK_EFFECTIVE_DATE = WRK_TXN_DATE;                                 07390005
+   END;                                                                 07400005
+ CALL RCBAMUM_GET_F_TOW_RCB063;                          /* RB01281 */  07410005
+ CALL RCBAMUM_GET_F_REC_RCBT690;                    /* CEDS00000352 */  07420005
+                                                                        07430005
+0WRK_ORIGIN              =  SUBSTR (PARM_RCBABN0.RMAAB,1,2);            07440005
+ WRK_SEQUENCE_NUMBER     =  '00' || SUBSTR (PARM_RCBABN0.RMAAB,3,5);    07450005
+ WRK_HI3                 = HIGH(3);                       /* PTM1072 */ 07460005
+ WRK_LOW3                = LOW(3);                        /* RB01281 */ 07470005
+ SWITCH_F_SLC            = FALSE;                         /* RB01281 */ 07480005
+0END RCBAMUM_INIT_PROCESS;                                              07490005
+ /********************************************************************/ 07500005
+ /*                                                                  */ 07510005
+ /* MODULE NAME      : RETRIEVE_FLEX_WARR             /* SOC RB01281 */ 07520005
+ /*                                                                  */ 07530005
+ /* DESCRIPTION      : CHECK WHETHER THE MACHINE IS A FLEXIBLE       */ 07540005
+ /*                    WARRANTY MACHINE.                             */ 07550005
+ /*                                                                  */ 07560005
+ /********************************************************************/ 07570005
+ RCBAMUM_RETRIEVE_FLEX_WARR: PROC;                                      07580005
+                                                                        07590005
+ DCL WRK_FW_COUNTRY_NUMBER CHAR (03);                                   07600005
+ DCL WRK_FW_TYPE           CHAR (04);                                   07610005
+ DCL WRK_FW_MODEL          CHAR (03);                                   07620005
+ WRK_FW_COUNTRY_NUMBER   = PARM_RCBABN0.RCYAA;                          07630005
+ WRK_FW_TYPE             = PARM_RCBABN0.CMAAB;                          07640005
+ WRK_FW_MODEL            = PARM_RCBABN0.CMMAB;                          07650005
+                                                  /* SOC CEDS00000352 */07660005
+ DO J = 1 TO REC_COUNT BY 1;                                            07670005
+                                                 /* SOC CEDS00000399 */ 07680005
+  /*  IF (T690_ARRAY.A_COUNTRY(J)   =  WRK_FW_COUNTRY_NUMBER &       */ 07690005
+     IF  T690_ARRAY.A_COUNTRY(J)   =  WRK_FW_COUNTRY_NUMBER &           07700005
+                                                 /* EOC CEDS00000399 */ 07710005
+         T690_ARRAY.A_TYPE(J)      =  WRK_FW_TYPE           &           07720005
+         T690_ARRAY.A_MODEL(J)     =  WRK_FW_MODEL          &           07730005
+                                                 /* SOC CEDS00000399 */ 07740005
+  /*     (T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE   <=          07750005
+          T690_ARRAY.A_END_DATE(J)))                                 */ 07760005
+         T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE    &           07770005
+         WRK_EFFECTIVE_DATE       <=  T690_ARRAY.A_END_DATE(J)          07780005
+                                                 /* EOC CEDS00000399 */ 07790005
+     THEN DO;                                                           07800005
+           WRK_F_TYPE_OF_WARRANTY = TRUE;                               07810005
+           I = J;                                                       07820005
+           J = REC_COUNT;                                               07830005
+         END;                                                           07840005
+     ELSE                                                               07850005
+        WRK_F_TYPE_OF_WARRANTY = FALSE;                                 07860005
+ END;                                                                   07870005
+                                                                        07880005
+ IF WRK_F_TYPE_OF_WARRANTY = FALSE THEN                                 07890005
+ DO J = 1 TO REC_COUNT BY 1;                                            07900005
+                                                 /* SOC CEDS00000399 */ 07910005
+  /*  IF (T690_ARRAY.A_COUNTRY(J)   =  WRK_FW_COUNTRY_NUMBER &       */ 07920005
+     IF  T690_ARRAY.A_COUNTRY(J)   =  WRK_FW_COUNTRY_NUMBER &           07930005
+                                                 /* EOC CEDS00000399 */ 07940005
+         T690_ARRAY.A_TYPE(J)      =  WRK_FW_TYPE           &           07950005
+         T690_ARRAY.A_MODEL(J)     =  '***'                 &           07960005
+                                                 /* SOC CEDS00000399 */ 07970005
+  /*     (T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE   <=          07980005
+          T690_ARRAY.A_END_DATE(J)))                                 */ 07990005
+         T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE    &           08000005
+         WRK_EFFECTIVE_DATE       <=  T690_ARRAY.A_END_DATE(J)          08010005
+                                                 /* EOC CEDS00000399 */ 08020005
+     THEN DO;                                                           08030005
+           WRK_F_TYPE_OF_WARRANTY = TRUE;                               08040005
+           I = J;                                                       08050005
+           J = REC_COUNT;                                               08060005
+         END;                                                           08070005
+     ELSE                                                               08080005
+        WRK_F_TYPE_OF_WARRANTY = FALSE;                                 08090005
+ END;                                                                   08100005
+                                                                        08110005
+ IF WRK_F_TYPE_OF_WARRANTY = FALSE THEN                                 08120005
+ DO J = 1 TO REC_COUNT BY 1;                                            08130005
+                                                 /* SOC CEDS00000399 */ 08140005
+  /*  IF (T690_ARRAY.A_COUNTRY(J)   =  '***'                 &       */ 08150005
+     IF  T690_ARRAY.A_COUNTRY(J)   =  '***'                 &           08160005
+                                                 /* EOC CEDS00000399 */ 08170005
+         T690_ARRAY.A_TYPE(J)      =  WRK_FW_TYPE           &           08180005
+         T690_ARRAY.A_MODEL(J)     =  WRK_FW_MODEL          &           08190005
+                                                 /* SOC CEDS00000399 */ 08200005
+  /*     (T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE   <=          08210005
+          T690_ARRAY.A_END_DATE(J)))                                 */ 08220005
+         T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE    &           08230005
+         WRK_EFFECTIVE_DATE       <=  T690_ARRAY.A_END_DATE(J)          08240005
+                                                 /* EOC CEDS00000399 */ 08250005
+     THEN DO;                                                           08260005
+           WRK_F_TYPE_OF_WARRANTY = TRUE;                               08270005
+           I = J;                                                       08280005
+           J = REC_COUNT;                                               08290005
+         END;                                                           08300005
+     ELSE                                                               08310005
+        WRK_F_TYPE_OF_WARRANTY = FALSE;                                 08320005
+ END;                                                                   08330005
+                                                                        08340005
+ IF WRK_F_TYPE_OF_WARRANTY = FALSE THEN                                 08350005
+ DO J = 1 TO REC_COUNT BY 1;                                            08360005
+                                                 /* SOC CEDS00000399 */ 08370005
+  /*  IF (T690_ARRAY.A_COUNTRY(J)   =  '***'                 &       */ 08380005
+     IF  T690_ARRAY.A_COUNTRY(J)   =  '***'                 &           08390005
+                                                 /* EOC CEDS00000399 */ 08400005
+         T690_ARRAY.A_TYPE(J)      =  WRK_FW_TYPE           &           08410005
+         T690_ARRAY.A_MODEL(J)     =  '***'                 &           08420005
+                                                 /* SOC CEDS00000399 */ 08430005
+  /*     (T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE   <=          08440005
+          T690_ARRAY.A_END_DATE(J)))                                 */ 08450005
+         T690_ARRAY.A_EFF_DATE(J) <=  WRK_EFFECTIVE_DATE    &           08460005
+         WRK_EFFECTIVE_DATE       <=  T690_ARRAY.A_END_DATE(J)          08470005
+                                                 /* EOC CEDS00000399 */ 08480005
+     THEN DO;                                                           08490005
+           WRK_F_TYPE_OF_WARRANTY = TRUE;                               08500005
+           I = J;                                                       08510005
+           J = REC_COUNT;                                               08520005
+         END;                                                           08530005
+     ELSE                                                               08540005
+        WRK_F_TYPE_OF_WARRANTY = FALSE;                                 08550005
+ END;                                            /* EOC CEDS00000352 */ 08560005
+ END RCBAMUM_RETRIEVE_FLEX_WARR;                                        08570005
+                                                                        08580005
+ /********************************************************************/ 08590005
+ /*                                                                  */ 08600005
+ /* MODULE NAME      : GET_F_TOW_RCB063                              */ 08610005
+ /*                                                                  */ 08620005
+ /* DESCRIPTION      : GET THE FLEXIBLE TYPE OF WARRANTY FROM RCB063 */ 08630005
+ /*                    PARAMETER.                                    */ 08640005
+ /*                                                                  */ 08650005
+ /********************************************************************/ 08660005
+                                                                        08670005
+ RCBAMUM_GET_F_TOW_RCB063: PROC;                                        08680005
+                                                                        08690005
+ TB_RCBV500         = '';                                               08700005
+ TB_RCBV500_I       = '';                                               08710005
+ TB_RCB063.NUMBER   = 'RCB063';                                         08720005
+ /* TB_RCB063.FILLER   = 'APN'; */                                      08730005
+                                                                        08740005
+ CALL RCBI50M ('R',                                 /* PASS PARAMETER*/ 08750005
+                PTR_RCBV500,                                            08760005
+                PTR_RCBV500I,                                           08770005
+                PTR_RETURN_AREA,                                        08780005
+                PTR_INT_AREA);                                          08790005
+ SELECT(RETURN_AREA.RETURN_CODE);                                       08800005
+  WHEN(0)                                                               08810005
+    WRK_F_TOW = SUBSTR(TB_RCB063.F_WARRANTY_MACHINE,1,1);               08820005
+  WHEN(4)                                                               08830005
+    DO;                                                                 08840005
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    08850005
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = 'I050';                  08860005
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     08870005
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6  = 'PN';                    08880005
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6 =                          08890005
+                                       TB_RCBV500.PARAMETER_NUMBER;     08900005
+      CALL RCB0M1M (PTR_INT_AREA);                                      08910005
+      CALL RCBAMUM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),                08920005
+                            'DB2','#004');                              08930005
+    END;                                                                08940005
+  OTHERWISE                                                             08950005
+    CALL RCBAMUM_ERROR(ADDR(SQLCA),'DB2','#005');                       08960005
+ END;                                                                   08970005
+                                                                        08980005
+ END RCBAMUM_GET_F_TOW_RCB063;                                          08990005
+ /********************************************************************/ 09000005
+ /*                                                                  */ 09010005
+ /* MODULE NAME      : CALC_DATE                                     */ 09020005
+ /*                                                                  */ 09030005
+ /* DESCRIPTION      : PROCESS DATE USING RCB004M                    */ 09040005
+ /*                                                                  */ 09050005
+ /********************************************************************/ 09060005
+                                                                        09070005
+ RCBAMUM_CALC_DATE: PROC   (EFF_DATE,                                   09080005
+                            CALC_TYPE,                                  09090005
+                            CALC_VALUE) RETURNS(CHAR(10));              09100005
+                                                                        09110005
+ DCL EFF_DATE     CHAR(10);                                             09120005
+ DCL CALC_TYPE    CHAR(1);                                              09130005
+ DCL CALC_VALUE   FIXED DEC(3,0);                                       09140005
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';                                      09150005
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';                                      09160005
+ DATE_AREA.WD_FUNCTION    = 'C';                                        09170005
+ DATE_AREA.WD_PERIOD_TYPE = CALC_TYPE;                                  09180005
+ DATE_AREA.WD_PERIOD      = CALC_VALUE;                                 09190005
+ DATE_AREA.WD_IN_DATE     = EFF_DATE;                                   09200005
+ CALL RCB004M (ADDR (DATE_AREA));;                                      09210005
+ IF DATE_AREA.WD_STATUS ¬= ' '                                          09220005
+ THEN                                                                   09230005
+   DO;                                                                  09240005
+     CALL RCBAMUM_ERROR (NULL,                                          09250005
+                         'OTHER',                                       09260005
+                         '#006');                                       09270005
+   END;                                                                 09280005
+                                                                        09290005
+ RETURN(DATE_AREA.WD_OUT_DATE);                                         09300005
+                                                                        09310005
+ END RCBAMUM_CALC_DATE;                               /* EOC RB01281 */ 09320005
+1/********************************************************************/ 09330005
+ /*                                                                  */ 09340005
+ /* MODULE NAME      : GET_F_REC_RCBT690         /* SOC CEDS00000352 */ 09350005
+ /*                                                                  */ 09360005
+ /* DESCRIPTION      : GET THE FLEXIBLE WARRANTY RECORDS FROM T690   */ 09370005
+ /*                    INTO T690 ARRAY                               */ 09380005
+ /********************************************************************/ 09390005
+0RCBAMUM_GET_F_REC_RCBT690: PROC;                                       09400005
+ /*   READ FILE TO GET RECORD COUNT FOR ARRAY SIZE */                   09410005
+  OPEN   FILE (RCBAMB0);                                                09420005
+  DO  WHILE (¬EOF_RCBAMB0);                                             09430005
+      READ FILE (RCBAMB0) INTO (FILE_RCBAMB0);                          09440005
+      REC_COUNT = REC_COUNT + 1;                                        09450005
+  END;                                                                  09460005
+                                                                        09470005
+  CLOSE   FILE (RCBAMB0);                                               09480005
+  EOF_RCBAMB0   = FALSE;                                                09490005
+                                                                        09500005
+  IF REC_COUNT > 0 THEN                                                 09510005
+   DO;                                                                  09520005
+     ALLOCATE T690_ARRAY;                                               09530005
+     /* READ THE FILE TO LOAD THE DATA INTO ARRAY */                    09540005
+     OPEN FILE (RCBAMB0);                   /* IN  - TABLE 690 TABLE */ 09550005
+     DO K = 1 TO REC_COUNT BY 1;                                        09560005
+       READ FILE (RCBAMB0) INTO (FILE_RCBAMB0);                         09570005
+                                                                        09580005
+       T690_ARRAY.A_COUNTRY(K)   = FILE_RCBAMB0.COUNTRY_NUMBER;         09590005
+       T690_ARRAY.A_TYPE(K)      = FILE_RCBAMB0.PRODUCT_TYPE;           09600005
+       T690_ARRAY.A_MODEL(K)     = FILE_RCBAMB0.MODEL_NUMBER;           09610005
+       T690_ARRAY.A_B_W_MNTHS(K) = FILE_RCBAMB0.BRAND_WARRANTY_MNT;     09620005
+       T690_ARRAY.A_SLC_NULLIND(K)                   /* CEDS00000377 */ 09630005
+             =  FILE_RCBAMB0.NULL_SERVICE_LVL_CODE;  /* CEDS00000377 */ 09640005
+       T690_ARRAY.A_SLC(K)       = FILE_RCBAMB0.SERVICE_LVL_CODE;       09650005
+       T690_ARRAY.A_EFF_DATE(K)  = FILE_RCBAMB0.EFFECTIVE_DATE;         09660005
+       T690_ARRAY.A_END_DATE(K)  = FILE_RCBAMB0.END_DATE;               09670005
+     END;                                                               09680005
+   END;                                                                 09690005
+  ELSE                                                                  09700005
+    SWITCH_EMPTY_T690 = TRUE;                                           09710005
+                                                                        09720005
+ CLOSE FILE (RCBAMB0);                                                  09730005
+                                                                        09740005
+0END RCBAMUM_GET_F_REC_RCBT690;                  /* SOC CEDS00000352 */ 09750005
+1/********************************************************************/ 09760005
+ /*      END PROGRAM                                                 */ 09770005
+ /********************************************************************/ 09780005
+0RCBAMUM_END_PGM : PROC;                                                09790005
+0                                        /* RESET LEVEL              */ 09800005
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            09810005
+0END RCBAMUM_END_PGM;                                                   09820005
+1/********************************************************************/ 09830005
+ /*      ISSUE MSG 0010                                              */ 09840005
+ /********************************************************************/ 09850005
+0RCBAMUM_ISSUE_MSG_0010 : PROC;                                         09860005
+0PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                          09870005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_TYPE    = 'BU';                         09880005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0010';                       09890005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_1   = 'HW';                        09900005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_1  = PARM_RCBABN0.CMAAB  ||       09910005
+                                           WRK_ORIGIN          ||       09920005
+                                           WRK_SEQUENCE_NUMBER;         09930005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6   = 'FN';                        09940005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6  = 'TYPE OF MAINT.';            09950005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7   = 'NV';                        09960005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7  = PARM_RCBZ23S.TPMNT_WAR_VALUE;09970005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_8   = 'OV';                        09980005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_8  =  PARM_RCBZ23S.VALUE;         09990005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9   = 'TS';                        10000005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9  =  PARM_RCBABN0.QUBCJ;         10010005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_10  = 'TX';                        10020005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_10 = PARM_RCBABN0.RPGAD;          10030005
+0CALL RCB0M1M (PTR_INT_AREA);                                           10040005
+0END RCBAMUM_ISSUE_MSG_0010;                                            10050005
+1/********************************************************************/ 10060005
+ /*      ISSUE INVALID DATE MESSAGE 0012                             */ 10070005
+ /********************************************************************/ 10080005
+0RCBAMUM_INVALID_DATE_MSG : PROC (STATUS,                               10090005
+                                  VALUE);                               10100005
+0DCL STATUS        CHAR (01);                                           10110005
+0DCL VALUE         PIC '99999';                                         10120005
+0PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES    = ' ';                         10130005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_TYPE     = 'IS';                        10140005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER   = '0012';                      10150005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6   = 'DT';                        10160005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6  =  VALUE;                      10170005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7   = 'RC';                        10180005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7  =  STATUS;                     10190005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_8   = 'TS';                        10200005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_8  =  PARM_RCBABN0.QUBCJ;         10210005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9   = 'TX';                        10220005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9  =  PARM_RCBABN0.RPGAD;         10230005
+0CALL RCB0M1M (PTR_INT_AREA);                                           10240005
+0END RCBAMUM_INVALID_DATE_MSG;                                          10250005
+1/********************************************************************/ 10260005
+ /*      ISSUE MSG 0170                                              */ 10270005
+ /********************************************************************/ 10280005
+0RCBAMUM_ISSUE_MSG_0170 : PROC;                                         10290005
+0PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES    = ' ';                         10300005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_TYPE     = 'BU';                        10310005
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER   = '0170';                      10320005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_1   = 'HW';                        10330005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_1  =  PARM_RCBABN0.CMAAB  ||      10340005
+                                            WRK_ORIGIN          ||      10350005
+                                            WRK_SEQUENCE_NUMBER;        10360005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6   = 'DN';                        10370005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6  = 'EFFECTIVE_DATE';            10380005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7   = 'D1';                        10390005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7  =  WRK_EFFECTIVE_DATE;         10400005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_8   = 'D2';                        10410005
+                                                        /* RB01140  */  10420005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_8  =  WRK_RCBT0070_EFF_DATE;      10430005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9   = 'TS';                        10440005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9  =  PARM_RCBABN0.QUBCJ;         10450005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_10  = 'TX';                        10460005
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_10 =  PARM_RCBABN0.RPGAD;         10470005
+0CALL RCB0M1M (PTR_INT_AREA);                                           10480005
+0END RCBAMUM_ISSUE_MSG_0170;                                            10490005
+1/********************************************************************/ 10500005
+ /*      CALL COMMON ERROR ROUTINE AFTER FILLING VARIABLES           */ 10510005
+ /********************************************************************/ 10520005
+0RCBAMUM_ERROR : PROC     (PTR_ERROR,                                   10530005
+                           ERR_TYPE,                                    10540005
+                           CALL_ID);                                    10550005
+0DCL PTR_ERROR    POINTER;                                              10560005
+ DCL ERR_TYPE     CHAR(8);                                              10570005
+ DCL CALL_ID      CHAR(4);                                              10580005
+0PARM_INT_AREA.PTR_ERROR      =  PTR_ERROR;                             10590005
+ PARM_INT_AREA.ERR_TYPE       =  ERR_TYPE;                              10600005
+ PARM_INT_AREA.CALL_ID        =  CALL_ID;                               10610005
+0CALL RCB0E1M (PTR_INT_AREA);                                           10620005
+0END RCBAMUM_ERROR;                                                     10630005
+1/*******************************************************************/  10640005
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                    */  10650005
+ /*******************************************************************/  10660005
+0%INCLUDE DAIFPLH ;                   /* COMPILE DATE/TIME STAMP    */  10670005
+ $DAIMOD (RCBAMUM);                   /* MODULE TO BE COMPILED      */  10680005
+0/*******************************************************************/  10690005
+ /* END OF ABR BLOCK                                                */  10700005
+ /*******************************************************************/  10710005
+0END RCBAMUM;                                                           10720005

@@ -1,0 +1,1853 @@
+1/* RCBDRHM - RCMS HW: DETERMINE CHANGES                             */
+ /********************************************************************/
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /********************************************************************/
+ /* PROGRAM          : RCBDRHM                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLISQL                                        */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : THE EXTRACT OF KEYS OF INTEREST FOR THE       */
+ /*                    RCMS HW EXTRACT, WHICH HAVE CHANGED SINCE     */
+ /*                    THE LAST RCMS HW EXTRACT.                     */
+ /*                                                                  */
+ /* INPUT            : - DB2   : RCBV0030_CONTRACT                   */
+ /*                              RCBV0051_PI_HW_PR           RC01158 */
+ /*                              RCBV0110_HW_STATUS                  */
+ /*                              RCBV0125_DMMY_REAL          RB01320 */
+ /*                              RCBV0170_OU_HW                      */
+ /*                              RCBV0190_HW_CUST                    */
+ /*                              RCBV0220_SUPPL_CTR                  */
+ /*                              RCBV0240_SERV_CTR                   */
+ /*                              RCBV0241_PI_CTR             RC01158 */
+ /*                              RCBV0260_HW_IN_ORD                  */
+ /*                              RCBV0300_HW_REAL                    */
+ /*                              RCBV0340_HW_ADDR                    */
+ /*                              RCBV0380_HW_PR_MOD                  */
+ /*                              RCBV0500_PARM                       */
+ /*                              RCBV0721_RCMS_CU            PTM0919 */
+ /*                              RCBT0120_MESE_HW            RB01308 */
+ /*                                                                  */
+ /* OUTPUT           : - DB2   : RCBT0722_RCMS_HW            RC01219 */
+ /*                    - FILE  : RCB0M10                             */
+ /*                                                                  */
+ /* TEMPORARY        : - DB2   : RCBT0732_RCMS_H_TP          RC01219 */
+ /*                                                                  */
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */
+ /*                    RCB004M   DATE CALCULATION                    */
+ /*                    RCB019M   RETRIEVE COUNTRY NUMBERS            */
+ /*                    RCB020M   RETRIEVE RUN DATE                   */
+ /*                    RCBI50M   RETRIEVE PARAMETER                  */
+ /*                    RCB024M   LOCK DB2 TABLE PARTITIONS   RC01219 */
+ /*                                                                  */
+ /* MESSAGES         :                                               */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT                                */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */
+ /*           |              |                                       */
+ /* 1993-04-01| ----         | CEDS INITIAL DEVELOPMENT              */
+ /* 1995-06-13| ----         | CHANGE OF TEMPORARY TABLE             */
+ /* 1995-09-14| PTM0719      | WORK TABLES ARE PERMANENT     (DG)    */
+ /* 1996-04-10| PTM0919      | RENUMBERING RESOLUTION                */
+ /* 1996-04-22| RC01158      | PRIME INPUT                           */
+ /* 1996-11-15| RA01171      | CEDS OPTION FOR HVP DATA HANDLING     */
+ /* 1997-04-11| PTM1036      | CORRECTED PROLOG                      */
+ /* 1998-04-28| PTM1174      | PERFORMANCE                           */
+ /* 1999-02-25| PTM1249      | CHECK CHANGED WARRANTY SPLIT DATE     */
+ /* 1999-07-06| RC01219      | DORO                                  */
+ /* 1999-08-17| PTM1285      | REPLACE ALL MACHINES FOR ADDRESS RESOL*/
+ /* 2000-11-30| PTM1339      | ADD COMMITS FOR TEMP TABLES           */
+ /* 2001-12-14| RA01229      | SERV REF INTERIM                      */
+ /* 2004-07-27| RB01260      | MULTIPLE PEW INTERFACES PER DAY       */
+ /* 2009-01-22| RB01298      | SELECTION OF CHANGED KEYS TO CONSIDER */
+ /*           |              | SPLIT DATE IN T220 FOR TEMEA-T080048  */
+ /* 2010-08-11| RB01308      | RETRIEVE CHANGED KEYS FROM TABLE      */
+ /*           |              | RCBV0120_MESE_HW                      */
+ /* 2012-03-03| RB01320      | CEDS 3.3 A17 RELEASE: SUPPORT FOR     */
+ /*           |              | LONG SERIAL IN DOWNSTREAMS            */
+ /* 2014-12-19| CEDS00000719 | T10-2068 PERFORMANCE TUNING FOR       */
+ /*           |              | RCMS LONG SERIAL                      */
+ /* 2015-01-05| RC01349      | PCEDSP-0522 LONG SERIAL FIELD         */
+ /*           |              | PROCESSING FOR IBM & NON IBM MACHINES */
+ /* 2015-02-03| CEDS00000728 | TREC 2121 : T125 DATA RETRIEVED ONLY  */
+ /*           |              | FOR COUNTRY REQUESTED IN RCB000       */
+ /* 2015-06-26| CEDS00000750 | CODE CHANGES ARE DONE TO POPULATE     */
+ /*           |              | CORRECT SHORT SERIAL VALUES IN RCMS   */
+ /*           |              | EXTRACT FILE                          */
+ /********************************************************************/
+ /*  (CHECK(
+ R001_LOCK_TABLES                ,
+ R800_CLEAR_OUTPUT_TABLE         ,
+ R801_RETR_INSERT_FROM_RCBV0030  ,
+ R802_RETR_INSERT_FROM_RCBV0110  ,
+ R803_RETR_INSERT_FROM_RCBV0170  ,
+ R804_RETR_INSERT_FROM_RCBV0190  ,
+ R805_RETR_INSERT_FROM_RCBV0220  ,
+ R806_RETR_INSERT_FROM_RCBV0240  ,
+ R807_RETR_INSERT_FROM_RCBV0260  ,
+ R808_RETR_INSERT_FROM_RCBV0300  ,
+ R809_RETR_INSERT_FROM_RCBV0340  ,
+ R810_RETR_INSERT_FROM_RCBV0380  ,
+ R811_RETR_INSERT_FROM_RCBV0051  ,
+ R812_RETR_INSERT_FROM_RCBV0241  ,
+ R820_DISTINCT_COPY_RCBV0722     ,
+ R821_FETCH_REAL_SER             ,                              RB01320
+ R822_UPDATE_REAL_SER            ,                              RB01320
+ R900_INIT_PROGRAM               ,
+ R999_END_PROGRAM                ,
+ RCBDRHM_ERROR                 )):                                   */
+1RCBDRHM: PROC
+          OPTIONS (MAIN)
+          REORDER;
+ DEFAULT RANGE (*)        STATIC;
+1/********************************************************************/
+ /*  PARAMETERS                                                      */
+ /********************************************************************/
+ DCL PTR_INT_AREA        PTR;          /* INTERFACE AREA             */
+ DCL PTR_RETURN_AREA_BB  PTR;          /* RETURN AREA FROM BB        */
+ DCL PTR_COUNTRY_AREA    PTR;          /* INTERFACE RCB019M          */
+ DCL PTR_RUN_DATE_AREA   PTR;          /* INTERFACE RCB020M          */
+
+ DCL 1 PARM_INT_AREA,                          /* INTERFACE AREA     */
+       %INCLUDE (RCBZ01S);;
+ DCL 1 RETURN_AREA_BB,                         /* RETURN AREA        */
+       %INCLUDE (RCBZ02S);;
+ DCL 1 COUNTRY_AREA,                           /* COUNTRY AREA       */
+       %INCLUDE (RCBZ26S);;
+ DCL 1 RUN_DATE_AREA,                          /* RUN DATE AREA      */
+       %INCLUDE (RCBZ28S);;
+ DCL 1 PARM_DATE_CALC,                         /* DATE CALC AREA     */
+      %INCLUDE (RCBZ03S);;
+ DCL 1 PARM_RCB005,                            /* RCMS EXTR PARM     */
+      %INCLUDE (RCBP05S);;
+ DCL 1 PARM_RCB024M,                           /* RCB024M PARM       */
+      %INCLUDE (RCBZ33S);;
+1/********************************************************************/
+ /* EXTERNAL ENTRIES                                                 */
+ /********************************************************************/
+
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGES ROUT     */
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* RETRIEVE SYSTEM DATE     */
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* RETRIEVE PARAMETER       */
+ DCL RCB004M   ENTRY  EXTERNAL;          /* DATE CALCULATION         */
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */
+ DCL RCB024M   ENTRY  EXTERNAL;          /* LOCK DB2 TABLE PARTITION */
+
+1/********************************************************************/
+ /* DB2 TABLE STRUCTURES                                             */
+ /********************************************************************/
+ DCL 1 TB_RCBV500,
+      %INCLUDE (RCB500S);;
+ DCL 1 TB_RCBV500_I,
+      %INCLUDE (RCB500SI);;
+ DCL 1 TB_RCBP05S            BASED (ADDR(TB_RCBV500)),
+      %INCLUDE (RCBP05S);;
+ DCL 1 TB_RCBP37S            BASED (ADDR(TB_RCBV500)),
+      %INCLUDE (RCBP37S);;
+ DCL 1 TB_RCBV125,                                        /* RB01320 */
+      %INCLUDE (RCB125S);;                                /* RB01320 */
+ /********************************************************************/
+ /*  BIT SWITCHES                                                    */
+ /********************************************************************/
+ DCL 1 SWITCHES,
+     3 TRUE                        BIT (1)         INIT ('1'B),
+                                                 /* SOC CEDS00000750 */
+     /*3 FALSE                     BIT (1)         INIT ('0'B);*/
+     3 FALSE                       BIT (1)         INIT ('0'B),
+     3 SWITCH_EOC_LONG_SER         BIT (1)         INIT ('0'B);
+                                                 /* EOC CEDS00000750 */
+ /********************************************************************/
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */
+ /********************************************************************/
+ DCL 1 WORK_FIELDS,
+    3 WRK_MOD_NAME                      CHAR (08)  INIT ('RCBDRHM'),
+    3 WRK_PRG_NAME                      CHAR (08)  INIT ('RCBDRHP'),
+    3 WRK_SYSTEM_TYPE                   CHAR (01)  INIT ('B'),
+    3 WRK_INDNULL                       FIXED BIN(15),
+    3 WRK_PIC_10                        PIC 'Z,ZZZ,ZZZ,ZZ9',
+    3 WRK_LAST_EXTR_DATE                CHAR (10),
+    3 WRK_START_CHANGE_PERIOD           CHAR (10),
+    3 WRK_START_FUTURE_PERIOD           CHAR (10),
+    3 WRK_END_FUTURE_PERIOD             CHAR (10),
+    3 WRK_RUN_DATE                      CHAR (10),
+    3 WRK_CTRYNO                        CHAR (03),
+    3 WRK_PGR_TYPE                      CHAR (03);
+
+1/********************************************************************/
+ /*  BUILTIN FUNCTIONS                                               */
+ /********************************************************************/
+ DCL (ADDR,
+     DATE,
+     TIME,
+     NULL,
+     STRING,
+     SUBSTR)                 BUILTIN;
+1/********************************************************************/
+ /* ON ERROR CONDITIONS                                              */
+ /********************************************************************/
+ %INCLUDE (RCB0E0M);
+  END;
+1/********************************************************************/
+ /* DB2/SQL SQLCA                                                    */
+ /********************************************************************/
+  EXEC SQL
+   INCLUDE SQLCA
+   ;
+ /********************************************************************/
+ /* DB2/SQL CURSORS                                                  */
+ /********************************************************************/
+ EXEC SQL                                             /* SOC RB01320 */
+   DECLARE CURSOR_LONG_SER CURSOR FOR
+   SELECT *
+   FROM RCBV0125_DMMY_REAL  A,
+        RCBT0732_RCMS_H_TP  B
+   WHERE  A.COUNTRY_NUMBER      = B.COUNTRY_NUMBER
+   AND    A.PRODUCT_TYPE        = B.PRODUCT_TYPE
+   AND    A.REAL_SERIAL_NUMBER  = B.ORIGIN||B.SEQUENCE_NUMBER
+   AND    A.COUNTRY_NUMBER      = :WRK_CTRYNO        /* CEDS00000728 */
+   FOR FETCH ONLY
+   ;
+                                                      /* EOC RB01320 */
+
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /********************************************************************/
+ CALL R900_INIT_PROGRAM;
+
+ CALL R800_CLEAR_OUTPUT_TABLES;
+
+ CALL R801_RETR_INSERT_FROM_RCBV0030;
+ CALL R802_RETR_INSERT_FROM_RCBV0110;
+ CALL R803_RETR_INSERT_FROM_RCBV0170;
+ CALL R804_RETR_INSERT_FROM_RCBV0190;
+ CALL R805_RETR_INSERT_FROM_RCBV0220;
+ CALL R806_RETR_INSERT_FROM_RCBV0240;
+ CALL R807_RETR_INSERT_FROM_RCBV0260;
+ CALL R808_RETR_INSERT_FROM_RCBV0300;
+ CALL R813_RETR_INSERT_FROM_RCBV0120;                /*  RB01308  */
+ IF PARM_RCB005.ADDRESS_RES = '1'
+ THEN
+   DO;
+     CALL R809_RETR_INSERT_FROM_RCBV0340;
+   END;
+ CALL R810_RETR_INSERT_FROM_RCBV0380;
+ IF PARM_RCB005.PI_TO_RCMS = 'Y'                          /* RA01171 */
+ THEN                                                     /* RA01171 */
+   DO;                                                    /* RA01171 */
+     CALL R811_RETR_INSERT_FROM_RCBV0051;                 /* RC01158 */
+     CALL R812_RETR_INSERT_FROM_RCBV0241;                 /* RC01158 */
+   END;                                                   /* RA01171 */
+ ELSE
+   DO;                                                    /* RA01171 */
+     CALL R811A_RETR_INS_FROM_RCBV0051;                   /* RC01229 */
+     CALL R812A_RETR_INS_FROM_RCBV0241;                   /* RC01229 */
+   END;                                                   /* RA01171 */
+
+ CALL R821_FETCH_REAL_SER;                                /* RB01320 */
+ CALL R999_END_PROGRAM;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R001_LOCK_TABLES                              */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R001_LOCK_TABLES: PROC;
+
+ PARM_RCB024M.COUNTRY_NUMBER = WRK_CTRYNO;            /* SOC RC01219 */
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0030_CONTRACT';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#001');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#002');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0051_PI_HW_PR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#003');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#004');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0110_HW_STATUS';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#005');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#006');
+     END;
+ END;
+                                                      /* SOC RB01320 */
+ /********************************************************************/
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0125_DMMY_REAL';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#062');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#063');
+     END;
+ END;
+                                                      /* EOC RB01320 */
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0170_OU_HW';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#007');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#008');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0190_HW_CUST';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#009');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#010');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0220_SUPPL_CTR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#011');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#012');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0240_SERV_CTR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#013');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#014');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0241_PI_CTR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#015');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#016');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0260_HW_IN_ORD';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#017');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#018');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0300_HW_REAL';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#019');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#020');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0340_HW_ADDR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#021');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#022');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0380_HW_PR_MOD';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#023');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#024');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0721_RCMS_CU';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#025');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#026');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0722_RCMS_HW';
+ PARM_RCB024M.LOCK_MODE      = 'E';                /* EXCLUSIVE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#027');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#028');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0732_RCMS_H_TP';
+ PARM_RCB024M.LOCK_MODE      = 'E';                /* EXCLUSIVE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#029');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#030');
+     END;
+ END;                                                  /* EOC RC01219 */
+ /********************************************************************/
+                                                       /* SOC RB01308 */
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0120_MESE_HW';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#056');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#057');
+     END;
+ END;
+                                                       /* EOC RB01308 */
+
+ END R001_LOCK_TABLES;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R800_CLEAR_OUTPUT_TABLES                      */
+ /*                                                                   */
+ /* DESCRIPTION      :  DELETE ALL OCCURENCES FROM THE OUTPUT TABLES  */
+ /*                     FOR THE CURRENT COUNTRY                       */
+ /*                                                                   */
+ /*********************************************************************/
+ R800_CLEAR_OUTPUT_TABLES: PROC;
+
+ EXEC SQL
+   DELETE FROM RCBT0722_RCMS_HW
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100) EXEC SQL COMMIT;                              /* PTM1339 */
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#031');
+     END;
+ END;
+
+ EXEC SQL
+   DELETE FROM RCBT0732_RCMS_H_TP
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100) EXEC SQL COMMIT;                              /* PTM1339 */
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#032');
+     END;
+ END;
+
+ END R800_CLEAR_OUTPUT_TABLES;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R801_RETR_INSERT_FROM_RCBV0030                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R801_RETR_INSERT_FROM_RCBV0030: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+         B.PRODUCT_TYPE
+        ,B.ORIGIN
+        ,B.SEQUENCE_NUMBER
+        ,B.COUNTRY_NUMBER
+        ,B.ORIGIN                                  /*SOC CEDS00000719 */
+        ,B.SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0030_CONTRACT  A
+         ,RCBV0240_SERV_CTR  B
+     WHERE A.COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND A.LAST_CHANGE_DATE   > :WRK_LAST_EXTR_DATE
+
+       AND B.COUNTRY_NUMBER     = A.COUNTRY_NUMBER
+       AND B.CONTRACT_NUMBER    = A.CONTRACT_NUMBER
+       AND :WRK_RUN_DATE        BETWEEN B.EFFECTIVE_DATE
+                                    AND B.END_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#033');
+     END;
+ END;
+
+ END R801_RETR_INSERT_FROM_RCBV0030;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R802_RETR_INSERT_FROM_RCBV0110                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R802_RETR_INSERT_FROM_RCBV0110: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0110_HW_STATUS
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#034');
+     END;
+ END;
+
+ END R802_RETR_INSERT_FROM_RCBV0110;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R803_RETR_INSERT_FROM_RCBV0170                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R803_RETR_INSERT_FROM_RCBV0170: PROC;
+
+                                                      /* SOC PTM1174 */
+                                                         /* PTM0719  */
+                                 /* RETRIEVE CHANGES BECAUSE OF TIME */
+                                       /* FUTURE BECOMING CURRENT    */
+                                       /* FUTURE OUTSIDE RET. PERIOD */
+                                       /* BECOMING INSIDE RET PERIOD */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0170_OU_HW
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#035');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R803_RETR_INSERT_FROM_RCBV0170;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R804_RETR_INSERT_FROM_RCBV0190                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R804_RETR_INSERT_FROM_RCBV0190: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0190_HW_CUST
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND TYPE_OF_RELATION   = 'U'
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#036');
+     END;
+ END;
+
+ END R804_RETR_INSERT_FROM_RCBV0190;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R805_RETR_INSERT_FROM_RCBV0220                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R805_RETR_INSERT_FROM_RCBV0220: PROC;
+                                                      /* SOC PTM1174 */
+                                                         /* PTM0719  */
+                                 /* RETRIEVE CHANGES BECAUSE OF TIME */
+                                       /* FUTURE BECOMING CURRENT    */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0220_SUPPL_CTR
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+        OR END_DATE           BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+        OR END_DATE           BETWEEN :WRK_START_FUTURE_PERIOD
+                                                       /* SOC RB01298 */
+ /*                               AND :WRK_END_FUTURE_PERIOD)         */
+                                  AND :WRK_END_FUTURE_PERIOD
+        OR (F_SPLT_DATE IS NOT NULL
+        AND F_SPLT_DATE       BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE))
+                                                       /* EOC RB01298 */
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#037');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R805_RETR_INSERT_FROM_RCBV0220;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R806_RETR_INSERT_FROM_RCBV0240                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R806_RETR_INSERT_FROM_RCBV0240: PROC;
+                                                      /* SOC PTM1174 */
+                                                         /* PTM0719  */
+                                 /* RETRIEVE CHANGES BECAUSE OF TIME */
+                                       /* FUTURE BECOMING CURRENT    */
+                                       /* FUTURE OUTSIDE RET. PERIOD */
+                                       /* BECOMING INSIDE RET PERIOD */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0240_SERV_CTR
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#038');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R806_RETR_INSERT_FROM_RCBV0240;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R807_RETR_INSERT_FROM_RCBV0260                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R807_RETR_INSERT_FROM_RCBV0260: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0260_HW_IN_ORD
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND ORIGIN             IS NOT NULL
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#039');
+     END;
+ END;
+
+ END R807_RETR_INSERT_FROM_RCBV0260;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R808_RETR_INSERT_FROM_RCBV0300                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R808_RETR_INSERT_FROM_RCBV0300: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0300_HW_REAL
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#040');
+     END;
+ END;
+
+ END R808_RETR_INSERT_FROM_RCBV0300;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R809_RETR_INSERT_FROM_RCBV0340                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R809_RETR_INSERT_FROM_RCBV0340: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0340_HW_ADDR
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#041');
+     END;
+ END;
+
+                                                      /* SOC PTM1285 */
+ /*IF WRK_CTRYNO = '866' | */
+ /*   WRK_CTRYNO = '846'   */                     /* PTM 919 */
+ /*THEN DO;                */
+                                                      /* EOC PTM1285 */
+   EXEC SQL
+     INSERT INTO RCBV0732_RCMS_H_TP
+       SELECT DISTINCT
+             PRODUCT_TYPE
+            ,ORIGIN
+            ,SEQUENCE_NUMBER
+            ,A.COUNTRY_NUMBER
+            ,ORIGIN                                /*SOC CEDS00000719 */
+            ,SEQUENCE_NUMBER                       /*EOC CEDS00000719 */
+       FROM RCBV0190_HW_CUST A,
+            RCBV0721_RCMS_CU B
+       WHERE A.COUNTRY_NUMBER   = :WRK_CTRYNO
+         AND B.COUNTRY_NUMBER   = A.COUNTRY_NUMBER
+         AND A.CUSTOMER_NUMBER  = B.CUSTOMER_NUMBER
+       ;
+
+   SELECT(SQLCODE);
+     WHEN(0) EXEC SQL COMMIT;                              /* PTM1339 */
+     WHEN(100);
+     OTHERWISE
+       DO;
+         CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                             'DB2',
+                             '#042');
+       END;
+     END;
+   /*END;*/                                                /* PTM1285 */
+ END R809_RETR_INSERT_FROM_RCBV0340;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R810_RETR_INSERT_FROM_RCBV0380                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R810_RETR_INSERT_FROM_RCBV0380: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP                        /* PTM0719  */
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0380_HW_PR_MOD
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#043');
+     END;
+ END;
+
+ END R810_RETR_INSERT_FROM_RCBV0380;
+1/*********************************************************************/
+ /*                                                       SOC RC01158 */
+ /* MODULE NAME      :  R811_RETR_INSERT_FROM_RCBV0051                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R811_RETR_INSERT_FROM_RCBV0051: PROC;
+                                    /* ADD CHECK ON SPLT DATE *PTM1249*/
+                                                      /* SOC PTM1174 */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0051_PI_HW_PR
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND ( LAST_CHANGE_DATE   BETWEEN :WRK_LAST_EXTR_DATE /* RB01260 */
+                                   AND :WRK_RUN_DATE
+        OR  WARRANTY_EXP_DATE  BETWEEN :WRK_LAST_EXTR_DATE
+                                   AND :WRK_RUN_DATE
+        OR (WARRANTY_SPLT_DATE BETWEEN :WRK_LAST_EXTR_DATE
+                                   AND :WRK_RUN_DATE
+        AND WARRANTY_SPLT_DATE IS NOT NULL) )
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#044');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R811_RETR_INSERT_FROM_RCBV0051;                   /* EOC RC01158 */
+1/*********************************************************************/
+ /*                                                       SOC RC01158 */
+ /* MODULE NAME      :  R812_RETR_INSERT_FROM_RCBV0241                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R812_RETR_INSERT_FROM_RCBV0241: PROC;
+                                                      /* SOC PTM1174 */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0241_PI_CTR
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  END_DATE           BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD
+       OR  EFFECTIVE_DATE     BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  EFFECTIVE_DATE     BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#045');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R812_RETR_INSERT_FROM_RCBV0241;                   /* EOC RC01158 */
+1/*********************************************************************/
+ /*                                                       SOC RC01158 */
+ /* MODULE NAME      :  R811A_RETR_INS_FROM_RCBV0051                  */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R811A_RETR_INS_FROM_RCBV0051: PROC;
+                                    /* ADD CHECK ON SPLT DATE *PTM1249*/
+                                                      /* SOC PTM1174 */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           A.PRODUCT_TYPE
+          ,A.ORIGIN
+          ,A.SEQUENCE_NUMBER
+          ,A.COUNTRY_NUMBER
+          ,A.ORIGIN                                /*SOC CEDS00000719 */
+          ,A.SEQUENCE_NUMBER                       /*EOC CEDS00000719 */
+     FROM RCBV0051_PI_HW_PR A, RCBV0050_HW_PR B
+     WHERE A.COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (A.LAST_CHANGE_DATE   BETWEEN :WRK_LAST_EXTR_DATE /*RB01260*/
+                                    AND :WRK_RUN_DATE
+        OR A.WARRANTY_EXP_DATE  BETWEEN :WRK_LAST_EXTR_DATE
+                                    AND :WRK_RUN_DATE
+        OR (A.WARRANTY_SPLT_DATE BETWEEN :WRK_LAST_EXTR_DATE
+                                     AND :WRK_RUN_DATE
+        AND A.WARRANTY_SPLT_DATE IS NOT NULL) )
+      AND  ( B.COUNTRY_NUMBER = :WRK_CTRYNO
+         AND A.COUNTRY_NUMBER = B.COUNTRY_NUMBER
+         AND A.PRODUCT_TYPE = B.PRODUCT_TYPE
+         AND A.ORIGIN = B.ORIGIN
+         AND A.SEQUENCE_NUMBER = B.SEQUENCE_NUMBER)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#044');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R811A_RETR_INS_FROM_RCBV0051;                    /* EOC RC01158 */
+1/*********************************************************************/
+ /*                                                       SOC RC01158 */
+ /* MODULE NAME      :  R812A_RETR_INS_FROM_RCBV0241                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R812A_RETR_INS_FROM_RCBV0241: PROC;
+                                                      /* SOC PTM1174 */
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           A.PRODUCT_TYPE
+          ,A.ORIGIN
+          ,A.SEQUENCE_NUMBER
+          ,A.COUNTRY_NUMBER
+          ,A.ORIGIN                                /*SOC CEDS00000719 */
+          ,A.SEQUENCE_NUMBER                       /*EOC CEDS00000719 */
+     FROM RCBV0241_PI_CTR A, RCBV0050_HW_PR B
+     WHERE A.COUNTRY_NUMBER     = :WRK_CTRYNO
+      AND (A.LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+       OR  A.END_DATE           BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  A.END_DATE           BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD
+       OR  A.EFFECTIVE_DATE     BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  A.EFFECTIVE_DATE     BETWEEN :WRK_START_FUTURE_PERIOD
+                                  AND :WRK_END_FUTURE_PERIOD)
+      AND  ( B.COUNTRY_NUMBER = :WRK_CTRYNO
+         AND A.COUNTRY_NUMBER = B.COUNTRY_NUMBER
+         AND A.PRODUCT_TYPE = B.PRODUCT_TYPE
+         AND A.ORIGIN = B.ORIGIN
+         AND A.SEQUENCE_NUMBER = B.SEQUENCE_NUMBER)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#045');
+     END;
+ END;
+                                                      /* EOC PTM1174 */
+ END R812A_RETR_INS_FROM_RCBV0241;                    /* EOC RC01158 */
+1/*********************************************************************/
+ /*                                                   /* SOC RB01308  */
+ /* MODULE NAME      :  R813_RETR_INSERT_FROM_RCBV0120                */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */
+ /*                    INTO RCBV0732_RCMS_H_TP                        */
+ /*                                                                   */
+ /*********************************************************************/
+ R813_RETR_INSERT_FROM_RCBV0120: PROC;
+
+ EXEC SQL
+   INSERT INTO RCBV0732_RCMS_H_TP
+     SELECT DISTINCT
+           PRODUCT_TYPE
+          ,ORIGIN
+          ,SEQUENCE_NUMBER
+          ,COUNTRY_NUMBER
+          ,ORIGIN                                  /*SOC CEDS00000719 */
+          ,SEQUENCE_NUMBER                         /*EOC CEDS00000719 */
+     FROM RCBV0120_MESE_HW
+     WHERE COUNTRY_NUMBER     = :WRK_CTRYNO
+       AND (LAST_CHANGE_DATE   BETWEEN :WRK_START_CHANGE_PERIOD
+                                  AND :WRK_RUN_DATE
+       OR  SERVICE_START_DATE BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE
+       OR  SERVICE_END_DATE   BETWEEN :WRK_LAST_EXTR_DATE
+                                  AND :WRK_RUN_DATE)
+     ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#058');
+     END;
+ END;
+
+ END R813_RETR_INSERT_FROM_RCBV0120;                /* EOC RB01308 */
+1/*********************************************************************/
+ /*                                                           RC01219 */
+ /* MODULE NAME      :  R820_DISTINCT_COPY_RCBV0722                   */
+ /*                                                                   */
+ /* DESCRIPTION      :  COPY THE DISTINCT KEYS FROM TABLE             */
+ /*                     RCBT0732_RCMS_H_TP INTO RCBT0722_RCMS_HW      */
+ /*                     FOR THE CURRENT COUNTRY                       */
+ /*                                                                   */
+ /*********************************************************************/
+ R820_DISTINCT_COPY_RCBV0722: PROC;
+
+
+ EXEC SQL
+   INSERT INTO RCBT0722_RCMS_HW
+   SELECT DISTINCT * FROM RCBT0732_RCMS_H_TP
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO
+   ;
+
+ SELECT(SQLCODE);
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */
+   WHEN(100);
+   OTHERWISE
+     DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#046');
+     END;
+ END;
+
+ END R820_DISTINCT_COPY_RCBV0722;
+                                                       /* SOC RB01320 */
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R821_FETCH_REAL_SER                           */
+ /*                                                                   */
+ /* DESCRIPTION      :  FETCH LONG SERIAL FOR THE MACHINE FROM        */
+ /*                     RCBT0125 TABLE                                */
+ /*                                                                   */
+ /*                                                                   */
+ /*********************************************************************/
+  R821_FETCH_REAL_SER: PROC;
+
+  EXEC SQL
+    OPEN CURSOR_LONG_SER
+   ;
+
+  SELECT(SQLCODE);
+    WHEN(0);
+    WHEN(100);
+    OTHERWISE
+    DO;
+    CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                        'DB2',
+                        '#059');
+    END;
+  END;
+
+  SWITCH_EOC_LONG_SER  = FALSE;                     /*SOC CEDS00000750*/
+
+  /*DO WHILE (SQLCODE = 0);*/
+  DO WHILE (¬SWITCH_EOC_LONG_SER);                  /*EOC CEDS00000750*/
+   EXEC SQL
+     FETCH CURSOR_LONG_SER INTO :TB_RCBV125
+  ;
+
+   SELECT(SQLCODE);
+    WHEN(0)
+    DO;
+     CALL R822_UPDATE_REAL_SER;
+    END;
+    /*WHEN(100);                                    /*SOC CEDS00000750*/
+    WHEN(100)
+    DO;
+     SWITCH_EOC_LONG_SER = TRUE;
+    END;                                            /*EOC CEDS00000750*/
+    OTHERWISE
+    DO;
+       CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#060');
+    END;
+   END;
+  END;
+
+  EXEC SQL
+    CLOSE CURSOR_LONG_SER
+   ;
+
+  SELECT(SQLCODE);
+   WHEN(0);
+   WHEN(100);
+   OTHERWISE
+   DO;
+    CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                        'DB2',
+                        '#064');
+   END;
+  END;
+
+  END R821_FETCH_REAL_SER;
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R822_UPDATE_REAL_SER                          */
+ /*                                                                   */
+ /* DESCRIPTION      :  UPDATE THE TEMPORARY TABLE WITH THE DUMMY     */
+ /*                     SHORT SERIAL FROM THE RCBV0125 TABLE          */
+ /*                                                                   */
+ /*                                                                   */
+ /*********************************************************************/
+ R822_UPDATE_REAL_SER: PROC;
+
+    EXEC SQL
+      UPDATE RCBT0732_RCMS_H_TP
+      SET ORIGIN            = :TB_RCBV125.DUMMY_ORIGIN,
+                                                   /*SOC CEDS00000719 */
+                                                       /* SOC RC01349 */
+          SEQUENCE_NUMBER   = :TB_RCBV125.DUMMY_SEQUENCE_NUM
+       /* SEQUENCE_NUMBER   = :TB_RCBV125.DUMMY_SEQUENCE_NUM */
+       /* SEQUENCE_NUMBER   = :TB_RCBV125.DUMMY_SEQUENCE_NUM,
+          REAL_ORIGIN    = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,1,2),
+          REAL_SEQ_NUM   = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,3)*/
+                                                       /* EOC RC01349 */
+                                                   /*EOC CEDS00000719 */
+      WHERE PRODUCT_TYPE           = :TB_RCBV125.PRODUCT_TYPE
+      AND  COUNTRY_NUMBER          = :TB_RCBV125.COUNTRY_NUMBER
+      AND  ORIGIN||SEQUENCE_NUMBER = :TB_RCBV125.REAL_SERIAL_NUMBER
+   ;
+  SELECT(SQLCODE);
+    WHEN(0);
+    WHEN(100);
+    OTHERWISE
+    DO;
+    CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                       'DB2',
+                       '#061');
+    END;
+   END;
+                                                       /* SOC RC01349 */
+    EXEC SQL
+      UPDATE RCBT0732_RCMS_H_TP
+      SET REAL_ORIGIN    = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,1,2),
+          REAL_SEQ_NUM   = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,3)
+      WHERE PRODUCT_TYPE           = :TB_RCBV125.PRODUCT_TYPE
+      AND  COUNTRY_NUMBER          = :TB_RCBV125.COUNTRY_NUMBER
+      AND  ORIGIN                  = :TB_RCBV125.DUMMY_ORIGIN
+      AND  SEQUENCE_NUMBER         = :TB_RCBV125.DUMMY_SEQUENCE_NUM
+   ;
+  SELECT(SQLCODE);
+    WHEN(0);
+    WHEN(100);
+    OTHERWISE
+    DO;
+    CALL RCBDRHM_ERROR (ADDR (SQLCA),
+                       'DB2',
+                       '#064');
+     END;
+    END;                                              /* EOC RC01349 */
+  END R822_UPDATE_REAL_SER;                            /* EOC RB01320*/
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R900_INIT_PROGRAM                             */
+ /*                                                                  */
+ /* DESCRIPTION      : INIT PROGRAM                                  */
+ /*                                                                  */
+ /********************************************************************/
+ R900_INIT_PROGRAM: PROC;
+
+                                             /* INITIALISE POINTERS  */
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);
+ PTR_RETURN_AREA_BB = ADDR(RETURN_AREA_BB);
+ PTR_COUNTRY_AREA   = ADDR(COUNTRY_AREA);
+ PTR_RUN_DATE_AREA  = ADDR(RUN_DATE_AREA);
+                                             /* INITIALISE VARIABLES */
+ PARM_INT_AREA.MSG_AREA       = '';
+ PARM_INT_AREA.ERR_AREA       = ' ';
+ PARM_INT_AREA.MSG_REQUEST    = 'O';
+ PARM_INT_AREA.MSG_TARGET     = 'F';
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PRG_NAME;
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;
+ PARM_INT_AREA.TXN_CODE       = '';
+ PARM_INT_AREA.VERSION        = '';
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;
+                                              /* OPEN MESSAGE FILE   */
+ CALL RCB0M1M(PTR_INT_AREA);
+                                              /* RETR. SYSTEM DATE   */
+ CALL RCB0T1M(PTR_INT_AREA);
+                                              /* RETRIEVE COUNTRY    */
+ CALL RCB019M (PTR_COUNTRY_AREA,
+               PTR_INT_AREA);
+
+ SELECT;                                      /* ONLY ONE COUNTRY    */
+   WHEN(COUNTRY_AREA.COUNT_CTRY = 0)
+     DO;
+       PARM_INT_AREA.COUNTRY_NUMBER    = '';
+       PARM_INT_AREA.MSG_VAR_CODES     = '';
+       PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+       PARM_INT_AREA.MESSAGE_NUMBER    = '0005';
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#047');
+     END;
+   WHEN(COUNTRY_AREA.COUNT_CTRY > 1)
+     DO;
+       PARM_INT_AREA.COUNTRY_NUMBER    = '';
+       PARM_INT_AREA.MSG_VAR_CODES     = '';
+       PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+       PARM_INT_AREA.MESSAGE_NUMBER    = '0189';
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#048');
+     END;
+   OTHERWISE
+     DO;
+       WRK_CTRYNO   = COUNTRY_AREA.CTRY_ARRAY(1).CTRYNO;
+       WRK_PGR_TYPE = COUNTRY_AREA.CTRY_ARRAY(1).PGR_TYPE;
+     END;
+ END;
+                                              /* LOCK TABLES         */
+ CALL R001_LOCK_TABLES;
+                                                /* RETRIEVE RUN DATE */
+ RUN_DATE_AREA.PROC_ID   =  COUNTRY_AREA.PROC_ID;
+ RUN_DATE_AREA.CTRYNO    =  WRK_CTRYNO;
+ RUN_DATE_AREA.PGR_TYPE  =  WRK_PGR_TYPE;
+
+ CALL RCB020M (PTR_RUN_DATE_AREA,
+               PTR_INT_AREA);
+
+ IF RUN_DATE_AREA.RUN_DATE = ''   /* NO RUN DATE RCB001 FOUND */
+ THEN
+   DO;
+     WRK_RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;
+   END;
+ ELSE
+   DO;
+     WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;
+   END;
+
+ PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RUN_DATE;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                       /* RETRIEVE LAST EXTRACT DATE */
+ TB_RCBV500   = '';
+ TB_RCBV500_I = '';
+ TB_RCBP37S.NUMBER  = 'RCB037';
+ TB_RCBP37S.PROC_ID = COUNTRY_AREA.PROC_ID;
+ TB_RCBP37S.CTRYNO  = WRK_CTRYNO;
+
+ CALL RCBI50M ('U',
+               ADDR(TB_RCBV500),
+               ADDR(TB_RCBV500_I),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+  WHEN (0)
+    DO;
+       WRK_LAST_EXTR_DATE = TB_RCBP37S.LAST_EXTR_DATE;
+
+             /* DETERMINE START_CHANGE_PERIOD = LAST_EXTR_DATE + 1   */
+             /* TO EXCLUDE LAST_EXTR_DATE FROM EXTRACT PERIOD        */
+       PARM_DATE_CALC = '';
+       PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';
+       PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';
+       PARM_DATE_CALC.WD_FUNCTION    = 'C';
+       PARM_DATE_CALC.WD_PERIOD      = 1;
+       PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';
+       PARM_DATE_CALC.WD_IN_DATE     = TB_RCBP37S.LAST_EXTR_DATE;
+
+       CALL RCB004M (ADDR(PARM_DATE_CALC));
+
+       IF PARM_DATE_CALC.WD_STATUS ¬= ''
+         THEN DO;
+           PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+           PARM_INT_AREA.MESSAGE_NUMBER    = '0012';
+           PARM_INT_AREA.MSG_VAR_CODES     = '';
+
+           PARM_INT_AREA.MSG_VAR_CODE_6    = 'DN';
+           PARM_INT_AREA.MSG_VAR_VALUE_6   = 'LAST_EXTR_DATE';
+           PARM_INT_AREA.MSG_VAR_CODE_7    = 'DT';
+           PARM_INT_AREA.MSG_VAR_VALUE_7   = PARM_DATE_CALC.WD_IN_DATE;
+           PARM_INT_AREA.MSG_VAR_CODE_8    = 'RC';
+           PARM_INT_AREA.MSG_VAR_VALUE_8   = PARM_DATE_CALC.WD_STATUS;
+           CALL RCB0M1M (PTR_INT_AREA);
+           CALL RCBDRHM_ERROR (NULL,
+                               'OTHER',
+                               '#049');
+            END;
+
+       WRK_START_CHANGE_PERIOD = PARM_DATE_CALC.WD_OUT_DATE;
+    END;
+  WHEN (4)                            /* NO LAST EXTRACT DATE FOUND  */
+    DO;
+       PARM_INT_AREA.MESSAGE_TYPE               = 'IS';
+       PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER    = 'I050';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES     = ' ';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6    = 'PN';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6   =
+                                       TB_RCBV500.PARAMETER_NUMBER;
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7    = 'PK';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7   =
+                                       TB_RCBV500.PARAMETER_KEY;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#050');
+    END;
+  OTHERWISE DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#051');
+            END;
+ END;
+
+                                       /* RETRIEVE RCMS EXTRACT PARM */
+ TB_RCBV500   = '';
+ TB_RCBV500_I = '';
+ TB_RCBP05S.NUMBER   = 'RCB005';
+ TB_RCBP05S.CTRYNO   = WRK_CTRYNO;
+ TB_RCBP05S.PGR_TYPE = WRK_PGR_TYPE;
+
+ CALL RCBI50M ('U',
+               ADDR(TB_RCBV500),
+               ADDR(TB_RCBV500_I),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+  WHEN (0)
+    DO;
+       PARM_RCB005        = TB_RCBP05S, BY NAME;
+
+    END;
+  WHEN (4)                            /* NO RCMS EXTR PARM FOUND     */
+    DO;
+       PARM_INT_AREA.MESSAGE_TYPE             = 'IS';
+       PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = 'I050';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6  = 'PN';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6 =
+                                       TB_RCBV500.PARAMETER_NUMBER;
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7  = 'PK';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7 =
+                                       TB_RCBV500.PARAMETER_KEY;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBDRHM_ERROR (NULL, 'OTHER', '#052');
+    END;
+  OTHERWISE DO;
+       CALL RCBDRHM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#053');
+            END;
+ END;
+
+             /* DETERMINE PERIOD TO CHECK FOR FUTURE INFORMATION     */
+             /* OUTSIDE THE RETENTION PERIOD BECOMING A FUTURE       */
+             /* PERIOD WITHIN THE RETENTION PERIOD.                  */
+ PARM_DATE_CALC = '';
+ PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';
+ PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';
+ PARM_DATE_CALC.WD_FUNCTION    = 'C';
+ PARM_DATE_CALC.WD_PERIOD      = PARM_RCB005.FUT_RET_PERIOD;
+ PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';
+ PARM_DATE_CALC.WD_IN_DATE     = WRK_LAST_EXTR_DATE;
+
+ CALL RCB004M (ADDR(PARM_DATE_CALC));
+
+ IF PARM_DATE_CALC.WD_STATUS ¬= ''
+ THEN
+   DO;
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0012';
+     PARM_INT_AREA.MSG_VAR_CODES     = '';
+
+     PARM_INT_AREA.MSG_VAR_CODE_6    = 'DN';
+     PARM_INT_AREA.MSG_VAR_VALUE_6   = 'LAST_EXTR_DATE';
+     PARM_INT_AREA.MSG_VAR_CODE_7    = 'DT';
+     PARM_INT_AREA.MSG_VAR_VALUE_7   = PARM_DATE_CALC.WD_IN_DATE;
+     PARM_INT_AREA.MSG_VAR_CODE_8    = 'RC';
+     PARM_INT_AREA.MSG_VAR_VALUE_8   = PARM_DATE_CALC.WD_STATUS;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBDRHM_ERROR (NULL,
+                         'OTHER',
+                         '#054');
+   END;
+
+ WRK_START_FUTURE_PERIOD = PARM_DATE_CALC.WD_OUT_DATE;
+
+
+             /* DETERMINE START_CHANGE_PERIOD = LAST_EXTR_DATE + 1   */
+             /* TO EXCLUDE LAST_EXTR_DATE FROM EXTRACT PERIOD        */
+ PARM_DATE_CALC = '';
+ PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';
+ PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';
+ PARM_DATE_CALC.WD_FUNCTION    = 'C';
+ PARM_DATE_CALC.WD_PERIOD      = PARM_RCB005.FUT_RET_PERIOD;
+ PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';
+ PARM_DATE_CALC.WD_IN_DATE     = WRK_RUN_DATE;
+
+ CALL RCB004M (ADDR(PARM_DATE_CALC));
+
+ IF PARM_DATE_CALC.WD_STATUS ¬= ''
+ THEN
+   DO;
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0012';
+     PARM_INT_AREA.MSG_VAR_CODES     = '';
+
+     PARM_INT_AREA.MSG_VAR_CODE_6    = 'DN';
+     PARM_INT_AREA.MSG_VAR_VALUE_6   = 'RUN_DATE';
+     PARM_INT_AREA.MSG_VAR_CODE_7    = 'DT';
+     PARM_INT_AREA.MSG_VAR_VALUE_7   = PARM_DATE_CALC.WD_IN_DATE;
+     PARM_INT_AREA.MSG_VAR_CODE_8    = 'RC';
+     PARM_INT_AREA.MSG_VAR_VALUE_8   = PARM_DATE_CALC.WD_STATUS;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBDRHM_ERROR (NULL,
+                         'OTHER',
+                         '#055');
+   END;
+
+ WRK_END_FUTURE_PERIOD = PARM_DATE_CALC.WD_OUT_DATE;
+
+ END R900_INIT_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R999_END_PROGRAM                              */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE COUNT MESSAGES                          */
+ /*                                                                  */
+ /********************************************************************/
+ R999_END_PROGRAM:  PROC;
+
+ CALL R820_DISTINCT_COPY_RCBV0722;                        /* RC01219 */
+
+                                    /* WRITE SUCCESFULLY ENDED MSG   */
+ PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER  = '9999';
+ PARM_INT_AREA.MSG_VAR_CODES   = '';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                    /* CLOSE MESSAGE FILE            */
+ PARM_INT_AREA.MSG_REQUEST = 'C';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ END R999_END_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBDRHM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBDRHM_ERROR: PROC    (PTR_ERROR,
+                         ERR_TYPE,
+                         CALL_ID);
+ DCL PTR_ERROR     PTR;
+ DCL ERR_TYPE      CHAR(8);
+ DCL CALL_ID       CHAR(4);
+ PARM_INT_AREA.PTR_ERROR          = PTR_ERROR;
+ PARM_INT_AREA.ERR_TYPE           = ERR_TYPE;
+ PARM_INT_AREA.CALL_ID            = CALL_ID;
+ CALL RCB0E1M (ADDR(PARM_INT_AREA));
+
+ END RCBDRHM_ERROR;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBDRHM);                      /* MODULE TO BE COMPILED   */
+ /*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+ END RCBDRHM;

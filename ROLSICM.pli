@@ -1,0 +1,1403 @@
+ /*------------------------------------------------------------------*/ 00015016
+ /* CLASSIFICAZIONE :       USO INTERNO I.B.M.          PGM: ROLSICM */ 00020009
+ /*                        PROPRIETA' DELLA IBM                      */ 00030009
+ /* QUESTO PROGRAMMA NON DEVE ESSERE UTILIZZATO FUORI DAI LOCALI IBM */ 00040009
+ /*------------------------------------------------------------------*/ 00050009
+ /*                                                                  */ 00060009
+ /*  NOME PGM        :   ROLSICM                                     */ 00070009
+ /*  CLASSIFICAZIONE :   USO INTERNO I.B.M.                          */ 00080009
+ /*  LINGUAGGIO      :   PL/I OPTIMIZING COMPILER                    */ 00090009
+ /*  ACCESSO DATI    :   SEQUENZIALE                                 */ 00100009
+ /*                                                                  */ 00110009
+ /*  PROGRAMMATORE   :   A. DEBBIA                                   */ 00120009
+ /*                                                                  */ 00130009
+ /*  FUNZIONE        :   AGGIORNA TABELLA RCBV241 CON DATI UTENTE    */ 00140009
+ /*                                                                  */ 00150009
+ /*                                                                  */ 00160009
+ /*  FILES INPUT     : 1- ROLSICI            PRIME INPUT UPDATE      */ 00170009
+ /*                    2- RCBT0051_PI_HW_PR  PRIME INPUT HW INVENTORY*/ 00180009
+ /*                    3- RCBV0240_SERV_CTR  SERVICE CONTRACT FOR HW */ 00190009
+ /*                    4- RCBV0241_PI_CTR    PRIME INPUT CONTRACT    */ 00200009
+ /*                                                                  */ 00210009
+ /*  FILES OUTPUT    : 1- ROLSICO  INQUIRY FILE                      */ 00220009
+ /*                  : 2- RCBV0241_PI_CTR    PRIME INPUT CONTRACT    */ 00230009
+ /*                                                                  */ 00240009
+ /*  MODULI CHIAMATI :    NESSUNO                                    */ 00250009
+ /*                                                                  */ 00260009
+ /*------------------------------------------------------------------*/ 00270009
+ /*  RIAS APPLICATE                                                  */ 00280009
+ /*------------------------------------------------------------------*/ 00290009
+ /* 2003/12/05 - PRIMO GIRO                                          */ 00300009
+ /* 2004/03/02 - CORREZIONE ERRORI                                   */ 00310009
+ /* 2004/03/08 - CAMBIO TRACCIATO OUTPUT,INSERITO CHECK TAB RCBV0070 */ 00320009
+ /* 2004/05/27 - INSERITO CONTROLLO HEADER TRAILER                   */ 00330009
+ /* 2005/02/21 - INSERTED CHECK RCBV0051 INSTEAD OF RCBT0070         */ 00340009
+ /* 2005/09/10 - CHANGE OU_CODE CONTROL & LAST CHANGE DATE           */ 00350009
+ /* 2005/09/26 - CHANGE SOURCE_INDICATOR DEFAULT SETTING  'L'        */ 00360009
+ /* 2007/12/05 - CEDS 3.1 PACKAGE - PI RECONCILIATION                */ 00370009
+ /* 2007/12/13 - CEDS 3.3 - LOCAL CHANGES FOR CEDS SOUTH       MBZ806*/ 00380009
+ /*------------------------------------------------------------------*/ 00390009
+ ROLSICM : PROC  OPTIONS(MAIN) REORDER ;                                00400009
+ DCL VERS    CHAR(40) INIT('CEDS ROL 3.3 - ROLSIC - VERS. 2007/12/13'); 00410009
+ /*------------------------------------------------------------------*/ 00420009
+ DCL  SYSPRINT FILE PRINT OUTPUT;                        /*2007/12/05*/ 00430009
+ DCL  ROLSICI  FILE RECORD INPUT ;                                      00440009
+ DCL  ROLSICO  FILE RECORD OUTPUT ;                                     00450009
+ DCL  EOF_ROLSICI    BIT(1)    INIT('0'B) ;                             00460009
+ ON ENDFILE(ROLSICI) EOF_ROLSICI = ('1'B) ;                             00470009
+                                                                        00480009
+ /*------------------------------------------------------------------*/ 00490009
+ /*    DICHIARATIVA AREA INPUT  FILE ROLSICI  (DELTA INVENT.)        */ 00500009
+ /*------------------------------------------------------------------*/ 00510009
+ DCL 1 AR_INPUT   CHAR (194)   INIT(' ')     ;                          00520009
+ DCL 1 INPUT  BASED(ADDR(AR_INPUT))          ,                          00530009
+       %INCLUDE (ROLBICS)                    ;;          /*2007/12/13*/ 00540009
+ DCL 1 HEADER  BASED(ADDR(AR_INPUT))         ,                          00550009
+       %INCLUDE (ROLSICSH)                   ;;                         00560009
+ DCL 1 TRAILER BASED(ADDR(AR_INPUT))         ,                          00570009
+       %INCLUDE (ROLSICST)                   ;;                         00580009
+ DCL   CHIAVE CHAR(16) DEF(AR_INPUT)  POS(1) ;                          00590009
+ /*------------------------------------------------------------------*/ 00600009
+ /*    DICHIARATIVA AREA OUTPUT FILE ROLSICO  (INQUIRY )             */ 00610009
+ /*------------------------------------------------------------------*/ 00620009
+ DCL 1 AR_OUTPUT  CHAR (204)  INIT(' ') ;                               00630009
+ DCL 1 OUTPUT BASED(ADDR(AR_OUTPUT))    ,                               00640009
+        %INCLUDE (ROLSICS)              ;;                              00650009
+ /*------------------------------------------------------------------*/ 00660009
+ /*                DICHIARATIVE VARIE                                */ 00670009
+ /*------------------------------------------------------------------*/ 00680009
+ DCL WRK_CYCLE_DATE  CHAR (10) INIT (' ') ;          /* DATA RUN     */ 00690009
+ DCL 1 CTR ,                                                            00700009
+       3 READ       PIC'(10)9'                     ,     /*2007/12/13*/ 00710009
+    /* 3 READ       FIXED BIN(31)                  ,       2007/12/13*/ 00720009
+       3 INSERT     FIXED BIN(31) ,                                     00730009
+       3 UPDATE     FIXED BIN(31) ,                                     00740009
+       3 DELETE     FIXED BIN(31) ,                                     00750009
+       3 REJECT     FIXED BIN(31) ,                                     00760009
+       3 INQUIRY    FIXED BIN(31) ,                                     00770009
+       3 WRITE      FIXED BIN(31) ;                                     00780009
+ CTR = '' ;                                                             00790009
+                                                                        00800009
+ DCL SW_OK         BIT(1) INIT('0'B) ;                                  00810009
+ DCL SW_INQ        BIT(1) INIT('0'B) ;                                  00820009
+ DCL SW_241        BIT(1) INIT('0'B) ;                                  00830009
+ DCL SW_240        BIT(1) INIT('0'B) ;                                  00840009
+ DCL FALSE         BIT(1)   INIT('0'B) STATIC ;                         00850009
+ DCL TRUE          BIT(1)   INIT('1'B) STATIC ;                         00860009
+ DCL SW_ERRORE_DB2 BIT(1) INIT('0'B) ;                                  00870009
+ DCL SW_ABEND      BIT(1) INIT('0'B) ;                                  00880009
+ DCL SQL_CODE      PIC'SZZZ9' ;                                         00890009
+ DCL COM_KEY       CHAR(26) INIT (' ') ;                                00900009
+ DCL SEGNAL        CHAR(90) INIT (' ') ;                                00910009
+ DCL DIGITS        CHAR(10) INIT('0123456789') ;    /*DIGIT VALUES   */ 00920009
+ DCL WK_TOS        CHAR(16) INIT(' ') ;                  /*2005/02/21*/ 00930009
+ DCL (DATETIME, ADDR, NULL, SUBSTR, INDEX)  BUILTIN ;                   00940009
+ /*------------------------------------------------------------------*/ 00950009
+ /*  DICHIARATIVE SQL                                                */ 00960009
+ /*------------------------------------------------------------------*/ 00970009
+  DCL 1 TB_RCBV241,                                                     00980009
+        %INCLUDE (RCB241S);;/*2007/12/13 NEW SEQUENCE_NUMBER CHAR(28)*/ 00990009
+  DCL 1 TB_RCBV241_I,                                                   01000009
+        %INCLUDE (RCB241SI);;                                           01010009
+                                                                        01020009
+ DCL PTR_RCBV241I   PTR;               /* PTR NULL-IND. INVENTORY    */ 01030009
+ PTR_RCBV241I       = ADDR(TB_RCBV241_I) ;                              01040009
+ DCL 1 RCBV241_I     BASED(PTR_RCBV241I) ,                              01050009
+      5 INDNULL_1              FIXED BIN(15) ,                          01060009
+      5 INDNULL_2              FIXED BIN(15) ,                          01070009
+      5 INDNULL_3              FIXED BIN(15) ,                          01080009
+      5 INDNULL_4              FIXED BIN(15) ,                          01090009
+      5 INDNULL_5              FIXED BIN(15) ,                          01100009
+      5 INDNULL_6              FIXED BIN(15) ,                          01110009
+      5 INDNULL_7              FIXED BIN(15) ,                          01120009
+      5 INDNULL_8              FIXED BIN(15) ,                          01130009
+      5 INDNULL_9              FIXED BIN(15) ,                          01140009
+      5 INDNULL_10             FIXED BIN(15) ,                          01150009
+      5 INDNULL_11             FIXED BIN(15) ,                          01160009
+      5 INDNULL_12             FIXED BIN(15) ,                          01170009
+      5 INDNULL_13             FIXED BIN(15) ,                          01180009
+      5 INDNULL_14             FIXED BIN(15) ,                          01190009
+      5 INDNULL_15             FIXED BIN(15) ,                          01200009
+      5 INDNULL_16             FIXED BIN(15) ,                          01210009
+      5 INDNULL_17             FIXED BIN(15) ,                          01220009
+      5 INDNULL_18             FIXED BIN(15) ,                          01230009
+      5 INDNULL_19             FIXED BIN(15) ,                          01240009
+      5 INDNULL_20             FIXED BIN(15) ,                          01250009
+      5 INDNULL_21             FIXED BIN(15) ,                          01260009
+      5 INDNULL_22             FIXED BIN(15) ,                          01270009
+      5 INDNULL_23             FIXED BIN(15) ,                          01280009
+      5 INDNULL_24             FIXED BIN(15) ,                          01290009
+      5 INDNULL_25             FIXED BIN(15) ,                          01300009
+      5 INDNULL_26             FIXED BIN(15) ,                          01310009
+      5 INDNULL_27             FIXED BIN(15) ,                          01320009
+      5 INDNULL_28             FIXED BIN(15) ,                          01330009
+      5 INDNULL_29             FIXED BIN(15) ,                          01340009
+      5 INDNULL_30             FIXED BIN(15) ,                          01350009
+      5 INDNULL_31             FIXED BIN(15) ,                          01360009
+      5 INDNULL_32             FIXED BIN(15) ;                          01370009
+                                                                        01380009
+  DCL 1 TB_RCBV240 ,                                                    01390009
+       %INCLUDE (RCB240S) ;;/*2007/12/13 NEW SEQUENCE_NUMBER CHAR(28)*/ 01400009
+  DCL 1 TB_RCBV240_I ,                                                  01410009
+       %INCLUDE (RCB240SI) ;;                                           01420009
+                                                                        01430009
+  DCL 1 TB_RCBV051 ,                                     /*2005/02/21*/ 01440009
+       %INCLUDE (RCB051S) ;;/*2007/12/13 NEW SEQUENCE_NUMBER CHAR(28)*/ 01450009
+  DCL 1 TB_RCBV051_I ,                                   /*2005/02/21*/ 01460009
+       %INCLUDE (RCB051SI) ;;                            /*2005/02/21*/ 01470009
+                                                                        01480009
+  EXEC SQL INCLUDE SQLCA ;                                              01490009
+ /*------------------------------------------------------------------*/ 01500009
+ /*               DECLARE CURSOR                                     */ 01510009
+ /*------------------------------------------------------------------*/ 01520009
+  EXEC SQL                                                              01530009
+     DECLARE  CURS_V241 CURSOR WITH HOLD FOR                            01540009
+        SELECT *                                                        01550009
+        FROM RCBV0241_PI_CTR                                            01560009
+        WHERE     PRODUCT_TYPE = :TB_RCBV241.PRODUCT_TYPE               01570009
+           AND          ORIGIN = :TB_RCBV241.ORIGIN                     01580009
+           AND SEQUENCE_NUMBER = :TB_RCBV241.SEQUENCE_NUMBER            01590009
+           AND  COUNTRY_NUMBER = :TB_RCBV241.COUNTRY_NUMBER ;           01600009
+ /*------------------------------------------------------------------*/ 01610009
+ /*               INIZIO PROGRAMMA  (MAIN)                           */ 01620009
+ /*------------------------------------------------------------------*/ 01630009
+   CALL CHECK_HEAD_TRAI ;                                               01640009
+   IF SW_ABEND                                                          01650009
+   THEN GOTO FINE ;                                                     01660009
+   ELSE DO ;                                                            01670009
+      CLOSE  FILE(ROLSICI) ;                                            01680009
+      EOF_ROLSICI = '0'B ;                                              01690009
+      CTR.READ = 0 ;                                                    01700009
+   END ;                                                                01710009
+                                                                        01720009
+   OPEN FILE(ROLSICI) ;                                                 01730009
+   OPEN FILE(ROLSICO) ;                                                 01740009
+                                                                        01750009
+   WRK_CYCLE_DATE = SUBSTR(DATETIME,1,4) || '-' ||       /*2005/09/10*/ 01760009
+                    SUBSTR(DATETIME,5,2) || '-' ||                      01770009
+                    SUBSTR(DATETIME,7,2) ;                              01780009
+                                                                        01790009
+   CALL READ_INP ;                     /* LETTURA INIZIALE           */ 01800009
+                                                                        01810009
+   DO WHILE (EOF_ROLSICI = '0'B) ;                                      01820009
+                                                                        01830009
+      COM_KEY = CHIAVE || INPUT.EFFECTIVE_DATE ;                        01840009
+      IF ( INDEX( COM_KEY,' ') ¬= 0 & INPUT.ACTION_CODE ¬= 'I')         01850009
+       | ( INDEX( CHIAVE ,' ') ¬= 0 & INPUT.ACTION_CODE  = 'I')         01860009
+      THEN DO ;                                                         01870009
+         SEGNAL =  'ERR. PK = '||COM_KEY ||                             01880009
+                   ' CHIAVE   INVALIDA  = '                             01890009
+                   || COM_KEY ;                                         01900009
+         PUT DATA (SEGNAL) SKIP ;                                       01910009
+         CTR.REJECT = CTR.REJECT + 1 ;                                  01920009
+      END ;                                                             01930009
+      ELSE DO ;                                                         01940009
+         SELECT(INPUT.ACTION_CODE) ;                                    01950009
+           WHEN ('I')                                                   01960009
+           DO ;                                                         01970009
+             CTR.INQUIRY = CTR.INQUIRY + 1 ;                            01980009
+             CALL GEST_INQ ;                                            01990009
+           END ;                                                        02000009
+           WHEN ('A')                                                   02010009
+           DO ;                                                         02020009
+             CALL READ_241 ;                                            02030009
+             IF SW_ERRORE_DB2 = '0'B                                    02040009
+             THEN DO ;                                                  02050009
+                CALL MUOVI_FIELDS ;                                     02060009
+                CALL CHECK_FIELDS ;                                     02070009
+                IF SW_OK                  /* NO     ERROR  ON FIELDS */ 02080009
+                THEN DO ;                                               02090009
+                   IF SW_241              /* RECORD FOUND ON 241     */ 02100009
+                   THEN  CALL UPDATE_241 ;                              02110009
+                   ELSE  CALL INSERT_241 ;/* RECORD NOT FOUND ON 241 */ 02120009
+                END ;                                                   02130009
+                ELSE DO ;                                               02140009
+                   CTR.REJECT = CTR.REJECT + 1 ;                        02150009
+                END ;                                                   02160009
+             END ;                                                      02170009
+           END ;                                                        02180009
+           WHEN ('D')                                                   02190009
+           DO ;                                                         02200009
+             CALL DELETE_241 ;                                          02210009
+           END ;                                                        02220009
+           OTHERWISE                                                    02230009
+           DO ;                                                         02240009
+             SEGNAL =  'ERR. PK = '||COM_KEY ||                         02250009
+                       ' ACTION CODE INV.   = '                         02260009
+                       || INPUT.ACTION_CODE ;                           02270009
+             PUT DATA (SEGNAL) SKIP ;                                   02280009
+             CTR.REJECT = CTR.REJECT + 1 ;                              02290009
+           END ;                                                        02300009
+         END ;                                                          02310009
+      END ;                                                             02320009
+                                                                        02330009
+      CALL READ_INP ;                                                   02340009
+   END ;                                                                02350009
+                                                                        02360009
+ FINE:                                 /* OPERAZIONI FINALI          */ 02370009
+   CALL FINE_ELAB ;                    /* SEGNALAZ. FINE PROGRAMMA   */ 02380009
+ /*------------------------------------------------------------------*/ 02390009
+ /*            CHECK HEADER AND TRAILER                              */ 02400009
+ /*------------------------------------------------------------------*/ 02410009
+ CHECK_HEAD_TRAI : PROC REORDER ;                                       02420009
+  OPEN FILE(ROLSICI) ;                                                  02430009
+  SW_ABEND = '0'B ;                                                     02440009
+  READ FILE (ROLSICI) INTO (AR_INPUT) ;                                 02450009
+                                                                        02460009
+  IF EOF_ROLSICI = '0'B                                                 02470009
+   & HEADER.REC_TYPE || HEADER.SOURCE                                   02480009
+     ¬= '             CEDSCTR'                                          02490009
+  THEN DO ;                                                             02500009
+     SEGNAL =  'HEADER WRONG FOR FILE ROLSICI '                         02510009
+               || 'CHIAVE = '  || HEADER.REC_TYPE                       02520009
+               || ' SOURCE = ' || HEADER.SOURCE ;                       02530009
+     PUT DATA (SEGNAL) SKIP ;                                           02540009
+     SW_ABEND = '1'B ;                                                  02550009
+  END ;                                                                 02560009
+  DO WHILE (EOF_ROLSICI = '0'B & SW_ABEND = '0'B) ;                     02570009
+     CTR.READ = CTR.READ + 1 ;                                          02580009
+     READ FILE (ROLSICI) INTO (AR_INPUT) ;                              02590009
+  END ;                                                                 02600009
+  IF CTR.READ > 0                                                       02610009
+   & SW_ABEND = '0'B                                                    02620009
+   & TRAILER.REC_TYPE || TRAILER.SOURCE                                 02630009
+     ¬= '9999999999999CEDSCTR'                                          02640009
+  THEN DO ;                                                             02650009
+     SEGNAL =  'TRAILER WRONG FOR FILE ROLSICI '                        02660009
+               || 'CHIAVE = '  || TRAILER.REC_TYPE                      02670009
+               || ' SOURCE = ' || TRAILER.SOURCE ;                      02680009
+     PUT DATA (SEGNAL) SKIP ;                                           02690009
+     SW_ABEND = '1'B ;                                                  02700009
+  END ;                                                                 02710009
+  IF CTR.READ > 0                                                       02720009
+   & SW_ABEND = '0'B                                                    02730009
+   & TRAILER.NUM_REC ¬= CTR.READ - 2       /* LESS HEADER-TRAILER    */ 02740009
+  THEN DO ;                                                             02750009
+     SEGNAL =  'TRAILER RECORDS COUNT WRONG = '                         02760009
+               || TRAILER.NUM_REC ;                                     02770009
+     PUT DATA (SEGNAL) SKIP ;                                           02780009
+     SW_ABEND = '1'B ;                                                  02790009
+  END ;                                                                 02800009
+                                                                        02810009
+ END CHECK_HEAD_TRAI ;                                                  02820009
+ /*------------------------------------------------------------------*/ 02830009
+ /*            LEGGI FILE ESTRATTO DA CEDS PRIME INPUT               */ 02840009
+ /*------------------------------------------------------------------*/ 02850009
+ READ_INP : PROC REORDER ;                                              02860009
+  R1:                                                                   02870009
+  READ FILE (ROLSICI) INTO (AR_INPUT) ;                                 02880009
+                                                                        02890009
+  IF EOF_ROLSICI = '0'B                                                 02900009
+  THEN DO ;                                        /*START 2007/12/05*/ 02910009
+     IF HEADER.REC_TYPE = ' '                                           02920009
+     THEN DO ;                      /*COPIA HEADER IN INPUT SU OUTPUT*/ 02930009
+        AR_OUTPUT = '' ;                                                02940009
+        AR_OUTPUT = AR_INPUT ;                                          02950009
+        WRITE FILE (ROLSICO) FROM (AR_OUTPUT) ;                         02960009
+        GOTO R1 ;                                                       02970009
+     END ;                                                              02980009
+     IF TRAILER.REC_TYPE = '9999999999999'                              02990009
+     THEN DO ;                                                          03000009
+        GOTO R1 ;                                                       03010009
+     END ;                                         /*END   2007/12/05*/ 03020009
+     CTR.READ = CTR.READ + 1 ;                                          03030009
+  END ;                                                                 03040009
+                                                                        03050009
+ END READ_INP ;                                                         03060009
+ /*------------------------------------------------------------------*/ 03070009
+ /*            SCRIVE FILE OUTPUT PER INQUIRY                        */ 03080009
+ /*------------------------------------------------------------------*/ 03090009
+ WRITE_INQ : PROC REORDER ;                                             03100009
+  WRITE FILE (ROLSICO) FROM (AR_OUTPUT) ;                               03110009
+                                                                        03120009
+  SW_INQ    = '1'B ;                                                    03130009
+  CTR.WRITE = CTR.WRITE + 1 ;                                           03140009
+                                                                        03150009
+ END WRITE_INQ ;                                                        03160009
+ /*------------------------------------------------------------------*/ 03170009
+ /*            GESTIONE RECORDS INQUIRY                              */ 03180009
+ /*------------------------------------------------------------------*/ 03190009
+ GEST_INQ: PROC REORDER ;                                               03200009
+  SW_INQ = '0'B  ;                                                      03210009
+  CALL GEST_CURSOR ;                                                    03220009
+  CALL READ_240 ;                                                       03230009
+  IF SW_ERRORE_DB2 = '1'B                                               03240009
+  THEN DO ;                                                             03250009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      03260009
+     GOTO END_PROC ;                                                    03270009
+  END ;                                                                 03280009
+  IF SW_240 = '1'B                           /*     TROVATO SU 240   */ 03290009
+  THEN DO ;                                                             03300009
+     CALL PREP_DA_240 ;                                                 03310009
+     CALL WRITE_INQ ;                                                   03320009
+  END ;                                                                 03330009
+  IF SW_INQ = '0'B                           /* NON TROVATO SU 241   */ 03340009
+  THEN DO ;                                                             03350009
+     CALL PREP_DA_INP ;                                                 03360009
+     CALL WRITE_INQ ;                                                   03370009
+  END ;                                                                 03380009
+                                                                        03390009
+ END_PROC:                                                              03400009
+ END GEST_INQ ;                                                         03410009
+ /*------------------------------------------------------------------*/ 03420009
+ /*            GESTIONE RECORDS INQUIRY CON CURSOR                   */ 03430009
+ /*------------------------------------------------------------------*/ 03440009
+ GEST_CURSOR : PROC REORDER ;                                           03450009
+ SW_ERRORE_DB2         = '0'B ;                                         03460009
+ TB_RCBV241            = '';                 /* INIT TABLESTRUCTURE  */ 03470009
+ TB_RCBV241_I          = '';                                            03480009
+ TB_RCBV241.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      03490009
+ TB_RCBV241.ORIGIN          = INPUT.ORIGIN ;                            03500009
+ TB_RCBV241.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   03510009
+ TB_RCBV241.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    03520009
+  CALL OPEN_V241 ;                                                      03530009
+  IF SW_ERRORE_DB2 = '1'B                                               03540009
+  THEN DO ;                                                             03550009
+     GOTO END_PROC ;                                                    03560009
+  END ;                                                                 03570009
+  CALL FETCH_V241 ;                                                     03580009
+  DO WHILE(SW_241 = '1'B & SW_ERRORE_DB2 = '0'B) ;                      03590009
+     CALL PREP_DA_241 ;                                                 03600009
+     CALL WRITE_INQ ;                                                   03610009
+     CALL FETCH_V241 ;                                                  03620009
+  END ;                                                                 03630009
+  IF SW_ERRORE_DB2 = '1'B                                               03640009
+  THEN DO ;                                                             03650009
+     GOTO END_PROC ;                                                    03660009
+  END ;                                                                 03670009
+  CALL CLOSE_V241 ;                                                     03680009
+                                                                        03690009
+ END_PROC:                                                              03700009
+ END GEST_CURSOR ;                                                      03710009
+ /*------------------------------------------------------------------*/ 03720009
+ /* OPEN CURSORE CURS_TEMP                                           */ 03730009
+ /*------------------------------------------------------------------*/ 03740009
+ OPEN_V241 : PROC ;                                                     03750009
+ EXEC SQL OPEN CURS_V241 ;                                              03760009
+ SELECT(SQLCODE) ;                                                      03770009
+   WHEN (0)                                                             03780009
+   DO ;                                                                 03790009
+   END ;                                                                03800009
+   OTHERWISE                                                            03810009
+   DO ;                                                                 03820009
+     SQL_CODE = SQLCA.SQLCODE ;                                         03830009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 03840009
+               ' OPEN C241 DB2 ERR. = '                                 03850009
+               || SQL_CODE ;                                            03860009
+     PUT DATA (SEGNAL) SKIP ;                                           03870009
+     SW_ERRORE_DB2 = '1'B ;                                             03880009
+   END ;                                                                03890009
+ END ;                                                                  03900009
+ END OPEN_V241 ;                                                        03910009
+ /*------------------------------------------------------------------*/ 03920009
+ /* FETCH CURSORE CURS_V241                                          */ 03930009
+ /*------------------------------------------------------------------*/ 03940009
+ FETCH_V241 : PROC ;                                                    03950009
+    EXEC SQL                                                            03960009
+       FETCH CURS_V241                                                  03970009
+       INTO  :TB_RCBV241 :TB_RCBV241_I.INDNULL ;                        03980009
+                                                                        03990009
+ SELECT(SQLCODE) ;                                                      04000009
+   WHEN (0)                                                             04010009
+   DO ;                                                                 04020009
+      SW_241 = '1'B ;                                                   04030009
+   END ;                                                                04040009
+   WHEN (100)                                                           04050009
+   DO ;                                                                 04060009
+      SW_241 = '0'B ;                                                   04070009
+   END ;                                                                04080009
+   OTHERWISE                                                            04090009
+   DO ;                                                                 04100009
+     SQL_CODE = SQLCA.SQLCODE ;                                         04110009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 04120009
+               ' FETCH C241 DB2 ERR.= '                                 04130009
+               || SQL_CODE ;                                            04140009
+     PUT DATA (SEGNAL) SKIP ;                                           04150009
+     SW_ERRORE_DB2 = '1'B ;                                             04160009
+   END ;                                                                04170009
+ END ;                                                                  04180009
+ END FETCH_V241 ;                                                       04190009
+ /*------------------------------------------------------------------*/ 04200009
+ /* CLOSE CURSORE CURS_V241                                          */ 04210009
+ /*------------------------------------------------------------------*/ 04220009
+ CLOSE_V241 : PROC ;                                                    04230009
+ EXEC SQL CLOSE CURS_V241 ;                                             04240009
+ SELECT(SQLCODE) ;                                                      04250009
+   WHEN (0)                                                             04260009
+   DO ;                                                                 04270009
+   END ;                                                                04280009
+   OTHERWISE                                                            04290009
+   DO ;                                                                 04300009
+     SQL_CODE = SQLCA.SQLCODE ;                                         04310009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 04320009
+               ' CLOSE C241 DB2 ERR.= '                                 04330009
+               || SQL_CODE ;                                            04340009
+     PUT DATA (SEGNAL) SKIP ;                                           04350009
+     SW_ERRORE_DB2 = '1'B ;                                             04360009
+   END ;                                                                04370009
+ END ;                                                                  04380009
+ END CLOSE_V241 ;                                                       04390009
+ /********************************************************************/ 04400009
+ /* DESCRIPTION      : MUOVI CAMPI IN OUTPUT DA TABELLA RCBV241      */ 04410009
+ /********************************************************************/ 04420009
+ PREP_DA_241 :  PROC  REORDER ;                                         04430009
+                                                                        04440009
+ AR_OUTPUT                   = ' ' ;                                    04450009
+ OUTPUT.ACTION_CODE          = 'P' ;                                    04460009
+ OUTPUT.COUNTRY_NUMBER       = INPUT.COUNTRY_NUMBER ;                   04470009
+ OUTPUT.PRODUCT_TYPE         = INPUT.PRODUCT_TYPE ;                     04480009
+ OUTPUT.ORIGIN               = INPUT.ORIGIN ;                           04490009
+ OUTPUT.SEQUENCE_NUMBER      = INPUT.SEQUENCE_NUMBER ;                  04500009
+ OUTPUT.HVP_QUANTITY         = TB_RCBV241.HVP_QUANTITY ;                04510009
+ OUTPUT.CONTRACT_NUMBER      = TB_RCBV241.CONTRACT_NUMBER ;             04520009
+ OUTPUT.SERVICE_TYPE         = TB_RCBV241.SERVICE_TYPE ;                04530009
+ OUTPUT.SOURCE_INDICATOR     = TB_RCBV241.SOURCE_INDICATOR ;            04540009
+ OUTPUT.LAST_CHANGE_DATE     = TB_RCBV241.LAST_CHANGE_DATE ;            04550009
+ OUTPUT.EFFECTIVE_DATE       = TB_RCBV241.EFFECTIVE_DATE ;              04560009
+ OUTPUT.END_DATE             = TB_RCBV241.END_DATE ;                    04570009
+ IF TB_RCBV241_I.INDNULL(07) < 0                                        04580009
+ THEN OUTPUT.SERVICE_MODULE_1   = ' ' ;                                 04590009
+ ELSE OUTPUT.SERVICE_MODULE_1   = TB_RCBV241.SERVICE_MODULE_1 ;         04600009
+ IF TB_RCBV241_I.INDNULL(08) < 0                                        04610009
+ THEN OUTPUT.SERVICE_MODULE_2   = ' ' ;                                 04620009
+ ELSE OUTPUT.SERVICE_MODULE_2   = TB_RCBV241.SERVICE_MODULE_2 ;         04630009
+ IF TB_RCBV241_I.INDNULL(09) < 0                                        04640009
+ THEN OUTPUT.SERVICE_MODULE_3   = ' ' ;                                 04650009
+ ELSE OUTPUT.SERVICE_MODULE_3   = TB_RCBV241.SERVICE_MODULE_3 ;         04660009
+ IF TB_RCBV241_I.INDNULL(10) < 0                                        04670009
+ THEN OUTPUT.SERVICE_MODULE_4   = ' ' ;                                 04680009
+ ELSE OUTPUT.SERVICE_MODULE_4   = TB_RCBV241.SERVICE_MODULE_4 ;         04690009
+ IF TB_RCBV241_I.INDNULL(11) < 0                                        04700009
+ THEN OUTPUT.SERVICE_MODULE_5   = ' ' ;                                 04710009
+ ELSE OUTPUT.SERVICE_MODULE_5   = TB_RCBV241.SERVICE_MODULE_5 ;         04720009
+ IF TB_RCBV241_I.INDNULL(12) < 0                                        04730009
+ THEN OUTPUT.MONDAY_COVER_START = ' ' ;                                 04740009
+ ELSE OUTPUT.MONDAY_COVER_START = TB_RCBV241.COVERAGE_START_1 ;         04750009
+ IF TB_RCBV241_I.INDNULL(13) < 0                                        04760009
+ THEN OUTPUT.MONDAY_COVER_END   = ' ' ;                                 04770009
+ ELSE OUTPUT.MONDAY_COVER_END   = TB_RCBV241.COVERAGE_END_1 ;           04780009
+ IF TB_RCBV241_I.INDNULL(14) < 0                                        04790009
+ THEN OUTPUT.TUESDAY_COVER_START = ' ' ;                                04800009
+ ELSE OUTPUT.TUESDAY_COVER_START = TB_RCBV241.COVERAGE_START_2 ;        04810009
+ IF TB_RCBV241_I.INDNULL(15) < 0                                        04820009
+ THEN OUTPUT.TUESDAY_COVER_END   = ' ' ;                                04830009
+ ELSE OUTPUT.TUESDAY_COVER_END   = TB_RCBV241.COVERAGE_END_2 ;          04840009
+ IF TB_RCBV241_I.INDNULL(16) < 0                                        04850009
+ THEN OUTPUT.WEDNESDAY_COVER_START = ' ' ;                              04860009
+ ELSE OUTPUT.WEDNESDAY_COVER_START = TB_RCBV241.COVERAGE_START_3 ;      04870009
+ IF TB_RCBV241_I.INDNULL(17) < 0                                        04880009
+ THEN OUTPUT.WEDNESDAY_COVER_END  = ' ' ;                               04890009
+ ELSE OUTPUT.WEDNESDAY_COVER_END  = TB_RCBV241.COVERAGE_END_3 ;         04900009
+ IF TB_RCBV241_I.INDNULL(18) < 0                                        04910009
+ THEN OUTPUT.THURSDAY_COVER_START = ' ' ;                               04920009
+ ELSE OUTPUT.THURSDAY_COVER_START = TB_RCBV241.COVERAGE_START_4 ;       04930009
+ IF TB_RCBV241_I.INDNULL(19) < 0                                        04940009
+ THEN OUTPUT.THURSDAY_COVER_END   = ' ' ;                               04950009
+ ELSE OUTPUT.THURSDAY_COVER_END   = TB_RCBV241.COVERAGE_END_4 ;         04960009
+ IF TB_RCBV241_I.INDNULL(20) < 0                                        04970009
+ THEN OUTPUT.FRIDAY_COVER_START   = ' ' ;                               04980009
+ ELSE OUTPUT.FRIDAY_COVER_START   = TB_RCBV241.COVERAGE_START_5 ;       04990009
+ IF TB_RCBV241_I.INDNULL(21) < 0                                        05000009
+ THEN OUTPUT.FRIDAY_COVER_END     = ' ' ;                               05010009
+ ELSE OUTPUT.FRIDAY_COVER_END     = TB_RCBV241.COVERAGE_END_5 ;         05020009
+ IF TB_RCBV241_I.INDNULL(22) < 0                                        05030009
+ THEN OUTPUT.SATURDAY_COVER_START = ' ' ;                               05040009
+ ELSE OUTPUT.SATURDAY_COVER_START = TB_RCBV241.COVERAGE_START_6 ;       05050009
+ IF TB_RCBV241_I.INDNULL(23) < 0                                        05060009
+ THEN OUTPUT.SATURDAY_COVER_END   = ' ' ;                               05070009
+ ELSE OUTPUT.SATURDAY_COVER_END   = TB_RCBV241.COVERAGE_END_6 ;         05080009
+ IF TB_RCBV241_I.INDNULL(24) < 0                                        05090009
+ THEN OUTPUT.SUNDAY_COVER_START   = ' ' ;                               05100009
+ ELSE OUTPUT.SUNDAY_COVER_START   = TB_RCBV241.COVERAGE_START_7 ;       05110009
+ IF TB_RCBV241_I.INDNULL(25) < 0                                        05120009
+ THEN OUTPUT.SUNDAY_COVER_END     = ' ' ;                               05130009
+ ELSE OUTPUT.SUNDAY_COVER_END     = TB_RCBV241.COVERAGE_END_7 ;         05140009
+ IF TB_RCBV241_I.INDNULL(27) < 0                                        05150009
+ THEN OUTPUT.SERVICE_LVL_CODE     = ' ' ;                               05160009
+ ELSE OUTPUT.SERVICE_LVL_CODE     = TB_RCBV241.SERVICE_LVL_CODE ;       05170009
+ IF TB_RCBV241_I.INDNULL(28) < 0                                        05180009
+ THEN OUTPUT.AUTHORISATION_CODE   = ' ' ;                               05190009
+ ELSE OUTPUT.AUTHORISATION_CODE   = TB_RCBV241.AUTHORISATION_CODE ;     05200009
+                                                                        05210009
+ END PREP_DA_241 ;                                                      05220009
+ /********************************************************************/ 05230009
+ /* DESCRIPTION      : MUOVI CAMPI IN OUTPUT DA TABELLA RCBV240      */ 05240009
+ /********************************************************************/ 05250009
+ PREP_DA_240 :  PROC  REORDER ;                                         05260009
+                                                                        05270009
+ AR_OUTPUT                   = ' ' ;                                    05280009
+ OUTPUT.ACTION_CODE          = 'S' ;                                    05290009
+ OUTPUT.COUNTRY_NUMBER       = INPUT.COUNTRY_NUMBER ;                   05300009
+ OUTPUT.PRODUCT_TYPE         = INPUT.PRODUCT_TYPE ;                     05310009
+ OUTPUT.ORIGIN               = INPUT.ORIGIN ;                           05320009
+ OUTPUT.SEQUENCE_NUMBER      = INPUT.SEQUENCE_NUMBER ;                  05330009
+ OUTPUT.HVP_QUANTITY         = TB_RCBV240.HVP_QUANTITY ;                05340009
+ OUTPUT.CONTRACT_NUMBER      = TB_RCBV240.CONTRACT_NUMBER ;             05350009
+ OUTPUT.EFFECTIVE_DATE       = TB_RCBV240.SERVICE_START_DATE ;          05360009
+ IF TB_RCBV240.SERVICE_STOP_DATE <= TB_RCBV240.END_DATE                 05370009
+ THEN OUTPUT.END_DATE = TB_RCBV240.SERVICE_STOP_DATE ;                  05380009
+ ELSE OUTPUT.END_DATE = TB_RCBV240.END_DATE ;                           05390009
+ OUTPUT.SERVICE_TYPE         = TB_RCBV240.SERVICE_TYPE ;                05400009
+ IF TB_RCBV240_I.INDNULL(10) < 0                                        05410009
+ THEN OUTPUT.SERVICE_MODULE_1   = ' ' ;                                 05420009
+ ELSE OUTPUT.SERVICE_MODULE_1   = TB_RCBV240.SERVICE_MODULE_1 ;         05430009
+ IF TB_RCBV240_I.INDNULL(11) < 0                                        05440009
+ THEN OUTPUT.SERVICE_MODULE_2   = ' ' ;                                 05450009
+ ELSE OUTPUT.SERVICE_MODULE_2   = TB_RCBV240.SERVICE_MODULE_2 ;         05460009
+ IF TB_RCBV240_I.INDNULL(12) < 0                                        05470009
+ THEN OUTPUT.SERVICE_MODULE_3   = ' ' ;                                 05480009
+ ELSE OUTPUT.SERVICE_MODULE_3   = TB_RCBV240.SERVICE_MODULE_3 ;         05490009
+ IF TB_RCBV240_I.INDNULL(13) < 0                                        05500009
+ THEN OUTPUT.SERVICE_MODULE_4   = ' ' ;                                 05510009
+ ELSE OUTPUT.SERVICE_MODULE_4   = TB_RCBV240.SERVICE_MODULE_4 ;         05520009
+ IF TB_RCBV240_I.INDNULL(14) < 0                                        05530009
+ THEN OUTPUT.SERVICE_MODULE_5   = ' ' ;                                 05540009
+ ELSE OUTPUT.SERVICE_MODULE_5   = TB_RCBV240.SERVICE_MODULE_5 ;         05550009
+ IF TB_RCBV240_I.INDNULL(19) < 0                                        05560009
+ THEN OUTPUT.MONDAY_COVER_START = ' ' ;                                 05570009
+ ELSE OUTPUT.MONDAY_COVER_START = TB_RCBV240.COVERAGE_START_1 ;         05580009
+ IF TB_RCBV240_I.INDNULL(20) < 0                                        05590009
+ THEN OUTPUT.MONDAY_COVER_END   = ' ' ;                                 05600009
+ ELSE OUTPUT.MONDAY_COVER_END   = TB_RCBV240.COVERAGE_END_1 ;           05610009
+ IF TB_RCBV240_I.INDNULL(21) < 0                                        05620009
+ THEN OUTPUT.TUESDAY_COVER_START   = ' ' ;                              05630009
+ ELSE OUTPUT.TUESDAY_COVER_START   = TB_RCBV240.COVERAGE_START_2 ;      05640009
+ IF TB_RCBV240_I.INDNULL(22) < 0                                        05650009
+ THEN OUTPUT.TUESDAY_COVER_END     = ' ' ;                              05660009
+ ELSE OUTPUT.TUESDAY_COVER_END     = TB_RCBV240.COVERAGE_END_2 ;        05670009
+ IF TB_RCBV240_I.INDNULL(23) < 0                                        05680009
+ THEN OUTPUT.WEDNESDAY_COVER_START = ' ' ;                              05690009
+ ELSE OUTPUT.WEDNESDAY_COVER_START = TB_RCBV240.COVERAGE_START_3 ;      05700009
+ IF TB_RCBV240_I.INDNULL(24) < 0                                        05710009
+ THEN OUTPUT.WEDNESDAY_COVER_END   = ' ' ;                              05720009
+ ELSE OUTPUT.WEDNESDAY_COVER_END   = TB_RCBV240.COVERAGE_END_3 ;        05730009
+ IF TB_RCBV240_I.INDNULL(25) < 0                                        05740009
+ THEN OUTPUT.THURSDAY_COVER_START  = ' ' ;                              05750009
+ ELSE OUTPUT.THURSDAY_COVER_START  = TB_RCBV240.COVERAGE_START_4 ;      05760009
+ IF TB_RCBV240_I.INDNULL(26) < 0                                        05770009
+ THEN OUTPUT.THURSDAY_COVER_END    = ' ' ;                              05780009
+ ELSE OUTPUT.THURSDAY_COVER_END    = TB_RCBV240.COVERAGE_END_4 ;        05790009
+ IF TB_RCBV240_I.INDNULL(27) < 0                                        05800009
+ THEN OUTPUT.FRIDAY_COVER_START    = ' ' ;                              05810009
+ ELSE OUTPUT.FRIDAY_COVER_START    = TB_RCBV240.COVERAGE_START_5 ;      05820009
+ IF TB_RCBV240_I.INDNULL(28) < 0                                        05830009
+ THEN OUTPUT.FRIDAY_COVER_END      = ' ' ;                              05840009
+ ELSE OUTPUT.FRIDAY_COVER_END      = TB_RCBV240.COVERAGE_END_5 ;        05850009
+ IF TB_RCBV240_I.INDNULL(29) < 0                                        05860009
+ THEN OUTPUT.SATURDAY_COVER_START  = ' ' ;                              05870009
+ ELSE OUTPUT.SATURDAY_COVER_START  = TB_RCBV240.COVERAGE_START_6 ;      05880009
+ IF TB_RCBV240_I.INDNULL(30) < 0                                        05890009
+ THEN OUTPUT.SATURDAY_COVER_END    = ' ' ;                              05900009
+ ELSE OUTPUT.SATURDAY_COVER_END    = TB_RCBV240.COVERAGE_END_6 ;        05910009
+ IF TB_RCBV240_I.INDNULL(31) < 0                                        05920009
+ THEN OUTPUT.SUNDAY_COVER_START    = ' ' ;                              05930009
+ ELSE OUTPUT.SUNDAY_COVER_START    = TB_RCBV240.COVERAGE_START_7 ;      05940009
+ IF TB_RCBV240_I.INDNULL(32) < 0                                        05950009
+ THEN OUTPUT.SUNDAY_COVER_END      = ' ' ;                              05960009
+ ELSE OUTPUT.SUNDAY_COVER_END      = TB_RCBV240.COVERAGE_END_7 ;        05970009
+ IF TB_RCBV240_I.INDNULL(34) < 0                                        05980009
+ THEN OUTPUT.SERVICE_LVL_CODE      = ' ' ;                              05990009
+ ELSE OUTPUT.SERVICE_LVL_CODE      = TB_RCBV240.SERVICE_LVL_CODE ;      06000009
+ IF TB_RCBV240_I.INDNULL(35) < 0                                        06010009
+ THEN OUTPUT.SOURCE_INDICATOR      = ' ' ;                              06020009
+ ELSE OUTPUT.SOURCE_INDICATOR      = TB_RCBV240.SOURCE_INDICATOR ;      06030009
+ OUTPUT.LAST_CHANGE_DATE           = TB_RCBV240.LAST_CHANGE_DATE ;      06040009
+                                                                        06050009
+ END PREP_DA_240 ;                                                      06060009
+ /********************************************************************/ 06070009
+ /* DESCRIPTION      : MUOVI CAMPI IN OUTPUT DA INPUT FILE           */ 06080009
+ /********************************************************************/ 06090009
+ PREP_DA_INP :  PROC  REORDER ;                                         06100009
+                                                                        06110009
+ AR_OUTPUT                 = ' ' ;                                      06120009
+ OUTPUT.ACTION_CODE        = 'N' ;                                      06130009
+ OUTPUT.COUNTRY_NUMBER     = INPUT.COUNTRY_NUMBER ;                     06140009
+ OUTPUT.PRODUCT_TYPE       = INPUT.PRODUCT_TYPE ;                       06150009
+ OUTPUT.ORIGIN             = INPUT.ORIGIN ;                             06160009
+ OUTPUT.SEQUENCE_NUMBER    = INPUT.SEQUENCE_NUMBER ;                    06170009
+                                                                        06180009
+ END PREP_DA_INP ;                                                      06190009
+ /********************************************************************/ 06200009
+ /* DESCRIPTION      : MUOVI CAMPI IN OUTPUT                         */ 06210009
+ /********************************************************************/ 06220009
+ MUOVI_FIELDS : PROC  REORDER ;                                         06230009
+                                                                        06240009
+ TB_RCBV241.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      06250009
+ TB_RCBV241_I.INDNULL(01)   = 0 ;                                       06260009
+ TB_RCBV241.ORIGIN          = INPUT.ORIGIN ;                            06270009
+ TB_RCBV241_I.INDNULL(02)   = 0 ;                                       06280009
+ TB_RCBV241.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   06290009
+ TB_RCBV241_I.INDNULL(03)   = 0 ;                                       06300009
+ TB_RCBV241.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    06310009
+ TB_RCBV241_I.INDNULL(04)   = 0 ;                                       06320009
+ /* MOVE INPUT.HVP_QUANTITY  INTO CHECK_FIELD ROUTINE          */       06330009
+ IF INPUT.CONTRACT_NUMBER   ¬= ' '                                      06340009
+ THEN DO ;                                                              06350009
+    TB_RCBV241.CONTRACT_NUMBER  = INPUT.CONTRACT_NUMBER ;               06360009
+    TB_RCBV241_I.INDNULL(06)    = 0 ;                                   06370009
+ END ;                                                                  06380009
+ IF INPUT.SERVICE_MODULE_1     ¬= ' '                                   06390009
+ THEN DO ;                                                              06400009
+    TB_RCBV241.SERVICE_MODULE_1 = INPUT.SERVICE_MODULE_1 ;              06410009
+    TB_RCBV241_I.INDNULL(07)    = 0 ;                                   06420009
+ END ;                                                                  06430009
+ IF INPUT.SERVICE_MODULE_2     ¬= ' '                                   06440009
+ THEN DO ;                                                              06450009
+    TB_RCBV241.SERVICE_MODULE_2 = INPUT.SERVICE_MODULE_2 ;              06460009
+    TB_RCBV241_I.INDNULL(08)    = 0 ;                                   06470009
+ END ;                                                                  06480009
+ IF INPUT.SERVICE_MODULE_3     ¬= ' '                                   06490009
+ THEN DO ;                                                              06500009
+    TB_RCBV241.SERVICE_MODULE_3 = INPUT.SERVICE_MODULE_3 ;              06510009
+    TB_RCBV241_I.INDNULL(09)    = 0 ;                                   06520009
+ END ;                                                                  06530009
+ IF INPUT.SERVICE_MODULE_4     ¬= ' '                                   06540009
+ THEN DO ;                                                              06550009
+    TB_RCBV241.SERVICE_MODULE_4 = INPUT.SERVICE_MODULE_4 ;              06560009
+    TB_RCBV241_I.INDNULL(10)    = 0 ;                                   06570009
+ END ;                                                                  06580009
+ IF INPUT.SERVICE_MODULE_5     ¬= ' '                                   06590009
+ THEN DO ;                                                              06600009
+    TB_RCBV241.SERVICE_MODULE_5 = INPUT.SERVICE_MODULE_5 ;              06610009
+    TB_RCBV241_I.INDNULL(11)    = 0 ;                                   06620009
+ END ;                                                                  06630009
+ IF INPUT.MONDAY_COVER_START   ¬= ' '                                   06640009
+ THEN DO ;                                                              06650009
+    TB_RCBV241.COVERAGE_START_1 = INPUT.MONDAY_COVER_START ;            06660009
+    TB_RCBV241_I.INDNULL(12)    = 0 ;                                   06670009
+ END ;                                                                  06680009
+ IF INPUT.MONDAY_COVER_END     ¬= ' '                                   06690009
+ THEN DO ;                                                              06700009
+    TB_RCBV241.COVERAGE_END_1   = INPUT.MONDAY_COVER_END ;              06710009
+    TB_RCBV241_I.INDNULL(13)    = 0 ;                                   06720009
+ END ;                                                                  06730009
+ IF INPUT.TUESDAY_COVER_START  ¬= ' '                                   06740009
+ THEN DO ;                                                              06750009
+    TB_RCBV241.COVERAGE_START_2 = INPUT.TUESDAY_COVER_START ;           06760009
+    TB_RCBV241_I.INDNULL(14)    = 0 ;                                   06770009
+ END;                                                                   06780009
+ IF INPUT.TUESDAY_COVER_END    ¬= ' '                                   06790009
+ THEN DO ;                                                              06800009
+    TB_RCBV241.COVERAGE_END_2   = INPUT.TUESDAY_COVER_END ;             06810009
+    TB_RCBV241_I.INDNULL(15)    = 0 ;                                   06820009
+ END ;                                                                  06830009
+ IF INPUT.WEDNESDAY_COVER_START ¬= ' '                                  06840009
+ THEN DO ;                                                              06850009
+    TB_RCBV241.COVERAGE_START_3 = INPUT.WEDNESDAY_COVER_START ;         06860009
+    TB_RCBV241_I.INDNULL(16)    = 0 ;                                   06870009
+ END ;                                                                  06880009
+ IF INPUT.WEDNESDAY_COVER_END  ¬= ' '                                   06890009
+ THEN DO ;                                                              06900009
+    TB_RCBV241.COVERAGE_END_3   = INPUT.WEDNESDAY_COVER_END ;           06910009
+    TB_RCBV241_I.INDNULL(17)    = 0 ;                                   06920009
+ END ;                                                                  06930009
+ IF INPUT.THURSDAY_COVER_START ¬= ' '                                   06940009
+ THEN DO ;                                                              06950009
+    TB_RCBV241.COVERAGE_START_4 = INPUT.THURSDAY_COVER_START ;          06960009
+    TB_RCBV241_I.INDNULL(18)    = 0 ;                                   06970009
+ END ;                                                                  06980009
+ IF INPUT.THURSDAY_COVER_END   ¬= ' '                                   06990009
+ THEN DO ;                                                              07000009
+    TB_RCBV241.COVERAGE_END_4   = INPUT.THURSDAY_COVER_END ;            07010009
+    TB_RCBV241_I.INDNULL(19)    = 0 ;                                   07020009
+ END ;                                                                  07030009
+ IF INPUT.FRIDAY_COVER_START   ¬= ' '                                   07040009
+ THEN DO ;                                                              07050009
+    TB_RCBV241.COVERAGE_START_5 = INPUT.FRIDAY_COVER_START ;            07060009
+    TB_RCBV241_I.INDNULL(20)    = 0 ;                                   07070009
+ END;                                                                   07080009
+ IF INPUT.FRIDAY_COVER_END     ¬= ' '                                   07090009
+ THEN DO ;                                                              07100009
+    TB_RCBV241.COVERAGE_END_5   = INPUT.FRIDAY_COVER_END ;              07110009
+    TB_RCBV241_I.INDNULL(21)    = 0 ;                                   07120009
+ END ;                                                                  07130009
+ IF INPUT.SATURDAY_COVER_START ¬= ' '                                   07140009
+ THEN DO ;                                                              07150009
+    TB_RCBV241.COVERAGE_START_6 = INPUT.SATURDAY_COVER_START ;          07160009
+    TB_RCBV241_I.INDNULL(22)    = 0 ;                                   07170009
+ END ;                                                                  07180009
+ IF INPUT.SATURDAY_COVER_END   ¬= ' '                                   07190009
+ THEN DO ;                                                              07200009
+    TB_RCBV241.COVERAGE_END_6   = INPUT.SATURDAY_COVER_END ;            07210009
+    TB_RCBV241_I.INDNULL(23)    = 0 ;                                   07220009
+ END;                                                                   07230009
+ IF INPUT.SUNDAY_COVER_START   ¬= ' '                                   07240009
+ THEN DO ;                                                              07250009
+    TB_RCBV241.COVERAGE_START_7 = INPUT.SUNDAY_COVER_START ;            07260009
+    TB_RCBV241_I.INDNULL(24)    = 0 ;                                   07270009
+ END ;                                                                  07280009
+ IF INPUT.SUNDAY_COVER_END     ¬= ' '                                   07290009
+ THEN DO ;                                                              07300009
+    TB_RCBV241.COVERAGE_END_7   = INPUT.SUNDAY_COVER_END ;              07310009
+    TB_RCBV241_I.INDNULL(25)    = 0 ;                                   07320009
+ END ;                                                                  07330009
+ IF INPUT.SERVICE_TYPE         ¬= ' '                                   07340009
+ THEN DO ;                                                              07350009
+    TB_RCBV241.SERVICE_TYPE     = INPUT.SERVICE_TYPE ;                  07360009
+    TB_RCBV241_I.INDNULL(26)    = 0 ;                                   07370009
+ END ;                                                                  07380009
+ IF INPUT.SERVICE_LVL_CODE     ¬= ' '                                   07390009
+ THEN DO ;                                                              07400009
+    TB_RCBV241.SERVICE_LVL_CODE = INPUT.SERVICE_LVL_CODE ;              07410009
+    TB_RCBV241_I.INDNULL(27)    = 0 ;                                   07420009
+ END ;                                                                  07430009
+ IF INPUT.AUTHORISATION_CODE   ¬= ' '                                   07440009
+ THEN DO ;                                                              07450009
+    TB_RCBV241.AUTHORISATION_CODE = INPUT.AUTHORISATION_CODE ;          07460009
+    TB_RCBV241_I.INDNULL(28)    = 0 ;                                   07470009
+ END ;                                                                  07480009
+ IF INPUT.SOURCE_INDICATOR     ¬= ' '                                   07490009
+ THEN DO ;                                                              07500009
+    TB_RCBV241.SOURCE_INDICATOR = INPUT.SOURCE_INDICATOR ;              07510009
+    TB_RCBV241_I.INDNULL(29)    = 0 ;                                   07520009
+ END ;                                                                  07530009
+ IF TB_RCBV241.SOURCE_INDICATOR = ' ' /* SET DEFAULT VALUE 2005/09/26*/ 07540009
+ THEN DO ;                                               /*2005/09/26*/ 07550009
+    TB_RCBV241.SOURCE_INDICATOR = 'L' ;                  /*2005/09/26*/ 07560009
+    TB_RCBV241_I.INDNULL(29) = 0 ;                       /*2005/09/26*/ 07570009
+ END ;                                                   /*2005/09/26*/ 07580009
+ IF INPUT.END_DATE             ¬= ' '                                   07590009
+ THEN DO ;                                                              07600009
+    TB_RCBV241.END_DATE         = INPUT.END_DATE ;                      07610009
+    TB_RCBV241_I.INDNULL(32)    = 0 ;                                   07620009
+ END ;                                                                  07630009
+ TB_RCBV241.LAST_CHANGE_DATE = WRK_CYCLE_DATE ;          /* SET DATE */ 07640009
+ TB_RCBV241_I.INDNULL(30) = 0 ;                                         07650009
+ TB_RCBV241.EFFECTIVE_DATE = INPUT.EFFECTIVE_DATE ;      /* SET DATE */ 07660009
+ TB_RCBV241_I.INDNULL(31) = 0 ;                                         07670009
+                                 /*---------- SET FIELDS NULL -------*/ 07680009
+ IF TB_RCBV241_I.INDNULL(06) >= 0                                       07690009
+  & TB_RCBV241.CONTRACT_NUMBER    = ' '                                 07700009
+ THEN TB_RCBV241_I.INDNULL(06) = -1 ;                                   07710009
+ IF TB_RCBV241_I.INDNULL(12) >= 0                                       07720009
+  & TB_RCBV241.COVERAGE_START_1   = ' '                                 07730009
+ THEN TB_RCBV241_I.INDNULL(12) = -1 ;                                   07740009
+ IF TB_RCBV241_I.INDNULL(13) >= 0                                       07750009
+  & TB_RCBV241.COVERAGE_END_1     = ' '                                 07760009
+ THEN TB_RCBV241_I.INDNULL(13) = -1 ;                                   07770009
+ IF TB_RCBV241_I.INDNULL(14) >= 0                                       07780009
+  & TB_RCBV241.COVERAGE_START_2   = ' '                                 07790009
+ THEN TB_RCBV241_I.INDNULL(14) = -1 ;                                   07800009
+ IF TB_RCBV241_I.INDNULL(15) >= 0                                       07810009
+  & TB_RCBV241.COVERAGE_END_2     = ' '                                 07820009
+ THEN TB_RCBV241_I.INDNULL(15) = -1 ;                                   07830009
+ IF TB_RCBV241_I.INDNULL(16) >= 0                                       07840009
+  & TB_RCBV241.COVERAGE_START_3   = ' '                                 07850009
+ THEN TB_RCBV241_I.INDNULL(16) = -1 ;                                   07860009
+ IF TB_RCBV241_I.INDNULL(17) >= 0                                       07870009
+  & TB_RCBV241.COVERAGE_END_3     = ' '                                 07880009
+ THEN TB_RCBV241_I.INDNULL(17) = -1 ;                                   07890009
+ IF TB_RCBV241_I.INDNULL(18) >= 0                                       07900009
+  & TB_RCBV241.COVERAGE_START_4   = ' '                                 07910009
+ THEN TB_RCBV241_I.INDNULL(18) = -1 ;                                   07920009
+ IF TB_RCBV241_I.INDNULL(19) >= 0                                       07930009
+  & TB_RCBV241.COVERAGE_END_4     = ' '                                 07940009
+ THEN TB_RCBV241_I.INDNULL(19) = -1 ;                                   07950009
+ IF TB_RCBV241_I.INDNULL(20) >= 0                                       07960009
+  & TB_RCBV241.COVERAGE_START_5   = ' '                                 07970009
+ THEN TB_RCBV241_I.INDNULL(20) = -1 ;                                   07980009
+ IF TB_RCBV241_I.INDNULL(21) >= 0                                       07990009
+  & TB_RCBV241.COVERAGE_END_5     = ' '                                 08000009
+ THEN TB_RCBV241_I.INDNULL(21) = -1 ;                                   08010009
+ IF TB_RCBV241_I.INDNULL(22) >= 0                                       08020009
+  & TB_RCBV241.COVERAGE_START_6   = ' '                                 08030009
+ THEN TB_RCBV241_I.INDNULL(22) = -1 ;                                   08040009
+ IF TB_RCBV241_I.INDNULL(23) >= 0                                       08050009
+  & TB_RCBV241.COVERAGE_END_6     = ' '                                 08060009
+ THEN TB_RCBV241_I.INDNULL(23) = -1 ;                                   08070009
+ IF TB_RCBV241_I.INDNULL(24) >= 0                                       08080009
+  & TB_RCBV241.COVERAGE_START_7   = ' '                                 08090009
+ THEN TB_RCBV241_I.INDNULL(24) = -1 ;                                   08100009
+ IF TB_RCBV241_I.INDNULL(25) >= 0                                       08110009
+  & TB_RCBV241.COVERAGE_END_7     = ' '                                 08120009
+ THEN TB_RCBV241_I.INDNULL(25) = -1 ;                                   08130009
+ IF TB_RCBV241_I.INDNULL(27) >= 0                                       08140009
+  & TB_RCBV241.SERVICE_LVL_CODE   = ' '                                 08150009
+ THEN TB_RCBV241_I.INDNULL(27) = -1 ;                                   08160009
+                                                                        08170009
+ END MUOVI_FIELDS ;                                                     08180009
+ /********************************************************************/ 08190009
+ /* DESCRIPTION      : CONTROLLA VALIDITA CAMPI                      */ 08200009
+ /********************************************************************/ 08210009
+ CHECK_FIELDS : PROC  REORDER ;                                         08220009
+                                                                        08230009
+ SW_OK = '1'B ;                                                         08240009
+ IF VERIFY(INPUT.HVP_QUANTITY,DIGITS)=0                                 08250009
+ THEN DO ;                                                              08260009
+    IF INPUT.HVP_QUANTITY > 0                                           08270009
+    THEN DO ;                                                           08280009
+       TB_RCBV241.HVP_QUANTITY  = INPUT.HVP_QUANTITY ;                  08290009
+       TB_RCBV241_I.INDNULL(05) = 0;                                    08300009
+    END ;                                                               08310009
+    ELSE DO ;                                                           08320009
+       SEGNAL =  'ERR. PK = '||COM_KEY ||                               08330009
+                 ' HVP_QUANTITY INPUT = '                               08340009
+                  || INPUT.HVP_QUANTITY ;                               08350009
+       PUT DATA (SEGNAL) SKIP ;                                         08360009
+       SW_OK = '0'B ;                                                   08370009
+    END ;                                                               08380009
+ END ;                                                                  08390009
+ ELSE DO ;                                                              08400009
+    IF ¬SW_241                                                          08410009
+    THEN DO ;                                                           08420009
+       SEGNAL =  'ERR. PK = '||COM_KEY ||                               08430009
+                 ' HVP_QUANTITY INPUT = '                               08440009
+                  || INPUT.HVP_QUANTITY ;                               08450009
+       PUT DATA (SEGNAL) SKIP ;                                         08460009
+       SW_OK = '0'B ;                                                   08470009
+    END ;                                                               08480009
+ END ;                                                                  08490009
+ IF SW_241                                                              08500009
+ THEN DO ;                                                              08510009
+    IF TB_RCBV241.HVP_QUANTITY = 0                                      08520009
+    THEN DO ;                                                           08530009
+       SEGNAL =  'ERR. PK = '||COM_KEY ||                               08540009
+                 ' HVP_QUANTITY TABLE = '                               08550009
+                  || TB_RCBV241.HVP_QUANTITY ;                          08560009
+       PUT DATA (SEGNAL) SKIP ;                                         08570009
+       SW_OK = '0'B ;                                                   08580009
+    END ;                                                               08590009
+ END ;                                                                  08600009
+ IF TB_RCBV241.CONTRACT_NUMBER = ' ' THEN                               08610009
+   DO ;                                                                 08620009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 08630009
+               ' CONTRACT NUMBER    = '                                 08640009
+                || TB_RCBV241.CONTRACT_NUMBER    ;                      08650009
+     PUT DATA (SEGNAL) SKIP ;                                           08660009
+     SW_OK = '0'B ;                                                     08670009
+   END ;                                                                08680009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_1) THEN                      08690009
+   DO ;                                                                 08700009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 08710009
+               ' COVERAGE_START_1   = '                                 08720009
+                || TB_RCBV241.COVERAGE_START_1 ;                        08730009
+     PUT DATA (SEGNAL) SKIP ;                                           08740009
+     SW_OK = '0'B ;                                                     08750009
+   END ;                                                                08760009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_1) THEN                        08770009
+   DO ;                                                                 08780009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 08790009
+               ' COVERAGE_END_1     = '                                 08800009
+                || TB_RCBV241.COVERAGE_END_1 ;                          08810009
+     PUT DATA (SEGNAL) SKIP ;                                           08820009
+     SW_OK = '0'B ;                                                     08830009
+   END ;                                                                08840009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_2) THEN                      08850009
+   DO ;                                                                 08860009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 08870009
+               ' COVERAGE_START_2   = '                                 08880009
+                || TB_RCBV241.COVERAGE_START_2 ;                        08890009
+     PUT DATA (SEGNAL) SKIP ;                                           08900009
+     SW_OK = '0'B ;                                                     08910009
+   END ;                                                                08920009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_2) THEN                        08930009
+   DO ;                                                                 08940009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 08950009
+               ' COVERAGE_END_2     = '                                 08960009
+                || TB_RCBV241.COVERAGE_END_2 ;                          08970009
+     PUT DATA (SEGNAL) SKIP ;                                           08980009
+     SW_OK = '0'B ;                                                     08990009
+   END ;                                                                09000009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_3) THEN                      09010009
+   DO ;                                                                 09020009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09030009
+               ' COVERAGE_START_3   = '                                 09040009
+                || TB_RCBV241.COVERAGE_START_3 ;                        09050009
+     PUT DATA (SEGNAL) SKIP ;                                           09060009
+     SW_OK = '0'B ;                                                     09070009
+   END ;                                                                09080009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_3) THEN                        09090009
+   DO ;                                                                 09100009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09110009
+               ' COVERAGE_END_3     = '                                 09120009
+                || TB_RCBV241.COVERAGE_END_3 ;                          09130009
+     PUT DATA (SEGNAL) SKIP ;                                           09140009
+     SW_OK = '0'B ;                                                     09150009
+   END ;                                                                09160009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_4) THEN                      09170009
+   DO ;                                                                 09180009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09190009
+               ' COVERAGE_START_4   = '                                 09200009
+                || TB_RCBV241.COVERAGE_START_4 ;                        09210009
+     PUT DATA (SEGNAL) SKIP ;                                           09220009
+     SW_OK = '0'B ;                                                     09230009
+   END ;                                                                09240009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_4) THEN                        09250009
+   DO ;                                                                 09260009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09270009
+               ' COVERAGE_END_4     = '                                 09280009
+                || TB_RCBV241.COVERAGE_END_4 ;                          09290009
+     PUT DATA (SEGNAL) SKIP ;                                           09300009
+     SW_OK = '0'B ;                                                     09310009
+   END ;                                                                09320009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_5) THEN                      09330009
+   DO ;                                                                 09340009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09350009
+               ' COVERAGE_START_5   = '                                 09360009
+                || TB_RCBV241.COVERAGE_START_5 ;                        09370009
+     PUT DATA (SEGNAL) SKIP ;                                           09380009
+     SW_OK = '0'B ;                                                     09390009
+   END ;                                                                09400009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_5) THEN                        09410009
+   DO ;                                                                 09420009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09430009
+               ' COVERAGE_END_5     = '                                 09440009
+                || TB_RCBV241.COVERAGE_END_5 ;                          09450009
+     PUT DATA (SEGNAL) SKIP ;                                           09460009
+     SW_OK = '0'B ;                                                     09470009
+   END ;                                                                09480009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_6) THEN                      09490009
+   DO ;                                                                 09500009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09510009
+               ' COVERAGE_START_6   = '                                 09520009
+                || TB_RCBV241.COVERAGE_START_6 ;                        09530009
+     PUT DATA (SEGNAL) SKIP ;                                           09540009
+     SW_OK = '0'B ;                                                     09550009
+   END ;                                                                09560009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_6) THEN                        09570009
+   DO ;                                                                 09580009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09590009
+               ' COVERAGE_END_6     = '                                 09600009
+                || TB_RCBV241.COVERAGE_END_6 ;                          09610009
+     PUT DATA (SEGNAL) SKIP ;                                           09620009
+     SW_OK = '0'B ;                                                     09630009
+   END ;                                                                09640009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_START_7) THEN                      09650009
+   DO ;                                                                 09660009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09670009
+               ' COVERAGE_START_7   = '                                 09680009
+                || TB_RCBV241.COVERAGE_START_7 ;                        09690009
+     PUT DATA (SEGNAL) SKIP ;                                           09700009
+     SW_OK = '0'B ;                                                     09710009
+   END ;                                                                09720009
+ IF ¬ CHECK_TIME(TB_RCBV241.COVERAGE_END_7) THEN                        09730009
+   DO ;                                                                 09740009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 09750009
+               ' COVERAGE_END_7     = '                                 09760009
+                || TB_RCBV241.COVERAGE_END_7 ;                          09770009
+     PUT DATA (SEGNAL) SKIP ;                                           09780009
+     SW_OK = '0'B ;                                                     09790009
+   END ;                                                                09800009
+ IF ( INDEX( TB_RCBV241.SERVICE_TYPE,' ') ¬= 0 )                        09810009
+ THEN DO ;                                                              09820009
+    SEGNAL =  'ERR. PK = '||COM_KEY ||                                  09830009
+              ' SERVICE_TYPE       = '                                  09840009
+              || TB_RCBV241.SERVICE_TYPE ;                              09850009
+    PUT DATA (SEGNAL) SKIP ;                                            09860009
+    SW_OK = '0'B ;                                                      09870009
+ END ;                                                                  09880009
+ IF ( INDEX( TB_RCBV241.SERVICE_MODULE_4,' ') ¬= 0 )                    09890009
+ THEN DO ;                                                              09900009
+    SEGNAL =  'ERR. PK = '||COM_KEY ||                                  09910009
+              ' SERVICE_MODULE_4   = '                                  09920009
+              || TB_RCBV241.SERVICE_MODULE_4 ;                          09930009
+    PUT DATA (SEGNAL) SKIP ;                                            09940009
+    SW_OK = '0'B ;                                                      09950009
+ END ;                                                                  09960009
+ IF ( INDEX( TB_RCBV241.END_DATE,' ') ¬= 0 )                            09970009
+ THEN DO ;                                                              09980009
+    SEGNAL =  'ERR. PK = '||COM_KEY ||                                  09990009
+              ' END_DATE           = '                                  10000009
+              || TB_RCBV241.END_DATE ;                                  10010009
+    PUT DATA (SEGNAL) SKIP ;                                            10020009
+    SW_OK = '0'B ;                                                      10030009
+ END ;                                                                  10040009
+ /*IF TB_RCBV241.EFFECTIVE_DATE >= TB_RCBV241.END_DATE     2007/12/05*/ 10050009
+ IF TB_RCBV241.EFFECTIVE_DATE >  TB_RCBV241.END_DATE     /*2007/12/05*/ 10060009
+ THEN DO ;                                                              10070009
+    SEGNAL =  'ERR. PK = '||COM_KEY ||                                  10080009
+              ' EFFECTIVE/END_DATE = '                                  10090009
+              || TB_RCBV241.EFFECTIVE_DATE || TB_RCBV241.END_DATE ;     10100009
+    PUT DATA (SEGNAL) SKIP ;                                            10110009
+    SW_OK = '0'B ;                                                      10120009
+ END ;                                                                  10130009
+ IF ¬SW_241                    /* 2005/02/21 CHECK ON TABLE T0051    */ 10140009
+ THEN CALL READ_051 ;                                                   10150009
+ END CHECK_FIELDS ;                                                     10160009
+                                                                        10170009
+ /*------------------------------------------------------------------*/ 10180009
+ /*  LEGGI TABELLA DB2 PRIME INPUT RCBV0051_PI_HW_PR      2005/02/21 */ 10190009
+ /*------------------------------------------------------------------*/ 10200009
+ READ_051 : PROC REORDER ;                                              10210009
+ SW_ERRORE_DB2         = '0'B ;                                         10220009
+ TB_RCBV051            = '' ;                                           10230009
+ TB_RCBV051_I          = '' ;                                           10240009
+ TB_RCBV051.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      10250009
+ TB_RCBV051.ORIGIN          = INPUT.ORIGIN ;                            10260009
+ TB_RCBV051.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   10270009
+ TB_RCBV051.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    10280009
+  EXEC SQL                                                              10290009
+     SELECT *                                                           10300009
+        INTO :TB_RCBV051 :TB_RCBV051_I.INDNULL                          10310009
+        FROM RCBV0051_PI_HW_PR                                          10320009
+        WHERE     PRODUCT_TYPE = :TB_RCBV051.PRODUCT_TYPE               10330009
+           AND          ORIGIN = :TB_RCBV051.ORIGIN                     10340009
+           AND SEQUENCE_NUMBER = :TB_RCBV051.SEQUENCE_NUMBER            10350009
+           AND  COUNTRY_NUMBER = :TB_RCBV051.COUNTRY_NUMBER             10360009
+  ;                                                                     10370009
+ SELECT(SQLCODE) ;                                                      10380009
+   WHEN (0)                                                             10390009
+   DO ;                                                                 10400009
+   END ;                                                                10410009
+   WHEN (100)                                                           10420009
+   DO ;                                                                 10430009
+     WK_TOS =  INPUT.PRODUCT_TYPE    ||                                 10440009
+               INPUT.ORIGIN          ||                                 10450009
+               INPUT.SEQUENCE_NUMBER ||                                 10460009
+               INPUT.COUNTRY_NUMBER  ;                                  10470009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 10480009
+               ' T.O.S. NOT FOUND  IN T0051 = '                         10490009
+               || WK_TOS ;                                              10500009
+     PUT DATA (SEGNAL) SKIP ;                                           10510009
+     SW_OK = '0'B ;                                                     10520009
+   END ;                                                                10530009
+   OTHERWISE                                                            10540009
+   DO ;                                                                 10550009
+     SQL_CODE = SQLCA.SQLCODE ;                                         10560009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 10570009
+               ' SEL. T051 DB2 ERR. = '                                 10580009
+               || SQL_CODE ;                                            10590009
+     PUT DATA (SEGNAL) SKIP ;                                           10600009
+     SW_OK = '0'B ;                                                     10610009
+     SW_ERRORE_DB2 = '1'B ;                                             10620009
+   END ;                                                                10630009
+ END ;                                                                  10640009
+ END READ_051 ;                                                         10650009
+ /*------------------------------------------------------------------*/ 10660009
+ /*            LEGGI TABELLA DB2 PRIME INPUT RCBV0241_PI_CTR         */ 10670009
+ /*------------------------------------------------------------------*/ 10680009
+ READ_241 : PROC REORDER ;                                              10690009
+ SW_ERRORE_DB2         = '0'B ;                                         10700009
+ TB_RCBV241            = '' ;    /* INIT TABLESTRUCTURE              */ 10710009
+ TB_RCBV241_I          = '' ;                                           10720009
+ TB_RCBV241.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      10730009
+ TB_RCBV241.ORIGIN          = INPUT.ORIGIN ;                            10740009
+ TB_RCBV241.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   10750009
+ TB_RCBV241.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    10760009
+ TB_RCBV241.EFFECTIVE_DATE  = INPUT.EFFECTIVE_DATE ;                    10770009
+  EXEC SQL                                                              10780009
+     SELECT *                                                           10790009
+        INTO :TB_RCBV241 :TB_RCBV241_I.INDNULL                          10800009
+        FROM RCBV0241_PI_CTR                                            10810009
+        WHERE     PRODUCT_TYPE = :TB_RCBV241.PRODUCT_TYPE               10820009
+           AND          ORIGIN = :TB_RCBV241.ORIGIN                     10830009
+           AND SEQUENCE_NUMBER = :TB_RCBV241.SEQUENCE_NUMBER            10840009
+           AND  COUNTRY_NUMBER = :TB_RCBV241.COUNTRY_NUMBER             10850009
+           AND  EFFECTIVE_DATE = :TB_RCBV241.EFFECTIVE_DATE             10860009
+  ;                                                                     10870009
+ SELECT(SQLCODE) ;                                                      10880009
+   WHEN (0)                                                             10890009
+   DO ;                                                                 10900009
+     SW_241 = '1'B ;                                                    10910009
+   END ;                                                                10920009
+   WHEN (100)                                                           10930009
+   DO ;                                                                 10940009
+     SW_241 = '0'B ;                                                    10950009
+   END ;                                                                10960009
+   OTHERWISE                                                            10970009
+   DO ;                                                                 10980009
+     SQL_CODE = SQLCA.SQLCODE ;                                         10990009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 11000009
+               ' SEL. T241 DB2 ERR. = '                                 11010009
+               || SQL_CODE ;                                            11020009
+     PUT DATA (SEGNAL) SKIP ;                                           11030009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      11040009
+     SW_ERRORE_DB2 = '1'B ;                                             11050009
+   END ;                                                                11060009
+ END ;                                                                  11070009
+ END READ_241 ;                                                         11080009
+ /*------------------------------------------------------------------*/ 11090009
+ /*            LEGGI TABELLA DB2 PRIME INPUT RCBV0241_PI_CTR         */ 11100009
+ /*------------------------------------------------------------------*/ 11110009
+ READ_240 : PROC REORDER ;                                              11120009
+ SW_ERRORE_DB2         = '0'B ;                                         11130009
+ TB_RCBV240            = '' ;                                           11140009
+ TB_RCBV240_I          = '' ;                                           11150009
+ TB_RCBV240.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      11160009
+ TB_RCBV240.ORIGIN          = INPUT.ORIGIN ;                            11170009
+ TB_RCBV240.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   11180009
+ TB_RCBV240.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    11190009
+  EXEC SQL                                                              11200009
+     SELECT *                                                           11210009
+        INTO :TB_RCBV240 :TB_RCBV240_I.INDNULL                          11220009
+        FROM RCBV0240_SERV_CTR                                          11230009
+        WHERE     PRODUCT_TYPE = :TB_RCBV240.PRODUCT_TYPE               11240009
+           AND          ORIGIN = :TB_RCBV240.ORIGIN                     11250009
+           AND SEQUENCE_NUMBER = :TB_RCBV240.SEQUENCE_NUMBER            11260009
+           AND  COUNTRY_NUMBER = :TB_RCBV240.COUNTRY_NUMBER             11270009
+           AND  CURRENT DATE BETWEEN EFFECTIVE_DATE AND END_DATE        11280009
+  ;                                                                     11290009
+ SELECT(SQLCODE) ;                                                      11300009
+   WHEN (0)                                                             11310009
+   DO ;                                                                 11320009
+     SW_240 = '1'B ;                                                    11330009
+   END ;                                                                11340009
+   WHEN (100)                                                           11350009
+   DO ;                                                                 11360009
+     SW_240 = '0'B ;                                                    11370009
+   END ;                                                                11380009
+   OTHERWISE                                                            11390009
+   DO ;                                                                 11400009
+     SQL_CODE = SQLCA.SQLCODE ;                                         11410009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 11420009
+               ' SEL. T240 DB2 ERR. = '                                 11430009
+               || SQL_CODE ;                                            11440009
+     PUT DATA (SEGNAL) SKIP ;                                           11450009
+     SW_ERRORE_DB2 = '1'B ;                                             11460009
+   END ;                                                                11470009
+ END ;                                                                  11480009
+ END READ_240 ;                                                         11490009
+ /*------------------------------------------------------------------*/ 11500009
+ /*            CANCELLA RECORD SU RCBV0241_PI_CTR                    */ 11510009
+ /*------------------------------------------------------------------*/ 11520009
+ UPDATE_241 : PROC REORDER ;                                            11530009
+ EXEC SQL                                                               11540009
+      UPDATE RCBV0241_PI_CTR                                            11550009
+      SET    HVP_QUANTITY       = :TB_RCBV241.HVP_QUANTITY              11560009
+                                  :RCBV241_I.INDNULL_5,                 11570009
+             CONTRACT_NUMBER    = :TB_RCBV241.CONTRACT_NUMBER           11580009
+                                  :RCBV241_I.INDNULL_6,                 11590009
+             SERVICE_MODULE_1   = :TB_RCBV241.SERVICE_MODULE_1          11600009
+                                  :RCBV241_I.INDNULL_7,                 11610009
+             SERVICE_MODULE_2   = :TB_RCBV241.SERVICE_MODULE_2          11620009
+                                  :RCBV241_I.INDNULL_8,                 11630009
+             SERVICE_MODULE_3   = :TB_RCBV241.SERVICE_MODULE_3          11640009
+                                  :RCBV241_I.INDNULL_9,                 11650009
+             SERVICE_MODULE_4   = :TB_RCBV241.SERVICE_MODULE_4          11660009
+                                  :RCBV241_I.INDNULL_10,                11670009
+             SERVICE_MODULE_5   = :TB_RCBV241.SERVICE_MODULE_5          11680009
+                                  :RCBV241_I.INDNULL_11,                11690009
+             COVERAGE_START_1   = :TB_RCBV241.COVERAGE_START_1          11700009
+                                  :RCBV241_I.INDNULL_12,                11710009
+             COVERAGE_END_1     = :TB_RCBV241.COVERAGE_END_1            11720009
+                                  :RCBV241_I.INDNULL_13,                11730009
+             COVERAGE_START_2   = :TB_RCBV241.COVERAGE_START_2          11740009
+                                  :RCBV241_I.INDNULL_14,                11750009
+             COVERAGE_END_2     = :TB_RCBV241.COVERAGE_END_2            11760009
+                                  :RCBV241_I.INDNULL_15,                11770009
+             COVERAGE_START_3   = :TB_RCBV241.COVERAGE_START_3          11780009
+                                  :RCBV241_I.INDNULL_16,                11790009
+             COVERAGE_END_3     = :TB_RCBV241.COVERAGE_END_3            11800009
+                                  :RCBV241_I.INDNULL_17,                11810009
+             COVERAGE_START_4   = :TB_RCBV241.COVERAGE_START_4          11820009
+                                  :RCBV241_I.INDNULL_18,                11830009
+             COVERAGE_END_4     = :TB_RCBV241.COVERAGE_END_4            11840009
+                                  :RCBV241_I.INDNULL_19,                11850009
+             COVERAGE_START_5   = :TB_RCBV241.COVERAGE_START_5          11860009
+                                  :RCBV241_I.INDNULL_20,                11870009
+             COVERAGE_END_5     = :TB_RCBV241.COVERAGE_END_5            11880009
+                                  :RCBV241_I.INDNULL_21,                11890009
+             COVERAGE_START_6   = :TB_RCBV241.COVERAGE_START_6          11900009
+                                  :RCBV241_I.INDNULL_22,                11910009
+             COVERAGE_END_6     = :TB_RCBV241.COVERAGE_END_6            11920009
+                                  :RCBV241_I.INDNULL_23,                11930009
+             COVERAGE_START_7   = :TB_RCBV241.COVERAGE_START_7          11940009
+                                  :RCBV241_I.INDNULL_24,                11950009
+             COVERAGE_END_7     = :TB_RCBV241.COVERAGE_END_7            11960009
+                                  :RCBV241_I.INDNULL_25,                11970009
+             SERVICE_TYPE       = :TB_RCBV241.SERVICE_TYPE              11980009
+                                  :RCBV241_I.INDNULL_26,                11990009
+             SERVICE_LVL_CODE   = :TB_RCBV241.SERVICE_LVL_CODE          12000009
+                                  :RCBV241_I.INDNULL_27,                12010009
+             AUTHORISATION_CODE = :TB_RCBV241.AUTHORISATION_CODE        12020009
+                                  :RCBV241_I.INDNULL_28,                12030009
+             SOURCE_INDICATOR   = :TB_RCBV241.SOURCE_INDICATOR          12040009
+                                  :RCBV241_I.INDNULL_29,                12050009
+             LAST_CHANGE_DATE   = :TB_RCBV241.LAST_CHANGE_DATE          12060009
+                                  :RCBV241_I.INDNULL_30,                12070009
+             END_DATE           = :TB_RCBV241.END_DATE                  12080009
+                                  :RCBV241_I.INDNULL_32                 12090009
+      WHERE  COUNTRY_NUMBER     = :TB_RCBV241.COUNTRY_NUMBER            12100009
+        AND  PRODUCT_TYPE       = :TB_RCBV241.PRODUCT_TYPE              12110009
+        AND  ORIGIN             = :TB_RCBV241.ORIGIN                    12120009
+        AND  SEQUENCE_NUMBER    = :TB_RCBV241.SEQUENCE_NUMBER           12130009
+        AND  EFFECTIVE_DATE     = :TB_RCBV241.EFFECTIVE_DATE            12140009
+  ;                                                                     12150009
+ SELECT(SQLCODE) ;                                                      12160009
+   WHEN (0)                                                             12170009
+   DO ;                                                                 12180009
+     CTR.UPDATE = CTR.UPDATE + 1 ;                                      12190009
+   END ;                                                                12200009
+   WHEN (100)                                                           12210009
+   DO ;                                                                 12220009
+   END ;                                                                12230009
+   OTHERWISE                                                            12240009
+   DO ;                                                                 12250009
+     SQL_CODE = SQLCA.SQLCODE ;                                         12260009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 12270009
+               ' UPD. T241 DB2 ERR. = '                                 12280009
+               || SQL_CODE ;                                            12290009
+     PUT DATA (SEGNAL) SKIP ;                                           12300009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      12310009
+   END ;                                                                12320009
+ END ;                                                                  12330009
+ END UPDATE_241 ;                                                       12340009
+ /*------------------------------------------------------------------*/ 12350009
+ /*            CANCELLA RECORD SU RCBV0241_PI_CTR                    */ 12360009
+ /*------------------------------------------------------------------*/ 12370009
+ DELETE_241 : PROC REORDER ;                                            12380009
+ TB_RCBV241            = '' ;    /* INIT TABLESTRUCTURE              */ 12390009
+ TB_RCBV241_I          = '' ;                                           12400009
+ TB_RCBV241.PRODUCT_TYPE    = INPUT.PRODUCT_TYPE ;                      12410009
+ TB_RCBV241.ORIGIN          = INPUT.ORIGIN ;                            12420009
+ TB_RCBV241.SEQUENCE_NUMBER = INPUT.SEQUENCE_NUMBER ;                   12430009
+ TB_RCBV241.EFFECTIVE_DATE  = INPUT.EFFECTIVE_DATE ;                    12440009
+ TB_RCBV241.COUNTRY_NUMBER  = INPUT.COUNTRY_NUMBER ;                    12450009
+  EXEC SQL                                                              12460009
+     DELETE                                                             12470009
+        FROM RCBV0241_PI_CTR                                            12480009
+        WHERE     PRODUCT_TYPE = :TB_RCBV241.PRODUCT_TYPE               12490009
+           AND          ORIGIN = :TB_RCBV241.ORIGIN                     12500009
+           AND SEQUENCE_NUMBER = :TB_RCBV241.SEQUENCE_NUMBER            12510009
+           AND EFFECTIVE_DATE  = :TB_RCBV241.EFFECTIVE_DATE             12520009
+           AND  COUNTRY_NUMBER = :TB_RCBV241.COUNTRY_NUMBER             12530009
+  ;                                                                     12540009
+ SELECT(SQLCODE) ;                                                      12550009
+   WHEN (0)                                                             12560009
+   DO ;                                                                 12570009
+     CTR.DELETE = CTR.DELETE + 1 ;                                      12580009
+   END ;                                                                12590009
+   WHEN (100)                                                           12600009
+   DO ;                                                                 12610009
+     SQL_CODE = SQLCA.SQLCODE ;                                         12620009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 12630009
+               ' DELETE NOT FOUND   = '                                 12640009
+               || SQL_CODE ;                                            12650009
+     PUT DATA (SEGNAL) SKIP ;                                           12660009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      12670009
+   END ;                                                                12680009
+   OTHERWISE                                                            12690009
+   DO ;                                                                 12700009
+     SQL_CODE = SQLCA.SQLCODE ;                                         12710009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 12720009
+               ' DEL. T241 DB2 ERR. = '                                 12730009
+               || SQL_CODE ;                                            12740009
+     PUT DATA (SEGNAL) SKIP ;                                           12750009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      12760009
+   END ;                                                                12770009
+ END ;                                                                  12780009
+ END DELETE_241 ;                                                       12790009
+ /*------------------------------------------------------------------*/ 12800009
+ /*            INSERISCE RECORD SU RCBV0241_PI_CTR                   */ 12810009
+ /*------------------------------------------------------------------*/ 12820009
+ INSERT_241 : PROC REORDER ;                                            12830009
+ EXEC SQL                                                               12840009
+      INSERT INTO RCBV0241_PI_CTR                                       12850009
+      (COUNTRY_NUMBER      ,                                            12860009
+       PRODUCT_TYPE        ,                                            12870009
+       ORIGIN              ,                                            12880009
+       SEQUENCE_NUMBER     ,                                            12890009
+       HVP_QUANTITY        ,                                            12900009
+       CONTRACT_NUMBER     ,                                            12910009
+       SERVICE_MODULE_1    ,                                            12920009
+       SERVICE_MODULE_2    ,                                            12930009
+       SERVICE_MODULE_3    ,                                            12940009
+       SERVICE_MODULE_4    ,                                            12950009
+       SERVICE_MODULE_5    ,                                            12960009
+       COVERAGE_START_1    ,                                            12970009
+       COVERAGE_END_1      ,                                            12980009
+       COVERAGE_START_2    ,                                            12990009
+       COVERAGE_END_2      ,                                            13000009
+       COVERAGE_START_3    ,                                            13010009
+       COVERAGE_END_3      ,                                            13020009
+       COVERAGE_START_4    ,                                            13030009
+       COVERAGE_END_4      ,                                            13040009
+       COVERAGE_START_5    ,                                            13050009
+       COVERAGE_END_5      ,                                            13060009
+       COVERAGE_START_6    ,                                            13070009
+       COVERAGE_END_6      ,                                            13080009
+       COVERAGE_START_7    ,                                            13090009
+       COVERAGE_END_7      ,                                            13100009
+       SERVICE_TYPE        ,                                            13110009
+       SERVICE_LVL_CODE    ,                                            13120009
+       AUTHORISATION_CODE  ,                                            13130009
+       SOURCE_INDICATOR    ,                                            13140009
+       LAST_CHANGE_DATE    ,                                            13150009
+       EFFECTIVE_DATE      ,                                            13160009
+       END_DATE            ,                                            13170017
+       CUSTOMER_NUMBER                                                  13171017
+        )                                                               13172017
+        VALUES (:TB_RCBV241:TB_RCBV241_I.INDNULL)                       13180009
+                                                                        13190009
+  ;                                                                     13200009
+ SELECT(SQLCODE) ;                                                      13210009
+   WHEN (0)                                                             13220009
+   DO ;                                                                 13230009
+     CTR.INSERT = CTR.INSERT + 1 ;                                      13240009
+   END ;                                                                13250009
+   OTHERWISE                                                            13260009
+   DO ;                                                                 13270009
+     SQL_CODE = SQLCA.SQLCODE ;                                         13280009
+     SEGNAL =  'ERR. PK = '||COM_KEY ||                                 13290009
+               ' INS. T241 DB2 ERR. = '                                 13300009
+               || SQL_CODE ;                                            13310009
+     PUT DATA (SEGNAL) SKIP ;                                           13320009
+     CTR.REJECT = CTR.REJECT + 1 ;                                      13330009
+   END ;                                                                13340009
+ END ;                                                                  13350009
+ END INSERT_241 ;                                                       13360009
+1/********************************************************************/ 13370009
+ /*                                                                  */ 13380009
+ /* MODULE NAME      : CHECK_TIME                                    */ 13390009
+ /*                                                                  */ 13400009
+ /* DESCRIPTION      : CHECK CONTENTS OF TIME FIELD                  */ 13410009
+ /*                                                                  */ 13420009
+ /********************************************************************/ 13430009
+ CHECK_TIME : PROC (IN_TIME) RETURNS (BIT(1)) ;                         13440009
+   DCL IN_TIME CHAR (8) ;                                               13450009
+   DCL 1 TIME_STRUCT DEFINED IN_TIME ,                                  13460009
+         3 HOURS    CHAR (2) ,                                          13470009
+         3 DELIM1   CHAR (1) ,                                          13480009
+         3 MINUTES  CHAR (2) ,                                          13490009
+         3 DELIM2   CHAR (1) ,                                          13500009
+         3 SECONDS  CHAR (2) ;                                          13510009
+   DCL RESULT BIT(1) ;                                                  13520009
+                                                                        13530009
+    /* INIT RESULT */                                                   13540009
+   RESULT = FALSE ;                                                     13550009
+                                                                        13560009
+    /* CHECK WHETHER HOURS AND MINUTES ARE NUMERIC */                   13570009
+   IF VERIFY(HOURS,DIGITS)=0   &                                        13580009
+      DELIM1='.'               &                                        13590009
+      VERIFY(MINUTES,DIGITS)=0 &                                        13600009
+      DELIM2='.'               &                                        13610009
+      VERIFY(SECONDS,DIGITS)=0                                          13620009
+   THEN DO ;                                                            13630009
+      /* CHECK NUMERIC RANGES */                                        13640009
+     IF (HOURS   >= '00' &                                              13650009
+         HOURS   <= '23' &                                              13660009
+         MINUTES >= '00' &                                              13670009
+         MINUTES <= '59' &                                              13680009
+         SECONDS >= '00' &                                              13690009
+         SECONDS <= '59')                                               13700009
+     |  (HOURS   = '24' &                                               13710009
+         MINUTES = '00' &                                               13720009
+         SECONDS = '00')                                                13730009
+     THEN DO ;                                                          13740009
+       RESULT = TRUE ;                                                  13750009
+     END ;                                                              13760009
+   END ;                                                                13770009
+                                                                        13780009
+   RETURN (RESULT) ;                                                    13790009
+                                                                        13800009
+ END CHECK_TIME ;                                                       13810009
+ /*------------------------------------------------------------------*/ 13820009
+ /*              FINE PROGRAMMA                                      */ 13830009
+ /*------------------------------------------------------------------*/ 13840009
+   FINE_ELAB : PROC  REORDER ;                                          13850009
+                                                                        13860009
+     CLOSE FILE(ROLSICI) ;                                              13870009
+     CLOSE FILE(ROLSICO) ;                                              13880009
+                                                                        13890009
+     PUT SKIP LIST('READ          - ', CTR.READ) ;                      13900009
+     PUT SKIP LIST('INSERTED      - ', CTR.INSERT) ;                    13910009
+     PUT SKIP LIST('UPDATED       - ', CTR.UPDATE) ;                    13920009
+     PUT SKIP LIST('DELETED       - ', CTR.DELETE) ;                    13930009
+     PUT SKIP LIST('ERROR         - ', CTR.REJECT) ;                    13940009
+     PUT SKIP LIST('INQUIRY       - ', CTR.INQUIRY) ;                   13950009
+     PUT SKIP LIST('WRITTEN       - ', CTR.WRITE) ;                     13960009
+     IF SW_ABEND = '1'B                                                 13970009
+     THEN PUT SKIP LIST('END  WRONG  ') ;                               13980009
+     ELSE PUT SKIP LIST('END  WORK   OK') ;                             13990009
+   END FINE_ELAB ;                                                      14000009
+   END ROLSICM ;                                                        14010009

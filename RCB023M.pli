@@ -1,0 +1,502 @@
+ /* RCB023M - RETRIEVE SLC'S FOR MACHINE TYPE/MODEL                  */ 00019111
+ /********************************************************************/ 00020000
+ /*                                                                  */ 00030000
+ /* PROGRAM          : RCB023M                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* LANGUAGE         : PLI                                           */ 00060000
+ /*                                                                  */ 00070000
+ /* TYPE             : LINKABLE MODULE                               */ 00080000
+ /*                                                                  */ 00090000
+ /* DESCRIPTION      : RETRIEVE SLC'S FOR MACHINE TYPE/MODEL         */ 00100000
+ /*                                                                  */ 00110000
+ /*                                                                  */ 00120000
+ /* INPUT            : - COUNTRY_NUMBER                              */ 00130000
+ /*                      PRODUCT_TYPE                                */ 00140000
+ /*                      MODEL                                       */ 00150000
+ /*                      EFFECTIVE_DATE                              */ 00160000
+ /*                      DAYS_VARIANCE                               */ 00170000
+ /*                      TYPE_OF_WARRANTY                            */ 00180000
+ /*                      END_DATE                                    */ 00190000
+ /*                      RCBT0400_PO_MOD1                            */ 00200000
+ /*                                                                  */ 00210000
+ /* OUTPUT           : - TYPE_OF_WARRANTY                            */ 00220000
+ /*                      SERVICE_LVL_CODE_1                          */ 00230000
+ /*                      START_DATE_1                                */ 00240000
+ /*                      END_DATE_1                                  */ 00250000
+ /*                      SERVICE_LVL_CODE_2                          */ 00260000
+ /*                      START_DATE_2                                */ 00270000
+ /*                      END_DATE_2                                  */ 00280000
+ /*                      END_DATE                                    */ 00290000
+ /*                      SERVICE_LVL_CODE_C                          */ 00300000
+ /*                                                                  */ 00310000
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */ 00320000
+ /*                    RCB0M1M   COMMON ERROR ROUTINE                */ 00330000
+ /*                    RCB004M   DATE CALCULATION ROUTINE            */ 00340000
+ /*                    RCB012M   CALCULATE WED                       */ 00350000
+ /*                    RCBI40M   SELECT RCBT0400_PO_MOD1             */ 00360000
+ /*                                                                  */ 00370000
+ /* MESSAGES         : NONE                                          */ 00380000
+ /*                                                                  */ 00390000
+ /* PROCESSING DETAIL: - PASSES SLC'S AND DATES FOR A GIVEN          */ 00400000
+ /*                      MACHINE TYPE/MODEL                          */ 00410000
+ /*                                                                  */ 00420000
+ /*                    THE FOLLOWING STEPS ARE PERFORMED:            */ 00430000
+ /*                    1. GET ROW FROM RCBT0400_PO_MOD1 FOR GIVEN    */ 00440000
+ /*                       MACHINE TYPE/MODEL                         */ 00450000
+ /*                       IF FOUND AND SLC HAS BEEN FILLED, USE      */ 00460000
+ /*                       THE SLC'S TO CALCULATE WARRANTY PERIODS    */ 00470000
+ /*                    2. GET ROW FROM RCBT0400_PO_MOD1 FOR GIVEN    */ 00480000
+ /*                       MACHINE TYPE AND BLANK MODEL               */ 00490000
+ /*                       IF FOUND AND SLC HAS BEEN FILLED, USE      */ 00500000
+ /*                       THE SLC'S TO CALCULATE WARRANTY PERIODS    */ 00510000
+ /*                    3. IF WARRANTY CATEGORY IN ROW FROM           */ 00520000
+ /*                       RCBT0400_PO_MOD1 FOR GIVEN                 */ 00530000
+ /*                       MACHINE TYPE/MODEL IS VALID, USE IT TO     */ 00540000
+ /*                       CALCULATE WARRANTY PERIODS                 */ 00550000
+ /*                    4. IF WARRANTY CATEGORY IN ROW FROM           */ 00560000
+ /*                       RCBT0400_PO_MOD1 FOR GIVEN MACHINE TYPE    */ 00570000
+ /*                       AND BLANK MODEL IS VALID, USE IT TO        */ 00580000
+ /*                       CALCULATE WARRANTY PERIOD                  */ 00590000
+ /*                    5. IF ALL ELSE FAILES AND DEFAULT TYPE OF     */ 00600000
+ /*                       WARRANTY IS FILLED IN, USE IT TO           */ 00610000
+ /*                       CALCULATE WARRANTY PERIOD                  */ 00620000
+ /*                    NOTE: IF THE END_DATE (WED) IS FILLED IN,     */ 00630000
+ /*                    IT WILL OVERWRITE ANY CALCULATED END DATE.    */ 00640000
+ /*                                                                  */ 00650000
+ /* MAINTENANCE LOG    :                                             */ 00660000
+ /* ---------------                                                  */ 00670000
+ /*                                                                  */ 00680000
+ /*  DATE      | WORK-ITEMNO.| DESCRIPTION                           */ 00690000
+ /* ---------------------------------------------------------------- */ 00700000
+ /* 1997-08-27 | RC01190     | INITIAL DEVELOPMENT                   */ 00710000
+ /* 1997-12-19 | PTM1144     | EFFECTIVE DATE CAN BE ZERO            */ 00720000
+ /* 2001-11-06 | RA01229     | SERVICE REFERENCE INTERIM             */ 00730000
+ /*            |             |                                       */ 00740000
+ /********************************************************************/ 00750000
+1RCB023M: PROC (PTR_RCBZ32S,                                            00760000
+                PTR_INT_AREA)                                           00770000
+          REORDER;                                                      00780000
+0DEFAULT RANGE (*)        STATIC;                                       00790000
+0/********************************************************************/ 00800000
+ /*  PARAMETERS                                                      */ 00810000
+ /********************************************************************/ 00820000
+0DCL PTR_RCBZ32S            POINTER;                                    00830000
+ DCL 1 PARM_RCBZ32S         BASED (PTR_RCBZ32S),                        00840000
+       %INCLUDE (RCBZ32S);;                                             00850000
+ DCL 1 PARM_RCBZ03S,                         /* RETURN AREA DATE CONV */00860000
+       %INCLUDE (RCBZ03S);;                                             00870000
+0DCL PTR_INT_AREA           POINTER;                                    00880000
+ DCL 1 PARM_INT_AREA BASED(PTR_INT_AREA),                               00890000
+       %INCLUDE (RCBZ01S);;                                             00900000
+0/********************************************************************/ 00910000
+ /* EXTERNAL ENTRIES                                                 */ 00920000
+ /********************************************************************/ 00930000
+0DCL RCB004M   ENTRY  EXTERNAL;                                         00940000
+ DCL RCB0E1M   ENTRY  EXTERNAL;                                         00950000
+ DCL RCBI40M   ENTRY  EXTERNAL;                                         00960000
+ DCL RCB012M   ENTRY  EXTERNAL;                                         00970000
+0/********************************************************************/ 00980000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00990000
+ /********************************************************************/ 01000000
+0DCL PTR_RCBZ24S            PTR;                                        01010000
+ DCL 1 PARM_RCBZ24S,                                                    01020000
+       %INCLUDE (RCBZ24S);;                                             01030000
+ DCL 1 PARM_RCBZ97S,                                                    01040000
+       %INCLUDE (RCBZ97S);;                                             01050000
+ DCL PTR_RCBT400            PTR;                                        01060000
+ DCL 1 TB_RCBT400,                                                      01070000
+       %INCLUDE (RCB400S);;                                             01080000
+ DCL PTR_RCBT400I           PTR;                                        01090000
+ DCL 1 TB_RCBT400_I,                                                    01100000
+       %INCLUDE (RCB400SI);;                                            01110000
+ DCL PTR_RETURN_AREA        PTR;                                        01120000
+ DCL 1 RETURN_AREA,                                                     01130000
+       %INCLUDE (RCBZ02S);;                                             01140000
+0/********************************************************************/ 01150000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01160000
+ /********************************************************************/ 01170000
+ DCL WRK_MOD_NAME             CHAR (08)    INIT ('RCB023M');            01180000
+ DCL WRK_MODEL                CHAR (03);                                01190000
+ DCL WRK_WARRANTY_CAT         CHAR (01);                                01200000
+ DCL WRK_TYPE_OF_WARRANTY     CHAR (01);                                01210000
+ DCL WRK_END_DATE_1           CHAR (10);                                01220000
+ DCL WRK_END_DATE_2           CHAR (10);                                01230000
+ DCL WRK_SPLIT_DATE           CHAR (10);                                01240000
+ DCL WRK_LEVEL                FIXED BIN(15);                            01250000
+1/********************************************************************/ 01260000
+ /*  BUILTIN FUNCTIONS                                               */ 01270000
+ /********************************************************************/ 01280000
+0DCL  NULL        BUILTIN;                                              01290000
+ DCL  HIGH        BUILTIN;                                              01300000
+ DCL  VERIFY      BUILTIN;                                              01310000
+ DCL  TRANSLATE   BUILTIN;                                              01320000
+ DCL  ADDR        BUILTIN;                                              01330000
+ DCL  SUBSTR      BUILTIN;                                              01340000
+1/********************************************************************/ 01350000
+ /*  ON ERROR CONDITIONS                                             */ 01360000
+ /********************************************************************/ 01370000
+0%INCLUDE (RCB0E0M);                                                    01380000
+  END;                                                                  01390000
+1/********************************************************************/ 01400000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01410000
+ /********************************************************************/ 01420000
+ WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01430000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01440000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCB023M';                     01450000
+                                       /* DETERMINE      SOC *PTM1144*/ 01460000
+ IF PARM_RCBZ32S.EFFECTIVE_DATE > '0000000000' /* WARRANTY DATA IN-  */ 01470000
+                                       /* CASE EFFECTIVE DATE FILLED */ 01480000
+ THEN DO;                              /*                EOC *PTM1144*/ 01490000
+   WRK_MODEL = PARM_RCBZ32S.MODEL;     /* SAVE MODEL                 */ 01500000
+                                                                        01510000
+   CALL RCB023M_GET_RCBT400;           /* GET ROW FOR MACH_TYPE/MODEL*/ 01520000
+                                       /* SAVE WARRANTY CATEGORY     */ 01530000
+   WRK_WARRANTY_CAT = TB_RCBT400.WARRANTY_CATEGORY;                     01540000
+   IF TB_RCBT400_I.INDNULL(18) = 0     /* SLC DEFINED                */ 01550000
+   &  WRK_MODEL ¬= ''                  /* MODEL SPECIFIED ON INPUT   */ 01560000
+   THEN                                /* SET PERCALL SLC            */ 01570000
+     PARM_RCBZ32S.SERVICE_LVL_CODE_C  = TB_RCBT400.SERVICE_LVL_CODE_C;  01580000
+   IF TB_RCBT400_I.INDNULL(14) = -1    /* SLC NOT DEFINED            */ 01590000
+   &  WRK_MODEL ¬= ''                  /* MODEL SPECIFIED ON INPUT   */ 01600000
+   THEN DO;                            /* TRY WITH BLANK MODEL       */ 01610000
+     WRK_MODEL = '';                                                    01620000
+     CALL RCB023M_GET_RCBT400;         /* GET ROW FOR BLANK MODEL    */ 01630000
+     IF TB_RCBT400_I.INDNULL(18) = 0   /* SLC DEFINED                */ 01640000
+     & PARM_RCBZ32S.SERVICE_LVL_CODE_C  = ''   /* AND NOT YET SET    */ 01650000
+     THEN                                                               01660000
+       PARM_RCBZ32S.SERVICE_LVL_CODE_C  =TB_RCBT400.SERVICE_LVL_CODE_C; 01670000
+     END;                                                               01680000
+   SELECT;                             /* WHAT TO USE                */ 01690000
+                                       /* SLC DATA IS VALID          */ 01700000
+     WHEN (TB_RCBT400_I.INDNULL(14) ¬= -1) DO;                          01710000
+       CALL RCB023M_PROCESS_SLCS;                                       01720000
+       END;                                                             01730000
+                                       /* WC REAL MODEL IS VALID    */  01740000
+     WHEN (VERIFY(WRK_WARRANTY_CAT,WC_VALID) = 0) DO;                   01750000
+       CALL RCB023M_PROCESS_WC;                                         01760000
+       END;                                                             01770000
+                                       /* WC BLANK MODEL IS VALID    */ 01780000
+     WHEN (VERIFY(TB_RCBT400.WARRANTY_CATEGORY,WC_VALID) = 0) DO;       01790000
+       WRK_WARRANTY_CAT = TB_RCBT400.WARRANTY_CATEGORY;                 01800000
+       CALL RCB023M_PROCESS_WC;                                         01810000
+       END;                                                             01820000
+                                                                        01830000
+     WHEN (PARM_RCBZ32S.TYPE_OF_WARRANTY ¬= ' ') DO;                    01840000
+       CALL RCB023M_PROCESS_TYPE_OF_WARR;                               01850000
+       END;                                                             01860000
+                                                                        01870000
+     OTHERWISE DO;                    /* NO CALCULATION POSSIBLE    */  01880000
+       CALL RCB023M_INIT_OUTPUT_PARMS;                                  01890000
+       END;                                                             01900000
+     END;                                                               01910000
+   END;                                                                 01920000
+                                       /*                SOC *PTM1144*/ 01930000
+ ELSE DO;                              /* NO EFFECTIVE DATE,         */ 01940000
+   CALL RCB023M_INIT_OUTPUT_PARMS;     /* INITIALIZE OUTPUT PARMS    */ 01950000
+   END;                                                                 01960000
+                                       /*                EOC *PTM1144*/ 01970000
+                                                                        01980000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            01990000
+1/********************************************************************/ 02000000
+ /*                                                                  */ 02010000
+ /* MODULE NAME      : PROCESS_SLCS                                  */ 02020000
+ /*                                                                  */ 02030000
+ /* DESCRIPTION      : PROCESS SLC INFORMATION                       */ 02040000
+ /*                    ALWAYS DETERMINE THE TYPE OF WARRANTY         */ 02050000
+ /*                    RELATED TO THE WARRANTY CATEGORY FROM TABLE   */ 02060000
+ /*                    RCBT400, IF THERE IS ANY                      */ 02070000
+ /********************************************************************/ 02080000
+ RCB023M_PROCESS_SLCS: PROC;                                            02090000
+                                                                        02100000
+ WRK_SPLIT_DATE =  RCB023M_CALC_DATE(PARM_RCBZ32S.EFFECTIVE_DATE,       02110000
+                                     'M',                               02120000
+                                     TB_RCBT400.WARRANTY_DURATN_1);     02130000
+ WRK_END_DATE_1 =  RCB023M_CALC_DATE(WRK_SPLIT_DATE,                    02140000
+                                     'D',                               02150000
+                                     -1);                               02160000
+                                                                        02170000
+ WRK_TYPE_OF_WARRANTY = '';             /* DETERMINE TYPE_OF_WARRANTY*/ 02180000
+ SELECT;                                                                02190000
+   WHEN(TB_RCBT400.WARRANTY_CATEGORY = 'Z') DO;                         02200000
+     WRK_TYPE_OF_WARRANTY = '8';       /* NOT USED FOR BAU         */   02210000
+   END;                                                                 02220000
+   WHEN(TB_RCBT400.WARRANTY_CATEGORY > '') DO;                          02230000
+     WRK_TYPE_OF_WARRANTY = TRANSLATE(TB_RCBT400.WARRANTY_CATEGORY,     02240000
+                                      WT_VALID,                         02250000
+                                      WC_VALID);                        02260000
+   END;                                                                 02270000
+   WHEN(WRK_WARRANTY_CAT = 'Z') DO;                                     02280000
+     WRK_TYPE_OF_WARRANTY = '8';        /* NOT USED FOR BAU       */    02290000
+   END;                                                                 02300000
+   WHEN(WRK_WARRANTY_CAT > '') DO;                                      02310000
+     WRK_TYPE_OF_WARRANTY = TRANSLATE(WRK_WARRANTY_CAT,                 02320000
+                                      WT_VALID,                         02330000
+                                      WC_VALID);                        02340000
+   END;                                                                 02350000
+   OTHERWISE;                                                           02360000
+ END;                                                                   02370000
+                                                                        02380000
+ IF WRK_TYPE_OF_WARRANTY > ''                                           02390000
+ THEN PARM_RCBZ32S.TYPE_OF_WARRANTY = WRK_TYPE_OF_WARRANTY;             02400000
+                                                                        02410000
+ PARM_RCBZ32S.START_DATE_1       = PARM_RCBZ32S.EFFECTIVE_DATE;         02420000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_1 = TB_RCBT400.SERVICE_LVL_CODE_1;       02430000
+                                                                        02440000
+                             /* CHECK TO SEE IF THERE IS A SECOND SLC */02450000
+ IF TB_RCBT400_I.INDNULL(16) ¬= -1                                      02460000
+ THEN                                  /* SPLIT WARRANTY            */  02470000
+   DO;                                                                  02480000
+                                       /* WED WITHIN FIRST PERIOD   */  02490000
+     IF PARM_RCBZ32S.END_DATE <= WRK_END_DATE_1                         02500000
+     &  PARM_RCBZ32S.END_DATE ¬= ''    /* WED SPECIFIED             */  02510000
+     THEN                                                               02520000
+       DO;                             /* USE WED AS SPECIFIED      */  02530000
+         PARM_RCBZ32S.END_DATE_1         = PARM_RCBZ32S.END_DATE;       02540000
+                                       /* NO SECOND PERIOD          */  02550000
+         PARM_RCBZ32S.SERVICE_LVL_CODE_2 = HIGH(3);                     02560000
+         PARM_RCBZ32S.START_DATE_2       = '';                          02570000
+         PARM_RCBZ32S.END_DATE_2         = '';                          02580000
+                                                                        02590000
+       END;                                                             02600000
+     ELSE                              /* WED OUTSIDE FIRST PERIOD  */  02610000
+       DO;                             /* OR NOT SPECIFIED          */  02620000
+         PARM_RCBZ32S.END_DATE_1 = WRK_END_DATE_1;                      02630000
+         PARM_RCBZ32S.SERVICE_LVL_CODE_2                                02640000
+            = TB_RCBT400.SERVICE_LVL_CODE_2;                            02650000
+         PARM_RCBZ32S.START_DATE_2 = WRK_SPLIT_DATE;                    02660000
+         IF PARM_RCBZ32S.END_DATE = '' /* WED NOT SPECIFIED         */  02670000
+         THEN                          /* CALCULATE END 2ND PERIOD  */  02680000
+           DO;                                                          02690000
+             WRK_END_DATE_2                                             02700000
+                =  RCB023M_CALC_DATE(WRK_END_DATE_1,                    02710000
+                                     'M',                               02720000
+                                     TB_RCBT400.WARRANTY_DURATN_2);     02730000
+                                                                        02740000
+             PARM_RCBZ32S.END_DATE_2 = WRK_END_DATE_2;                  02750000
+             PARM_RCBZ32S.END_DATE   = WRK_END_DATE_2;                  02760000
+           END;                                                         02770000
+         ELSE                          /* USE WED AS SPECIFIED      */  02780000
+           DO;                                                          02790000
+             PARM_RCBZ32S.END_DATE_2 = PARM_RCBZ32S.END_DATE;           02800000
+           END;                                                         02810000
+       END;                                                             02820000
+    END;                                                                02830000
+ ELSE                                  /* ONLY ONE WARRANTY PERIOD  */  02840000
+   DO;                                                                  02850000
+     IF PARM_RCBZ32S.END_DATE = ''     /* WED NOT SPECIFIED         */  02860000
+     THEN                              /* USE CALCULATED END DATE   */  02870000
+       DO;                                                              02880000
+         PARM_RCBZ32S.END_DATE_1         = WRK_END_DATE_1;              02890000
+         PARM_RCBZ32S.END_DATE           = WRK_END_DATE_1;              02900000
+       END;                                                             02910000
+     ELSE                              /* USE WED AS SPECIFIED      */  02920000
+       DO;                                                              02930000
+         PARM_RCBZ32S.END_DATE_1         = PARM_RCBZ32S.END_DATE;       02940000
+       END;                                                             02950000
+                                       /* NO SECOND PERIOD          */  02960000
+     PARM_RCBZ32S.SERVICE_LVL_CODE_2 = HIGH(3);                         02970000
+     PARM_RCBZ32S.START_DATE_2       = '';                              02980000
+     PARM_RCBZ32S.END_DATE_2         = '';                              02990000
+   END;                                                                 03000000
+                                                                        03010000
+ END RCB023M_PROCESS_SLCS;;                                             03020000
+1/********************************************************************/ 03030000
+ /*                                                                  */ 03040000
+ /* MODULE NAME      : PROCESS_WC                                    */ 03050000
+ /*                                                                  */ 03060000
+ /* DESCRIPTION      : PERFORM DATE CALCULATIONS USING TYPE OF       */ 03070000
+ /*                    WARRANTY INSTEAD OF SLC                       */ 03080000
+ /********************************************************************/ 03090000
+ RCB023M_PROCESS_WC: PROC;                                              03100000
+                                       /* WC FROM TYPE/MODEL IS      */ 03110000
+                                       /* NO WARRANTY, USE LOWEST    */ 03120000
+                                       /* DATE AND TYPE OF WARRANTY  */ 03130000
+                                       /* FOR CONSISTENCY            */ 03140000
+ IF WRK_WARRANTY_CAT ='Z'                                               03150000
+ THEN DO;                                                               03160000
+   PARM_RCBZ32S.TYPE_OF_WARRANTY = '8';  /* NOT USED FOR BAU      */    03170000
+   IF PARM_RCBZ32S.END_DATE = ' '                                       03180000
+   &  PARM_RCBZ32S.EFFECTIVE_DATE ¬= ' '                                03190000
+   THEN                                                                 03200000
+     PARM_RCBZ32S.END_DATE = PARM_RCBZ32S.EFFECTIVE_DATE;               03210000
+   PARM_RCBZ32S.SERVICE_LVL_CODE_1 = HIGH(3);                           03220000
+   PARM_RCBZ32S.START_DATE_1       = PARM_RCBZ32S.EFFECTIVE_DATE;       03230000
+   PARM_RCBZ32S.END_DATE_1         = PARM_RCBZ32S.END_DATE;             03240000
+ END;                                                                   03250000
+                                       /* WC -> TYPE OF WARRANTY    */  03260000
+ ELSE DO;                                                               03270000
+   WRK_TYPE_OF_WARRANTY = TRANSLATE(WRK_WARRANTY_CAT,                   03280000
+                                    WT_VALID,                           03290000
+                                    WC_VALID);                          03300000
+   PARM_RCBZ32S.TYPE_OF_WARRANTY = WRK_TYPE_OF_WARRANTY;                03310000
+                                         /* NO SLC'S                */  03320000
+   PARM_RCBZ32S.SERVICE_LVL_CODE_1 = HIGH(3);                           03330000
+   PARM_RCBZ32S.START_DATE_1     = PARM_RCBZ32S.EFFECTIVE_DATE;         03340000
+   IF PARM_RCBZ32S.END_DATE = ''       /* WED NOT SPECIFIED         */  03350000
+   THEN                                /* CALCULATE WED USING       */  03360000
+     DO;                               /* TYPE OF WARRANTY          */  03370000
+       PARM_RCBZ24S.TYPE_OF_WARRANTY = WRK_TYPE_OF_WARRANTY;            03380000
+       PARM_RCBZ24S.EFFECTIVE_DATE = PARM_RCBZ32S.EFFECTIVE_DATE;       03390000
+                                                                        03400000
+       CALL RCB012M(ADDR(PARM_RCBZ24S),                                 03410000
+                    ADDR(PARM_INT_AREA));                               03420000
+                                                                        03430000
+       PARM_RCBZ32S.END_DATE_1 = PARM_RCBZ24S.WARRANTY_EXPIRY_DATE;     03440000
+       PARM_RCBZ32S.END_DATE  = PARM_RCBZ24S.WARRANTY_EXPIRY_DATE;      03450000
+     END;                                                               03460000
+   ELSE                                /* USE WED AS SPECIFIED      */  03470000
+     DO;                                                                03480000
+       PARM_RCBZ32S.END_DATE_1   = PARM_RCBZ32S.END_DATE;               03490000
+     END;                                                               03500000
+ END;                                                                   03510000
+                                        /* NEVER A SECOND PERIOD    */  03520000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_2 = HIGH(3);                             03530000
+ PARM_RCBZ32S.START_DATE_2       = '';                                  03540000
+ PARM_RCBZ32S.END_DATE_2         = '';                                  03550000
+                                                                        03560000
+ END RCB023M_PROCESS_WC;                                                03570000
+1/********************************************************************/ 03580000
+ /*                                                                  */ 03590000
+ /* MODULE NAME      : PROCESS_TYPE_OF_WARRANTY                      */ 03600000
+ /*                                                                  */ 03610000
+ /* DESCRIPTION      : PERFORM DATE CALCULATIONS USING THE DEFAULT   */ 03620000
+ /*                    TYPE OF WARRANTY                              */ 03630000
+ /********************************************************************/ 03640000
+ RCB023M_PROCESS_TYPE_OF_WARR: PROC;                                    03650000
+                                       /* NO SLC'S                  */  03660000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_1 = HIGH(3);                             03670000
+ PARM_RCBZ32S.START_DATE_1       = PARM_RCBZ32S.EFFECTIVE_DATE;         03680000
+ IF PARM_RCBZ32S.END_DATE = ''         /* WED NOT SPECIFIED         */  03690000
+ THEN                                  /* CALCULATE WED USING       */  03700000
+   DO;                                 /* TYPE OF WARRANTY          */  03710000
+     PARM_RCBZ24S.TYPE_OF_WARRANTY = PARM_RCBZ32S.TYPE_OF_WARRANTY;     03720000
+     PARM_RCBZ24S.EFFECTIVE_DATE   = PARM_RCBZ32S.EFFECTIVE_DATE;       03730000
+                                                                        03740000
+     CALL RCB012M(ADDR(PARM_RCBZ24S),                                   03750000
+                  ADDR(PARM_INT_AREA));                                 03760000
+                                                                        03770000
+     PARM_RCBZ32S.END_DATE_1  = PARM_RCBZ24S.WARRANTY_EXPIRY_DATE;      03780000
+     PARM_RCBZ32S.END_DATE    = PARM_RCBZ24S.WARRANTY_EXPIRY_DATE;      03790000
+   END;                                                                 03800000
+ ELSE                                  /* USE WED AS SPECIFIED      */  03810000
+   DO;                                                                  03820000
+     PARM_RCBZ32S.END_DATE_1     = PARM_RCBZ32S.END_DATE;               03830000
+   END;                                                                 03840000
+                                      /* NEVER A SECOND PERIOD      */  03850000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_2 = HIGH(3);                             03860000
+ PARM_RCBZ32S.START_DATE_2       = '';                                  03870000
+ PARM_RCBZ32S.END_DATE_2         = '';                                  03880000
+                                                                        03890000
+ END RCB023M_PROCESS_TYPE_OF_WARR;                                      03900000
+1/********************************************************************/ 03910000
+ /*                                                                  */ 03920000
+ /* MODULE NAME      : INIT_OUTPUT_PARMS                             */ 03930000
+ /*                                                                  */ 03940000
+ /* DESCRIPTION      : NO RCBT400 RECORDS FOUND FOR THIS INPUT OR    */ 03950000
+ /*                    PASSED EFFECTIVE DATE IS BLANK: INITIALIZE    */ 03960000
+ /*                    OUTPUT PARAMETERS                             */ 03970000
+ /********************************************************************/ 03980000
+ RCB023M_INIT_OUTPUT_PARMS: PROC;                                       03990000
+                                                                        04000000
+ PARM_RCBZ32S.TYPE_OF_WARRANTY   = '';                                  04010000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_1 = HIGH(3);                             04020000
+ PARM_RCBZ32S.START_DATE_1       = PARM_RCBZ32S.EFFECTIVE_DATE;         04030000
+ PARM_RCBZ32S.END_DATE_1         = PARM_RCBZ32S.END_DATE;               04040000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_2 = HIGH(3);                             04050000
+ PARM_RCBZ32S.START_DATE_2       = '';                                  04060000
+ PARM_RCBZ32S.END_DATE_2         = '';                                  04070000
+ PARM_RCBZ32S.SERVICE_LVL_CODE_C = HIGH(3);                             04080000
+                                                                        04090000
+ END RCB023M_INIT_OUTPUT_PARMS;                                         04100000
+1/********************************************************************/ 04110000
+ /*                                                                  */ 04120000
+ /* MODULE NAME      : GET_RCBT400                                   */ 04130000
+ /*                                                                  */ 04140000
+ /* DESCRIPTION      : RETRIEVE RCBT400 RECORD                       */ 04150000
+ /*                                                                  */ 04160000
+ /********************************************************************/ 04170000
+ RCB023M_GET_RCBT400: PROC;                                             04180000
+                                       /* FILL KEY FIELDS           */  04190000
+ TB_RCBT400                  = '';                                      04200000
+ TB_RCBT400.COUNTRY_NUMBER   = PARM_RCBZ32S.COUNTRY_NUMBER;             04210000
+ TB_RCBT400.PRODUCT_TYPE     = PARM_RCBZ32S.PRODUCT_TYPE;               04220000
+ TB_RCBT400.MODEL_NUMBER     = WRK_MODEL;                               04230000
+                                                                        04240000
+ CALL RCBI40M (ADDR(TB_RCBT400),       /* GET ROW FROM RCBT0400     */  04250000
+               ADDR(TB_RCBT400_I),                                      04260000
+               ADDR(RETURN_AREA),                                       04270000
+               ADDR(PARM_INT_AREA));                                    04280000
+                                                                        04290000
+ SELECT (RETURN_AREA.RETURN_CODE);     /* CHECK RESULT              */  04300000
+ WHEN (0);                             /* ROW FOUND                 */  04310000
+ WHEN (4)                              /* ROW NOT FOUND             */  04320000
+   DO;                                 /* INIT FIELDS               */  04330000
+     TB_RCBT400.WARRANTY_CATEGORY = '';                                 04340000
+     TB_RCBT400_I.INDNULL(14) = -1;                                     04350000
+     TB_RCBT400_I.INDNULL(18) = -1;                                     04360000
+   END;                                                                 04370000
+ OTHERWISE                                                              04380000
+   DO;                                                                  04390000
+     CALL RCB023M_ERROR (ADDR(RETURN_AREA.RETURN_SQL),                  04400000
+                         'DB2',                                         04410000
+                         '#002');                                       04420000
+   END;                                                                 04430000
+ END;                                                                   04440000
+ END RCB023M_GET_RCBT400;                                               04450000
+1/********************************************************************/ 04460000
+ /*                                                                  */ 04470000
+ /* MODULE NAME      : CALC_DATE                                     */ 04480000
+ /*                                                                  */ 04490000
+ /* DESCRIPTION      : PROCESS DATE USING RCB004M                    */ 04500000
+ /*                                                                  */ 04510000
+ /********************************************************************/ 04520000
+ RCB023M_CALC_DATE: PROC   (EFF_DATE,                                   04530000
+                            CALC_TYPE,                                  04540000
+                            CALC_VALUE) RETURNS(CHAR(10));              04550000
+                                                                        04560000
+ DCL EFF_DATE     CHAR(10);                                             04570000
+ DCL CALC_TYPE    CHAR(1);                                              04580000
+ DCL CALC_VALUE   FIXED DEC(3,0);                                       04590000
+                                                                        04600000
+ PARM_RCBZ03S.WD_IN_FORMAT   = 'ISO';                                   04610000
+ PARM_RCBZ03S.WD_OUT_FORMAT  = 'ISO';                                   04620000
+ PARM_RCBZ03S.WD_FUNCTION    = 'C';                                     04630000
+ PARM_RCBZ03S.WD_PERIOD_TYPE = CALC_TYPE;                               04640000
+ PARM_RCBZ03S.WD_PERIOD      = CALC_VALUE;                              04650000
+ PARM_RCBZ03S.WD_IN_DATE     = EFF_DATE;                                04660000
+ CALL RCB004M (ADDR (PARM_RCBZ03S));;                                   04670000
+                                                                        04680000
+ IF PARM_RCBZ03S.WD_STATUS ¬= ' '                                       04690000
+ THEN                                                                   04700000
+   DO;                                                                  04710000
+     CALL RCB023M_ERROR (NULL,                                          04720000
+                         'OTHER',                                       04730000
+                         '#001');                                       04740000
+   END;                                                                 04750000
+                                                                        04760000
+ RETURN(PARM_RCBZ03S.WD_OUT_DATE);                                      04770000
+                                                                        04780000
+ END RCB023M_CALC_DATE;                                                 04790000
+1/********************************************************************/ 04800000
+ /*      CALL COMMON ERROR ROUTINE AFTER FILLING VARIABLES           */ 04810000
+ /********************************************************************/ 04820000
+ RCB023M_ERROR : PROC     (PTR_ERROR,                                   04830000
+                           ERR_TYPE,                                    04840000
+                           CALL_ID);                                    04850000
+ DCL PTR_ERROR    POINTER;                                              04860000
+ DCL ERR_TYPE     CHAR(8);                                              04870000
+ DCL CALL_ID      CHAR(4);                                              04880000
+ PARM_INT_AREA.PTR_ERROR      =  PTR_ERROR;                             04890000
+ PARM_INT_AREA.ERR_TYPE       =  ERR_TYPE;                              04900000
+ PARM_INT_AREA.CALL_ID        =  CALL_ID;                               04910000
+ CALL RCB0E1M (PTR_INT_AREA);                                           04920000
+ END RCB023M_ERROR;                                                     04930000
+1/*******************************************************************/  04940000
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                    */  04950000
+ /*******************************************************************/  04960000
+0%INCLUDE DAIFPLH ;                   /* COMPILE DATE/TIME STAMP    */  04970000
+ $DAIMOD (RCB023M);                   /* MODULE TO BE COMPILED      */  04980000
+0/*******************************************************************/  04990000
+ /* END OF ABR BLOCK                                                */  05000000
+ /*******************************************************************/  05010000
+0END RCB023M;                                                           05020000

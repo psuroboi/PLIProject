@@ -1,0 +1,144 @@
+ /* RCBISPM - RETRIEVE CONTRACT TRANSLATION DETAILS                  */ 00019111
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBISPM                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLISQL                                        */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THIS PROGRAM RETURNS SERVICE_LVL_CODE         */ 00140000
+ /*                    FROM T0635 OR (WHEN NOT FOUND) FROM T0630,    */ 00150000
+ /*                    BASED ON THE VALUE OF THE CONTRACT_NUMBER     */ 00160000
+ /*                    AND COUNTRY_NUMBER PASSED AS PARAMETERS.      */ 00170000
+ /*                                                                  */ 00180000
+ /* INPUT            : CONTRACT_NUMBER                               */ 00190000
+ /*                    COUNTRY_NUMBER                                */ 00200000
+ /*                    RCBT0630 - HVP CONTRACT TRANSLATION           */ 00210000
+ /*                    RCBT0635 - COUNTRY HVP CONTRACT TRANSLATION   */ 00220000
+ /*                                                                  */ 00230000
+ /* OUTPUT           : RCB0630S AND RCB0630SI                        */ 00240000
+ /*                                                                  */ 00250000
+ /* EXTERNAL MODULES : NONE                                          */ 00260000
+ /*                                                                  */ 00270000
+ /* MESSAGES         :                                               */ 00280000
+ /*                                                                  */ 00290000
+ /* MAINTENANCE LOG  :                                               */ 00300000
+ /* ---------------                                                  */ 00310000
+ /*                                                                  */ 00320000
+ /* DATE       | WORK-ITEMNO. | DESCRIPTION                          */ 00330000
+ /* -----------+--------------+------------------------------------  */ 00340000
+ /* 2004-03-08 | RB01250      | INITIAL CREATE                       */ 00350000
+ /********************************************************************/ 00360000
+0RCBISPM: PROC (RCB630S_PTR,                                            00370000
+                RCB630SI_PTR,                                           00380000
+                RCBZ02S_PTR,                                            00390000
+                PARM_INT_AREA_PTR)                                      00400000
+          OPTIONS (REENTRANT)                                           00410000
+          REORDER;                                                      00420000
+1/********************************************************************/ 00430000
+ /*                 P A R A M E T E R S                              */ 00440000
+ /********************************************************************/ 00450000
+                                                                        00460000
+ DCL RCB630S_PTR    PTR;               /* PTR ROW                    */ 00470000
+ DCL 1 RCB630S      BASED(RCB630S_PTR),                                 00480000
+      %INCLUDE RCB630S;;                                                00490000
+ DCL RCB630SI_PTR   PTR;               /* PTR NULL INDICATORS        */ 00500000
+ DCL 1 RCB630SI     BASED(RCB630SI_PTR),                                00510000
+      %INCLUDE RCB630SI;;                                               00520000
+                                                                        00530000
+ DCL 1 RCB635S,                                                         00540000
+      %INCLUDE RCB635S;;                                                00550000
+ DCL 1 RCB635SI,                                                        00560000
+      %INCLUDE RCB635SI;;                                               00570000
+                                                                        00580000
+ DCL RCBZ02S_PTR    PTR;               /* PTR RETURN INFO            */ 00590000
+ DCL 1 RCBZ02S      BASED(RCBZ02S_PTR),                                 00600000
+      %INCLUDE RCBZ02S;;                                                00610000
+ DCL 1 SQLCA_R      BASED(ADDR(RCBZ02S.RETURN_SQL))                     00620000
+                    LIKE SQLCA;                                         00630000
+                                                                        00640000
+ DCL PARM_INT_AREA_PTR PTR;            /* PTR INTERFACE AREA         */ 00650000
+ DCL 1 PARM_INT_AREA BASED(PARM_INT_AREA_PTR),                          00660000
+      %INCLUDE RCBZ01S;;                                                00670000
+1/********************************************************************/ 00680000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00690000
+ /********************************************************************/ 00700000
+ EXEC SQL INCLUDE SQLCA;                                                00710000
+ /********************************************************************/ 00720000
+ /*                 M I S C E L L A N I O U S   F I E L D S          */ 00730000
+ /********************************************************************/ 00740000
+ DCL ADDR           BUILTIN;                                            00750000
+ DCL NULL           BUILTIN;                                            00760000
+ DCL STRING         BUILTIN;                                            00770000
+ DCL WRK_LEVEL      FIXED BIN (15);                                     00780000
+1/********************************************************************/ 00790000
+ /*                 S T A R T   P R O C E S S I N G                  */ 00800000
+ /********************************************************************/ 00810000
+                                         /* SET LEVEL AND MOD NAME   */ 00820000
+ WRK_LEVEL                  = PARM_INT_AREA.ID_MOD_LEVEL + 1;           00830000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL;                                00840000
+ PARM_INT_AREA.ID_MOD_PATH(WRK_LEVEL) = 'RCBISPM';                      00850000
+                                                                        00860000
+ /********************************************************************/ 00870000
+ /*      SELECT ROW                                                  */ 00880000
+ /********************************************************************/ 00890000
+                                                                        00900000
+ RCB635S.COUNTRY_NUMBER = PARM_INT_AREA.COUNTRY_NUMBER;                 00910000
+                                                                        00920000
+ EXEC SQL                                                               00930000
+   SELECT *                                                             00940000
+   INTO   :RCB635S :RCB635SI.INDNULL                                    00950000
+   FROM   RCBV0635_CTRY_HVC                                             00960000
+   WHERE  COUNTRY_NUMBER     = :RCB635S.COUNTRY_NUMBER                  00970000
+     AND  HVP_CONTRACT_NUMBR = :RCB630S.HVP_CONTRACT_NUMBR;             00980000
+                                                                        00990000
+ SELECT (SQLCA.SQLCODE);                                                01000000
+   WHEN (0) DO;                                                         01010000
+     RCB630S = RCB635S, BY NAME;                                        01020000
+     RCBZ02S.RETURN_CODE = 0;                                           01030000
+   END;                                                                 01040000
+                                                                        01050000
+   WHEN (+100) DO;                                                      01060000
+     EXEC SQL                                                           01070000
+       SELECT *                                                         01080000
+       INTO   :RCB630S :RCB630SI.INDNULL                                01090000
+       FROM   RCBV0630_TRANS_HVC                                        01100000
+       WHERE  HVP_CONTRACT_NUMBR = :RCB630S.HVP_CONTRACT_NUMBR;         01110000
+                                                                        01120000
+     SELECT (SQLCA.SQLCODE);                                            01130000
+       WHEN (0) DO;                                                     01140000
+         RCBZ02S.RETURN_CODE = 0;                                       01150000
+       END;                                                             01160000
+                                                                        01170000
+       WHEN (+100) DO;                                                  01180000
+         SQLCA_R             = SQLCA;                                   01190000
+         RCBZ02S.RETURN_CODE = 4;                                       01200000
+       END;                                                             01210000
+                                                                        01220000
+       OTHERWISE DO;                                                    01230000
+         SQLCA_R             = SQLCA;                                   01240000
+         RCBZ02S.RETURN_CODE = 20;                                      01250000
+       END;                                                             01260000
+     END;                                                               01270000
+   END;                                                                 01280000
+                                                                        01290000
+   OTHERWISE DO;                                                        01300000
+     SQLCA_R             = SQLCA;                                       01310000
+     RCBZ02S.RETURN_CODE = 20;                                          01320000
+   END;                                                                 01330000
+ END;                                                                   01340000
+ /********************************************************************/ 01350000
+                                         /* RESET LEVEL              */ 01360000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            01370000
+                                                                        01380000
+1/********************************************************************/ 01390000
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */ 01400000
+ /********************************************************************/ 01410000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 01420000
+ $DAIMOD (RCBISPM);                    /* MODULE TO BE COMPILED      */ 01430000
+ END RCBISPM;                                                           01440000

@@ -1,0 +1,501 @@
+ /********************************************************************/
+ /* PROGRAM          : ROLCSPM                                       */
+ /* LANGUAGE         : PLI                                           */
+ /* TYPE             : LINKABLE MODULE                               */
+ /*                                                                  */
+ /* DESCRIPTION      :EXECUTE SELECT ON CEDS TABLE                   */
+ /*                                                                  */
+ /* TRANSACTION RECIEVES CONTROL FROM REQUEST-TRANSACTION BY 'LINK'  */
+ /* CONTROL.                                                         */
+ /* CONTROL BACK TO THE RESQUEST_TRANSACTION BY 'RETURN'.            */
+ /* LIST REQUEST.                                                    */
+ /*                                                                  */
+ /* WITH A SPECIFIED KEY THE FOLLOWING TABLES WILL BE RETRIEVED:     */
+ /* - RCBV0040_OU TABLE                                              */
+ /* - RCBV0220_SUPPL_CTR   SEQUENCE_NUMBER CHANGE TO CHAR(28)        */
+ /* - RCBV0240_SERV_CTR    SEQUENCE_NUMBER CHANGE TO CHAR(28)        */
+ /* - RCBV0300_HW_REAL     SEQUENCE_NUMBER CHANGE TO CHAR(28)        */
+ /* - RCBV0400_PO_MOD1                                               */
+ /*                                                                  */
+ /* INPUT            : COMMPTR - COMMUNICATION AREA POINTER          */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */
+ /* --------------------------------------------------------------   */
+ /*  2003-12-19 |              | START OF WORK                       */
+ /*  2004-01-19 |              | COMPLETE                            */
+ /*  2004-05-25 |RS MIGRATION  | AERO CEDS STANDARDS INCORPORATED    */
+ /*  2008-03-03 | MBZ806       | CEDS 3.3-LOCAL CHANGE FOR CEDS SOUTH*/
+ /*  2010-04-06 | MACHCAT      | ALPHA MACHINE CATEGORY FOR ITALY    */
+ /*  2013-02-22 | ENS2013001   | PER-CALL PRICE HARMONIZATION        */
+ /*             |              |                                     */
+ /*  WHEN MODIFY PROGRAM CHANGE FIELD R_VERSION WITH THE SAME VALUE  */
+ /*  SENT BY THE CALL PROGRAM INTO RCB_COM.VERSION                   */
+ /********************************************************************/
+ ROLCSPM: PROC(COMMPTR)
+          OPTIONS (MAIN)
+          REORDER;
+ /********************************************************************/
+ /*          DB2 DECLARATION                                         */
+ /********************************************************************/
+  EXEC SQL INCLUDE SQLCA                       ;/*                   */
+  EXEC SQL WHENEVER NOT FOUND  CONTINUE        ;/*                   */
+  EXEC SQL WHENEVER SQLWARNING CONTINUE        ;/*                   */
+  EXEC SQL WHENEVER SQLERROR   CONTINUE        ;/*                   */
+ /********************************************************************/
+ /*                 COPIES    DCLGEN                                 */
+ /********************************************************************/
+  DCL 1 RCBV220S,                               /*                   */
+          %INCLUDE RCB220S;;                    /*                   */
+  DCL 1 RCBV240S,                               /*                   */
+          %INCLUDE RCB240S;;                    /*                   */
+  DCL 1 RCBV300S,                               /*                   */
+          %INCLUDE RCB300S;;                    /*                   */
+  DCL 1 RCBV400S,                               /*                   */
+          %INCLUDE RCB400S;;                    /*                   */
+  DCL 1 RCBV040S,                               /*                   */
+          %INCLUDE RCB040S;;                    /*                   */
+  RCBV220S = ''                                ;/*                   */
+  RCBV240S = ''                                ;/*                   */
+  RCBV300S = ''                                ;/*                   */
+  RCBV400S = ''                                ;/*                   */
+  RCBV040S = ''                                ;/*                   */
+  DCL 1 RCB_COM BASED(COMMPTR)    /*                                */,
+        2 I_CATCH                 /* EYE CATCHER                    */,
+         3 IDENTIF CHAR(08)       /* I/F IDENTIFIER                 */,
+         3 VERSION CHAR(04)       /* I/F VERSION: KEEP IT UP TO DATE*/,
+                                   /**********************************/
+                                   /* RCB DATA RETRIEVAL REQUEST    */
+                                   /***********************************/
+        2 TABLE   CHAR(08)       /* REQUESTED TABLE QUERY           */,
+                                   /* - 'RCBV0040'                  */
+                                   /* - 'RCBV0220'                  */
+                                   /* - 'RCBV0240'                  */
+                                   /* - 'RCBV0400'                  */
+        2 NUM_REQ CHAR(01)       /* NUMBER OF REQUEST               */,
+        2 CAL_TRX CHAR(04)       /*  TRANSACTION NAME               */,
+                                   /* - CALLER TRANSACTION IDENTIFIER */
+        2 COD_SEL CHAR(03)       /*COUNTRY NUMBER OF MGI CALL       */,
+        2 R_ACTDATE CHAR(10)     /*ACTIVITYDATE                     */,
+        2 D_PRODUCT CHAR(04)     /*  INPUT                          */,
+        2 D_ORIGIN  CHAR(02)     /*  INPUT                          */,
+        2 D_SEQNUM  CHAR(07)     /*  INPUT                          */,
+        2 WW_CODE   CHAR(07)     /*  INPUT                          */,
+        2 WW_LEVEL  CHAR(01)     /*  INPUT                          */,
+        2 D_MODEL   CHAR(03)     /*  INPUT                          */,
+        2 RCBT040S               /*DATA FROM TAB RCBV0040           */,
+           3 OU_CODE   CHAR(07)  /*                                 */,
+        2 RCBT220S               /*DATA FROM TAB RCBV0220           */,
+           3 TYPE_OF_MAINT       CHAR(01)     /*                    */,
+           3 TYPE_OF_MAINT_I     BIN FIXED(15)/*                    */,
+           3 WARRANTY_EXP_DATE   CHAR(10)     /*                    */,
+           3 WARRANTY_EXP_DATE_I BIN FIXED(15)/*                    */,
+           3 MODEL_NUMBER        CHAR(03)     /*                    */,
+        2 RCBT240S               /*DATA FROM TAB RCBV0240           */,
+           3 COVERAGE_START_1   CHAR(08)     /*                     */,
+           3 COVERAGE_START_1_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_1     CHAR(08)/*                          */,
+           3 COVERAGE_END_1_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_2   CHAR(08)/*                          */,
+           3 COVERAGE_START_2_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_2     CHAR(08)/*                          */,
+           3 COVERAGE_END_2_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_3   CHAR(08)/*                          */,
+           3 COVERAGE_START_3_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_3     CHAR(08)/*                          */,
+           3 COVERAGE_END_3_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_4   CHAR(08)/*                          */,
+           3 COVERAGE_START_4_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_4     CHAR(08)/*                          */,
+           3 COVERAGE_END_4_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_5   CHAR(08)/*                          */,
+           3 COVERAGE_START_5_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_5     CHAR(08)/*                          */,
+           3 COVERAGE_END_5_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_6   CHAR(08)/*                          */,
+           3 COVERAGE_START_6_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_6     CHAR(08)/*                          */,
+           3 COVERAGE_END_6_I   BIN FIXED(15)/*                     */,
+           3 COVERAGE_START_7   CHAR(08)/*                          */,
+           3 COVERAGE_START_7_I BIN FIXED(15)/*                     */,
+           3 COVERAGE_END_7     CHAR(08)/*                          */,
+           3 COVERAGE_END_7_I   BIN FIXED(15)/*                     */,
+           3 SERVICE_TYPE       CHAR(01)/*                          */,
+           3 SERVICE_TYPE_I     BIN FIXED(15)/*                     */,
+        2 RCBT300S               /*DATA FROM TAB RCBV0300           */,
+          3 MODEL_NUMBER  CHAR(03)/*                                */,
+        2 RCBT400S               /*DATA FROM TAB RCBV0400           */,
+           3 PRODUCT_TYPE       CHAR(04)/*                          */,
+           3 MODEL_NUMBER       CHAR(03)/*                          */,
+           3 MACHINE_CATEGORY   CHAR(01)/*                          */,
+           3 MACHINE_CATEGORY_I BIN FIXED(15)/*                     */,
+                                   /***********************************/
+        2 CRMORET CHAR(01)       /*RETURN CODE:                     */,
+                                   /*---------------------------------*/
+                                   /* 0 = PROCESS COMPLETED         */
+                                   /* 3 = ERROR DURING CONVERSATION */
+                                   /*   WITH REMOTE CICS            */
+                                   /* 4 = INVALID REQUEST: PARAMETERS */
+                                   /*   NOT CORRECT                 */
+                                   /* 7 = DB2 ERROR                 */
+                                   /* 8 = DB2 NOT ACCESSIBLE        */
+                                   /* 9 = NO ITEM FOUND             */
+                                   /* A = REQUEST ABENDED           */
+                                   /* B = PGM ID ERROR              */
+                                   /* C = PGM NOT AUTHORIZED        */
+                                   /* F = PROGRAM ERROR VERSION     */
+                                   /*---------------------------------*/
+        2 R_SQLCODE CHAR(4)      /* SQL RETURN CODE                 */,
+        2 FILLER    CHAR(03)       /*                               */;
+                                   /* END OF STRUCTURE ****************/
+  DCL COMPLETE    CHAR(01)      INIT('0')   ;/*RCB SEARCH COMPLETED  */
+  DCL INVPARM     CHAR(01)      INIT('4')   ;/*WRONG INPUT PARAMETERS*/
+  DCL UNAVSYS     CHAR(01)      INIT('2')   ;/*REMOTE CICS NOT AVAIL.*/
+ /*-------------  FROM  LINK  COMMAND  ------------------------------*/
+  DCL AUTHPGM     CHAR(01)      INIT('C')   ;/*RC=NOTAUTH (PROGRAM)  */
+  DCL CONVERR     CHAR(01)      INIT('3')   ;/*RC=TERMERR (CONVERSAT)*/
+  DCL DISABPGM    CHAR(01)      INIT('B')   ;/*RC=PGMIDERR (PGM DIS) */
+  DCL WRONGSYS    CHAR(01)      INIT('1')   ;/*RC=SYSIDERR (SERVER)  */
+  DCL LINKUNEX    CHAR(01)      INIT('G')   ;/*ANY OTHER ERROR       */
+ /*-------------  FROM  ROLCSPP  ------------------------------------*/
+  DCL DB2ERROR    CHAR(01)      INIT('7')   ;/*DB2 ERROR             */
+  DCL NOTAVAIL    CHAR(01)      INIT('8')   ;/*DB2 NOT AVAILABLE     */
+  DCL NOTFOUND    CHAR(01)      INIT('9')   ;/*RECORD NOT FOUND      */
+  DCL ERVERSIO    CHAR(01)      INIT('F')   ;/*PROGRAM ERROR VERSION */
+ /********************************************************************/
+ /*                                                                  */
+ /********************************************************************/
+ DCL R_IDENTIF   CHAR(8)      INIT('RCBINTRF')      ;/*              */
+ DCL R_VERSION   CHAR(4)      INIT('0402')          ;/*              */
+ DCL ON          BIT (1)      INIT('1'B)            ;/*              */
+ DCL OFF         BIT (1)      INIT('0'B)            ;/*              */
+ DCL ERRSQL      BIT (1)      INIT('0'B)            ;/*              */
+ DCL C_SQLCODE PIC'S999'      INIT(0)               ;/*              */
+ DCL  XOD_SEL     CHAR(03)    INIT('')              ;/*              */
+ DCL  X_ACTDATE   CHAR(10)    INIT('')              ;/*              */
+ DCL  X_PRODUCT   CHAR(04)    INIT('')              ;/*              */
+ DCL  X_ORIGIN    CHAR(02)    INIT('')              ;/*              */
+ /*L  X_SEQNUM    CHAR(07)    INIT('')              ;      2008-03-03*/
+ DCL  X_SEQNUM    CHAR(28)    INIT('')              ;/*    2008-03-03*/
+ DCL  XW_CODE     CHAR(07)    INIT('')              ;/*              */
+ DCL  XW_LEVEL    CHAR(01)    INIT('')              ;/*              */
+ DCL  X_MODEL     CHAR(03)    INIT('')              ;/*              */
+ DCL 1 RCB_NUL                                      ,/*              */
+       5 TYPE_OF_MAINT_I       BIN FIXED(15)        ,/*              */
+       5 WARRANTY_EXP_DATE_I   BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_1_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_1_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_2_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_2_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_3_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_3_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_4_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_4_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_5_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_5_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_6_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_6_I      BIN FIXED(15)        ,/*              */
+       5 COVERAGE_START_7_I    BIN FIXED(15)        ,/*              */
+       5 COVERAGE_END_7_I      BIN FIXED(15)        ,/*              */
+       5 SERVICE_TYPE_I        BIN FIXED(15)        ,/*              */
+       5 MACHINE_CATEGORY_I    BIN FIXED(15)        ;/*              */
+ DCL COMMPTR  POINTER                               ;/*              */
+ DCL (ADDR,                                          /*              */
+      STRING,                                        /*              */
+      NULL,                                          /*              */
+      CSTG,                                          /*              */
+      LENGTH,                                        /*              */
+      UNSPEC,                                        /*              */
+      SUBSTR)                                        /*              */
+                BUILTIN                             ;/*              */
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /********************************************************************/
+ EXEC CICS IGNORE CONDITION ERROR                   ;/*              */
+ XOD_SEL    = RCB_COM.COD_SEL                       ;/*              */
+ X_ACTDATE  = RCB_COM.R_ACTDATE                     ;/*              */
+ X_PRODUCT  = RCB_COM.D_PRODUCT                     ;/*              */
+ X_ORIGIN   = RCB_COM.D_ORIGIN                      ;/*              */
+ X_SEQNUM   = RCB_COM.D_SEQNUM                      ;/*              */
+ XW_CODE    = RCB_COM.WW_CODE                       ;/*              */
+ XW_LEVEL   = RCB_COM.WW_LEVEL                      ;/*              */
+ X_MODEL    = RCB_COM.D_MODEL                       ;/*              */
+ IF RCB_COM.IDENTIF = R_IDENTIF                      /*              */
+  & RCB_COM.VERSION = R_VERSION                      /*              */
+ THEN DO                                            ;/*              */
+   SELECT (RCB_COM.TABLE)                           ;/*              */
+     WHEN('RCBV0040')                                /*              */
+       CALL R_RCB040                                ;/*              */
+     WHEN('RCBV0240')                                /*              */
+       CALL R_RCB240                                ;/*              */
+     WHEN('RCBV0400') DO                            ;/*              */
+       IF RCB_COM.NUM_REQ = '1'                      /*              */
+       THEN CALL R_RCB401                           ;/*              */
+       ELSE CALL R_RCB402                           ;/*              */
+     END                                            ;/*              */
+     OTHERWISE RCB_COM.CRMORET = INVPARM            ;/*              */
+   END                                              ;/*              */
+ END                                                ;/*              */
+ ELSE RCB_COM.CRMORET = ERVERSIO                    ;/*              */
+ EXEC CICS RETURN                                   ;/*              */
+ /********************************************************************/
+ /* NAME         : R_RCB040                                          */
+ /* FUNCTION     : SELECT ON TABLE RCBV0040                          */
+ /********************************************************************/
+ R_RCB040    : PROC                                 ;/*              */
+  EXEC SQL                                           /*              */
+    SELECT OU_CODE                                   /*              */
+    INTO :RCBV040S.OU_CODE                           /*              */
+    FROM RCBV0040_OU                                 /*              */
+    WHERE COUNTRY_NUMBER   = :XOD_SEL                /*              */
+        AND OU_CODE        = :XW_CODE                /*              */
+        AND OU_LEVEL       = :XW_LEVEL               /*              */
+        AND EFFECTIVE_DATE <= :X_ACTDATE             /*              */
+        AND END_DATE       >= :X_ACTDATE            ;/*              */
+  CALL ANAL_SQLCODE                                 ;/*              */
+  IF ERRSQL = OFF                                    /*              */
+  THEN DO                                           ;/*              */
+    IF SQLCODE = 0                                   /*              */
+    THEN   RCB_COM.CRMORET = COMPLETE               ;/*              */
+    ELSE   RCB_COM.CRMORET = NOTFOUND               ;/*MABO NOT FND  */
+  END                                               ;/*              */
+  ELSE DO                                           ;/*              */
+    RCB_COM.CRMORET = DB2ERROR                     ;/*              */
+    C_SQLCODE = SQLCODE                             ;/*              */
+    RCB_COM.R_SQLCODE = C_SQLCODE                   ;/*              */
+  END                                               ;/*              */
+ END R_RCB040                                       ;/*              */
+ /********************************************************************/
+ /* NAME         : R_RCB240                                          */
+ /* FUNCTION     : SELECT ON TABLE RCBV0240                          */
+ /********************************************************************/
+ R_RCB240    : PROC                                 ;/*              */
+  EXEC SQL SELECT COVERAGE_START_1,                  /*              */
+                  COVERAGE_END_1  ,                  /*              */
+                  COVERAGE_START_2,                  /*              */
+                  COVERAGE_END_2  ,                  /*              */
+                  COVERAGE_START_3,                  /*              */
+                  COVERAGE_END_3  ,                  /*              */
+                  COVERAGE_START_4,                  /*              */
+                  COVERAGE_END_4  ,                  /*              */
+                  COVERAGE_START_5,                  /*              */
+                  COVERAGE_END_5  ,                  /*              */
+                  COVERAGE_START_6,                  /*              */
+                  COVERAGE_END_6  ,                  /*              */
+                  COVERAGE_START_7,                  /*              */
+                  COVERAGE_END_7  ,                  /*              */
+                  SERVICE_TYPE                       /*              */
+           INTO :RCBV240S.COVERAGE_START_1:          /*              */
+                 RCB_NUL.COVERAGE_START_1_I,         /*              */
+                :RCBV240S.COVERAGE_END_1:            /*              */
+                 RCB_NUL.COVERAGE_END_1_I,           /*              */
+                :RCBV240S.COVERAGE_START_2:          /*              */
+                 RCB_NUL.COVERAGE_START_2_I,         /*              */
+                :RCBV240S.COVERAGE_END_2:            /*              */
+                 RCB_NUL.COVERAGE_END_2_I,           /*              */
+                :RCBV240S.COVERAGE_START_3:          /*              */
+                 RCB_NUL.COVERAGE_START_3_I,         /*              */
+                :RCBV240S.COVERAGE_END_3:            /*              */
+                 RCB_NUL.COVERAGE_END_3_I,           /*              */
+                :RCBV240S.COVERAGE_START_4:          /*              */
+                 RCB_NUL.COVERAGE_START_4_I,         /*              */
+                :RCBV240S.COVERAGE_END_4:            /*              */
+                 RCB_NUL.COVERAGE_END_4_I,           /*              */
+                :RCBV240S.COVERAGE_START_5:          /*              */
+                 RCB_NUL.COVERAGE_START_5_I,         /*              */
+                :RCBV240S.COVERAGE_END_5:            /*              */
+                 RCB_NUL.COVERAGE_END_5_I,           /*              */
+                :RCBV240S.COVERAGE_START_6:          /*              */
+                 RCB_NUL.COVERAGE_START_6_I,         /*              */
+                :RCBV240S.COVERAGE_END_6:            /*              */
+                 RCB_NUL.COVERAGE_END_6_I,           /*              */
+                :RCBV240S.COVERAGE_START_7:          /*              */
+                 RCB_NUL.COVERAGE_START_7_I,         /*              */
+                :RCBV240S.COVERAGE_END_7:            /*              */
+                 RCB_NUL.COVERAGE_END_7_I,           /*              */
+                :RCBV240S.SERVICE_TYPE:              /*              */
+                 RCB_NUL.SERVICE_TYPE_I              /*              */
+           FROM RCBV0240_SERV_CTR                    /*              */
+           WHERE COUNTRY_NUMBER  = :XOD_SEL          /*              */
+             AND PRODUCT_TYPE    = :X_PRODUCT        /*              */
+             AND ORIGIN          = :X_ORIGIN         /*              */
+             AND SEQUENCE_NUMBER = :X_SEQNUM         /*              */
+             AND EFFECTIVE_DATE <= :X_ACTDATE        /*              */
+             AND END_DATE       >= :X_ACTDATE       ;/*              */
+  CALL ANAL_SQLCODE                                 ;/*              */
+  IF ERRSQL = OFF                                    /*              */
+  THEN DO                                           ;/*              */
+    IF SQLCODE = 0                                   /*              */
+    THEN DO                                         ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_1  =           /*              */
+          RCBV240S.COVERAGE_START_1                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_1    =           /*              */
+          RCBV240S.COVERAGE_END_1                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_2  =           /*              */
+          RCBV240S.COVERAGE_START_2                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_2    =           /*              */
+          RCBV240S.COVERAGE_END_2                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_3  =           /*              */
+          RCBV240S.COVERAGE_START_3                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_3    =           /*              */
+          RCBV240S.COVERAGE_END_3                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_4  =           /*              */
+          RCBV240S.COVERAGE_START_4                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_4    =           /*              */
+          RCBV240S.COVERAGE_END_4                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_5  =           /*              */
+          RCBV240S.COVERAGE_START_5                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_5    =           /*              */
+          RCBV240S.COVERAGE_END_5                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_6  =           /*              */
+          RCBV240S.COVERAGE_START_6                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_6    =           /*              */
+          RCBV240S.COVERAGE_END_6                   ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_START_7  =           /*              */
+          RCBV240S.COVERAGE_START_7                 ;/*              */
+      RCB_COM.RCBT240S.COVERAGE_END_7    =           /*              */
+          RCBV240S.COVERAGE_END_7                   ;/*              */
+      RCB_COM.RCBT240S.SERVICE_TYPE      =           /*              */
+          RCBV240S.SERVICE_TYPE                     ;/*              */
+    END                                             ;/*              */
+    RCB_COM.TABLE = 'RCBV0220'                      ;/*              */
+    EXEC SQL SELECT A.TYPE_OF_MAINT,                 /*              */
+                A.WARRANTY_EXP_DATE,                 /*              */
+                B.MODEL_NUMBER                       /*              */
+         INTO :RCBV220S.TYPE_OF_MAINT:               /*              */
+               RCB_NUL.TYPE_OF_MAINT_I,              /*              */
+              :RCBV220S.WARRANTY_EXP_DATE:           /*              */
+               RCB_NUL.WARRANTY_EXP_DATE_I,          /*              */
+              :RCBV300S.MODEL_NUMBER                 /*              */
+         FROM RCBV0220_SUPPL_CTR A,                  /*              */
+              RCBV0300_HW_REAL B                     /*              */
+         WHERE A.COUNTRY_NUMBER = :XOD_SEL           /*              */
+           AND A.PRODUCT_TYPE      = :X_PRODUCT      /*              */
+           AND A.ORIGIN            = :X_ORIGIN       /*              */
+           AND A.SEQUENCE_NUMBER = :X_SEQNUM         /*              */
+           AND A.EFFECTIVE_DATE <= :X_ACTDATE        /*              */
+           AND A.END_DATE         >= :X_ACTDATE      /*              */
+           AND B.COUNTRY_NUMBER = :XOD_SEL           /*              */
+           AND B.PRODUCT_TYPE      = :X_PRODUCT      /*              */
+           AND B.ORIGIN            = :X_ORIGIN       /*              */
+           AND B.SEQUENCE_NUMBER = :X_SEQNUM         /*              */
+           AND B.EFFECTIVE_DATE <= :X_ACTDATE        /*              */
+           AND B.END_DATE         >= :X_ACTDATE     ;/*              */
+    CALL ANAL_SQLCODE                               ;/*              */
+    IF ERRSQL = OFF                                  /*              */
+    THEN DO                                         ;/*              */
+      IF SQLCODE = 0                                 /*              */
+      THEN DO                                       ;/*              */
+        RCB_COM.CRMORET = COMPLETE                  ;/*              */
+        RCB_COM.RCBT220S.TYPE_OF_MAINT =             /*              */
+                     RCBV220S.TYPE_OF_MAINT         ;/*              */
+        RCB_COM.RCBT220S.WARRANTY_EXP_DATE =         /*              */
+                     RCBV220S.WARRANTY_EXP_DATE     ;/*              */
+        RCB_COM.RCBT220S.MODEL_NUMBER =              /*              */
+                     RCBV300S.MODEL_NUMBER          ;/*              */
+      END                                           ;/*              */
+      ELSE RCB_COM.CRMORET = NOTFOUND               ;/*              */
+    END                                             ;/*              */
+    ELSE DO                                         ;/*              */
+      RCB_COM.CRMORET = DB2ERROR                    ;/*              */
+      C_SQLCODE = SQLCODE                           ;/*              */
+      RCB_COM.R_SQLCODE = C_SQLCODE                 ;/*              */
+    END                                             ;/*              */
+  END                                               ;/*              */
+  ELSE DO                                           ;/*              */
+    RCB_COM.CRMORET = DB2ERROR                      ;/*              */
+    C_SQLCODE = SQLCODE                             ;/*              */
+    RCB_COM.R_SQLCODE = C_SQLCODE                   ;/*              */
+  END                                               ;/*              */
+ END R_RCB240                                       ;/*              */
+ /********************************************************************/
+ /* NAME         : R_RCB401                                          */
+ /* FUNCTION     : SELECT ON TABLE RCBV0400  REQUEST 1               */
+ /********************************************************************/
+ R_RCB401    : PROC                                 ;/*              */
+  EXEC SQL SELECT  PRODUCT_TYPE,                     /*              */
+       MODEL_NUMBER, MACHINE_CATEGORY                /*              */
+       INTO :RCBV400S.PRODUCT_TYPE,                  /*              */
+            :RCBV400S.MODEL_NUMBER,                  /*              */
+            :RCBV400S.MACHINE_CATEGORY:              /*              */
+             RCB_NUL.MACHINE_CATEGORY_I              /*              */
+       FROM RCBV0400_PO_MOD1                         /*              */
+       WHERE COUNTRY_NUMBER = :XOD_SEL               /*              */
+       AND PRODUCT_TYPE = :X_PRODUCT                 /*              */
+       AND MODEL_NUMBER = :X_MODEL                  ;/*              */
+  CALL ANAL_SQLCODE                                 ;/*              */
+  IF ERRSQL = OFF                                    /*              */
+  THEN DO                                           ;/*              */
+    IF SQLCODE = 0                                   /*              */
+    THEN  DO                                        ;/*              */
+      RCB_COM.CRMORET = COMPLETE                    ;/*              */
+      RCB_COM.RCBT400S.PRODUCT_TYPE      =           /*              */
+          RCBV400S.PRODUCT_TYPE                     ;/*              */
+      RCB_COM.RCBT400S.MODEL_NUMBER      =           /*              */
+          RCBV400S.MODEL_NUMBER                     ;/*              */
+      RCB_COM.RCBT400S.MACHINE_CATEGORY  =           /*              */
+          RCBV400S.MACHINE_CATEGORY                 ;/*              */
+      RCB_COM.RCBT400S.MACHINE_CATEGORY_I =          /* 2013-02-22   */
+          RCB_NUL.MACHINE_CATEGORY_I                ;/* ENS2013001   */
+    END                                             ;/*              */
+    ELSE   RCB_COM.CRMORET = NOTFOUND               ;/*              */
+  END                                               ;/*              */
+  ELSE DO                                           ;/*              */
+    RCB_COM.CRMORET = DB2ERROR                      ;/*              */
+    C_SQLCODE = SQLCODE                             ;/*              */
+    RCB_COM.R_SQLCODE = C_SQLCODE                   ;/*              */
+  END                                               ;/*              */
+ END R_RCB401                                       ;/*              */
+ /********************************************************************/
+ /* NAME         : R_RCB402                                          */
+ /* FUNCTION     : SELECT ON TABLE RCBV0400  REQUEST 2               */
+ /********************************************************************/
+ R_RCB402    : PROC                                 ;/*              */
+  EXEC SQL SELECT      PRODUCT_TYPE,                 /*              */
+       MIN(MODEL_NUMBER), MIN(MACHINE_CATEGORY)      /*              */
+       INTO :RCBV400S.PRODUCT_TYPE,                  /*              */
+            :RCBV400S.MODEL_NUMBER,                  /*              */
+            :RCBV400S.MACHINE_CATEGORY:              /*              */
+             RCB_NUL.MACHINE_CATEGORY_I              /*              */
+       FROM RCBV0400_PO_MOD1                         /*              */
+       WHERE COUNTRY_NUMBER = :XOD_SEL               /*              */
+       AND PRODUCT_TYPE = :X_PRODUCT                 /*              */
+       AND MODEL_NUMBER <> :X_MODEL                  /*              */
+       GROUP BY PRODUCT_TYPE                        ;/*              */
+  CALL ANAL_SQLCODE                                 ;/*              */
+  IF ERRSQL = OFF                                    /*              */
+  THEN DO                                           ;/*              */
+    IF SQLCODE = 0                                   /*              */
+    THEN  DO                                        ;/*              */
+      RCB_COM.CRMORET = COMPLETE                    ;/*              */
+      RCB_COM.RCBT400S.PRODUCT_TYPE      =           /*              */
+          RCBV400S.PRODUCT_TYPE                     ;/*              */
+      RCB_COM.RCBT400S.MODEL_NUMBER      =           /*              */
+          RCBV400S.MODEL_NUMBER                     ;/*              */
+      RCB_COM.RCBT400S.MACHINE_CATEGORY  =           /*              */
+          RCBV400S.MACHINE_CATEGORY                 ;/*              */
+      RCB_COM.RCBT400S.MACHINE_CATEGORY_I =          /* 2013-02-22   */
+          RCB_NUL.MACHINE_CATEGORY_I                ;/* ENS2013001   */
+    END                                             ;/*              */
+    ELSE   RCB_COM.CRMORET = NOTFOUND               ;/*              */
+  END                                               ;/*              */
+  ELSE DO                                           ;/*              */
+    RCB_COM.CRMORET = DB2ERROR                      ;/*              */
+    C_SQLCODE = SQLCODE                             ;/*              */
+    RCB_COM.R_SQLCODE = C_SQLCODE                   ;/*              */
+  END                                               ;/*              */
+ END R_RCB402                                       ;/*              */
+ /********************************************************************/
+ /* NAME         : ANAL_SQLCODE                                      */
+ /* FUNCTION     : CHECK    SQLCODE                                  */
+ /********************************************************************/
+ ANAL_SQLCODE: PROC                                 ;/*              */
+   IF SQLCODE = 0                                    /*              */
+    | SQLCODE = 100   THEN                          ;/*              */
+   ELSE ERRSQL = ON                                 ;/*              */
+ END ANAL_SQLCODE                                   ;/*              */
+ END ROLCSPM                                        ;/*              */

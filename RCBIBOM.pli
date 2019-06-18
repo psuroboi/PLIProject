@@ -1,0 +1,300 @@
+ /* RCBIBOM - EXTRACT REFERENCE OF RCBT0640/RCBT0645                 */ 00019212
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBIBOM                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLISQL                                        */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THIS PROGRAM RETURNS SERVICE_TYPE,            */ 00140000
+ /*                    SERVICE_DLVR_METHD AND DELIVERY_GROUP FROM    */ 00150000
+ /*                    T645 OR - WHEN NOT FOUND - FROM T640.         */ 00160000
+ /*                    THE SEARCH_FIELD INDICATES IF SERVICE_TYPE    */ 00170000
+ /*                    OR SERVICE_DLVR_METHOD SHOULD BE USED         */ 00180000
+ /*                    AS SEARCH ARGUMENT.                           */ 00190000
+ /*                    PROGRAM RETURNS VALUE OF FIELD SERVICE_TYPE   */ 00200000
+ /*                    OF FIRST SELECTED ROW.                        */ 00210000
+ /*                    THIS IS THE BATCH VERSION OF THE              */ 00220000
+ /*                    ON-LINE PROGRAM: RCBIBON.                     */ 00230000
+ /*                                                                  */ 00240000
+ /* INPUT            : SERVICE_TYPE                                  */ 00250000
+ /*                 OR SERVICE_DLVR_METHD                            */ 00260000
+ /*                    COUNTRY_NUMBER                                */ 00270000
+ /*                    SEARCH FIELD                                  */ 00280000
+ /*                                                                  */ 00290000
+ /* OUTPUT           : SERVICE_TYPE                                  */ 00300000
+ /*                    SERVICE_DLVR_METHD                            */ 00310000
+ /*                    DELIVERY_GROUP                                */ 00320000
+ /*                                                                  */ 00330000
+ /* EXTERNAL MODULES : RCB0E1M  -  COMMON ERROR ROUTINE              */ 00340000
+ /*                                                                  */ 00350000
+ /* MESSAGES         :                                               */ 00360000
+ /*                                                                  */ 00370000
+ /* MAINTENANCE LOG  :                                               */ 00380000
+ /* ---------------                                                  */ 00390000
+ /*                                                                  */ 00400000
+ /* DATE       | WORK-ITEMNO. | DESCRIPTION                          */ 00410000
+ /* -----------+--------------+------------------------------------  */ 00420000
+ /* 1997-22-09 |              | FIRST CREATION                       */ 00430000
+ /* 1998-23-11 | PTM1223      | KEEP COUNTRY NUMBER                  */ 00440000
+ /* 1999-08-04 | RC01219      | DORO                                 */ 00450000
+ /* 17-07-2002 | WI7004       | SERVICE TYPE ENHANCEMENT             */ 00460000
+ /*            |              |                                      */ 00470000
+ /********************************************************************/ 00480000
+1                                                                       00490000
+ RCBIBOM: PROC (RCB640S_PTR,                                            00500000
+                RCB640SI_PTR,                                           00510000
+                RCBZ02S_PTR,                                            00520000
+                PARM_INT_AREA_PTR,                                      00530000
+                SEARCH_FIELD)                                           00540000
+          OPTIONS (REENTRANT)                                           00550000
+          REORDER;                                                      00560000
+                                                                        00570000
+ /********************************************************************/ 00580000
+ /*                 P A R A M E T E R S                              */ 00590000
+ /********************************************************************/ 00600000
+                                                                        00610000
+ DCL RCB640S_PTR    PTR;               /* PTR ROW                    */ 00620000
+ DCL 1 RCB640S      BASED(RCB640S_PTR),                                 00630000
+      %INCLUDE RCB640S;;                                                00640000
+                                                                        00650000
+ DCL RCB640SI_PTR   PTR;               /* PTR NULL INDICATORS        */ 00660000
+ DCL 1 RCB640SI     BASED(RCB640SI_PTR),                                00670000
+      %INCLUDE RCB640SI;;                                               00680000
+0DCL 1 RCB645S,                                                         00690000
+      %INCLUDE RCB645S;;                                                00700000
+0DCL 1 RCB645SI,                                                        00710000
+      %INCLUDE RCB645SI;;                                               00720000
+                                                                        00730000
+ DCL RCBZ02S_PTR    PTR;               /* PTR RETURN INFO            */ 00740000
+ DCL 1 RCBZ02S      BASED(RCBZ02S_PTR),                                 00750000
+      %INCLUDE RCBZ02S;;                                                00760000
+ DCL 1 SQLCA_R      BASED(ADDR(RCBZ02S.RETURN_SQL))                     00770000
+                    LIKE SQLCA;                                         00780000
+                                                                        00790000
+ DCL PARM_INT_AREA_PTR PTR;            /* PTR INTERFACE AREA         */ 00800000
+ DCL 1 PARM_INT_AREA BASED(PARM_INT_AREA_PTR),                          00810000
+      %INCLUDE RCBZ01S;;                                                00820000
+0DCL SEARCH_FIELD    CHAR(03);         /* EITHER SVT OR SDM          */ 00830000
+                                                                        00840000
+ /********************************************************************/ 00850000
+ /* EXTERNAL ENTRIES                                                 */ 00860000
+ /********************************************************************/ 00870000
+ DCL RCB0E1M   ENTRY  EXTERNAL;                                         00880000
+                                                                        00890000
+ /********************************************************************/ 00900000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00910000
+ /********************************************************************/ 00920000
+                                                                        00930000
+ EXEC SQL INCLUDE SQLCA;                                                00940000
+                                                                        00950000
+ /********************************************************************/ 00960000
+ /*                 M I S C E L L A N I O U S   F I E L D S          */ 00970000
+ /********************************************************************/ 00980000
+                                                                        00990000
+ DCL ADDR           BUILTIN;                                            01000000
+ DCL NULL           BUILTIN;                                            01010000
+ DCL WRK_LEVEL      FIXED BIN (15);                                     01020000
+ DCL WRK_MOD_NAME   CHAR (08)        INIT ('RCBIBOM');                  01030000
+ DCL WRK_SAVE_COUNTRY CHAR (03);                                        01040000
+ DCL T640_FOUND     BIT(1);                                             01050000
+ DCL T645_FOUND     BIT(1);                                             01060000
+1                                                                       01070000
+ /********************************************************************/ 01080000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01090000
+ /********************************************************************/ 01100000
+                                                                        01110000
+ CALL RCBIBOM_INIT;                                                     01120000
+                                                                        01130000
+ SELECT (SEARCH_FIELD);                                                 01140000
+   WHEN ('SVT')                                                         01150000
+     CALL RCBIBOM_PROCESS_SVT;                                          01160000
+   WHEN ('SDM')                                                         01170000
+     CALL RCBIBOM_PROCESS_SDM;                                          01180000
+   OTHERWISE DO;                                                        01190000
+     CALL RCBIBOM_ERROR (NULL, 'OTHER', '#001');                        01200000
+     SQLCA_R = '';                                                      01210000
+     RCBZ02S.RETURN_CODE = 20;                                          01220000
+     END;                                                               01230000
+   END;                                                                 01240000
+                                                                        01250000
+ CALL RCBIBOM_EVAL_RESULT;                                              01260000
+                                                                        01270000
+ CALL RCBIBOM_END;                                                      01280000
+                                                                        01290000
+1                                                                       01300000
+ /********************************************************************/ 01310000
+ /*      RCBIBOM_PROCESS_SVT                                         */ 01320000
+ /********************************************************************/ 01330000
+ RCBIBOM_PROCESS_SVT : PROC;                                            01340000
+ EXEC SQL                                                               01350000
+   SELECT * INTO :RCB645S :RCB645SI.INDNULL                             01360000
+   FROM RCBV0645_CTRY_SVT                                               01370000
+   WHERE    SERVICE_TYPE = :RCB640S.SERVICE_TYPE                        01380000
+   AND      COUNTRY_NUMBER = :WRK_SAVE_COUNTRY;                         01390000
+ SELECT (SQLCA.SQLCODE);                                                01400000
+   WHEN (0) DO;                                                         01410000
+     RCB640S.SERVICE_DLVR_METHD = RCB645S.SERVICE_DLVR_METHD;           01420000
+     RCB640S.DELIVERY_GROUP = RCB645S.DELIVERY_GROUP;                   01430000
+     END;                                                               01440000
+   WHEN (100) DO;                                                       01450000
+     EXEC SQL                                                           01460000
+       SELECT * INTO :RCB640S :RCB640SI.INDNULL                         01470000
+       FROM RCBV0640_TRANS_SVT                                          01480000
+       WHERE SERVICE_TYPE = :RCB640S.SERVICE_TYPE;                      01490000
+     SELECT (SQLCA.SQLCODE);                                            01500000
+       WHEN (0,100);                                                    01510000
+       OTHERWISE                                                        01520000
+         CALL RCBIBOM_ERROR (ADDR (SQLCA),                              01530000
+                            'DB2',                                      01540000
+                            '#002');                                    01550000
+       END;                                                             01560000
+     END;                                                               01570000
+   OTHERWISE                                                            01580000
+     CALL RCBIBOM_ERROR (ADDR (SQLCA),                                  01590000
+                        'DB2',                                          01600000
+                        '#003');                                        01610000
+   END;                                                                 01620000
+                                                                        01630000
+ END RCBIBOM_PROCESS_SVT;                                               01640000
+1                                                                       01650000
+ /********************************************************************/ 01660000
+ /*      RCBIBOM_PROCESS_SDM                                         */ 01670000
+ /********************************************************************/ 01680000
+ RCBIBOM_PROCESS_SDM : PROC;                                            01690000
+ T640_FOUND = '0'B;                                                     01700000
+ T645_FOUND = '0'B;                                                     01710000
+0EXEC SQL                                                               01720000
+   SELECT * INTO :RCB645S :RCB645SI.INDNULL                             01730000
+   FROM RCBV0645_CTRY_SVT                                               01740000
+   WHERE    SERVICE_TYPE =                                              01750000
+        (                                                               01760000
+           SELECT MIN(SERVICE_TYPE)                                     01770000
+           FROM RCBV0645_CTRY_SVT                                       01780000
+           WHERE SERVICE_DLVR_METHD = :RCB640S.SERVICE_DLVR_METHD       01790000
+           AND COUNTRY_NUMBER = :WRK_SAVE_COUNTRY                       01800000
+        )                                                               01810000
+   AND      COUNTRY_NUMBER = :WRK_SAVE_COUNTRY;                         01820000
+0SELECT (SQLCA.SQLCODE);                                                01830000
+   WHEN (0) T645_FOUND = '1'B;                                          01840000
+   WHEN (100);                                                          01850000
+   OTHERWISE                                                            01860000
+     CALL RCBIBOM_ERROR (ADDR (SQLCA),                                  01870000
+                        'DB2',                                          01880000
+                        '#004');                                        01890000
+   END;                                                                 01900000
+0EXEC SQL                                                               01910000
+   SELECT * INTO :RCB640S :RCB640SI.INDNULL                             01920000
+   FROM RCBV0640_TRANS_SVT                                              01930000
+   WHERE    SERVICE_TYPE =                                              01940000
+        (                                                               01950000
+           SELECT MIN(SERVICE_TYPE)                                     01960000
+           FROM RCBV0640_TRANS_SVT                                      01970000
+           WHERE SERVICE_DLVR_METHD = :RCB640S.SERVICE_DLVR_METHD       01980000
+        );                                                              01990000
+0SELECT (SQLCA.SQLCODE);                                                02000000
+   WHEN (0) T640_FOUND = '1'B;                                          02010000
+   WHEN (100);                                                          02020000
+   OTHERWISE                                                            02030000
+     CALL RCBIBOM_ERROR (ADDR (SQLCA),                                  02040000
+                        'DB2',                                          02050000
+                        '#005');                                        02060000
+   END;                                                                 02070000
+0SELECT;                                                                02080000
+   WHEN (T640_FOUND & T645_FOUND) DO;                                   02090000
+     IF RCB640S.SERVICE_TYPE > RCB645S.SERVICE_TYPE THEN                02100000
+             RCB640S.SERVICE_TYPE = RCB645S.SERVICE_TYPE;               02110000
+     RCB640S.DELIVERY_GROUP = RCB645S.DELIVERY_GROUP;                   02120000
+     END;                                                               02130000
+   WHEN (T640_FOUND);                                                   02140000
+   WHEN (T645_FOUND) DO;                                                02150000
+     RCB640S.SERVICE_TYPE = RCB645S.SERVICE_TYPE;                       02160000
+     RCB640S.DELIVERY_GROUP = RCB645S.DELIVERY_GROUP;                   02170000
+     SQLCA.SQLCODE = 0;                                                 02180000
+     END;                                                               02190000
+   OTHERWISE;                                                           02200000
+   END;                                                                 02210000
+                                                                        02220000
+ END RCBIBOM_PROCESS_SDM;                                               02230000
+1                                                                       02240000
+ /********************************************************************/ 02250000
+ /*      EVAL RESULT OF DB2 TABLE SEARCHES                           */ 02260000
+ /********************************************************************/ 02270000
+ RCBIBOM_EVAL_RESULT : PROC;                                            02280000
+                                                                        02290000
+   SELECT (SQLCA.SQLCODE);                                              02300000
+     WHEN (0);                                                          02310000
+     WHEN (100) DO;                                                     02320000
+       SQLCA_R             = SQLCA;                                     02330000
+       RCBZ02S.RETURN_CODE = 4;                                         02340000
+     END;                                                               02350000
+     OTHERWISE DO;                                                      02360000
+       SQLCA_R             = SQLCA;                                     02370000
+       RCBZ02S.RETURN_CODE = 20;                                        02380000
+     END;                                                               02390000
+   END;                                                                 02400000
+                                                                        02410000
+ END RCBIBOM_EVAL_RESULT;                                               02420000
+                                                                        02430000
+1                                                                       02440000
+ /********************************************************************/ 02450000
+ /*      INITIALIZE                                                  */ 02460000
+ /********************************************************************/ 02470000
+ RCBIBOM_INIT : PROC;                                                   02480000
+                                                                        02490000
+    /* SET LEVEL AND MOD NAME   */                                      02500000
+   WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                          02510000
+   PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                   02520000
+   PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = WRK_MOD_NAME;                02530000
+   WRK_SAVE_COUNTRY                      =                              02540000
+                         PARM_INT_AREA.COUNTRY_NUMBER ;                 02550000
+   PARM_INT_AREA.COUNTRY_NUMBER          = ' ';                         02560000
+   RCBZ02S.RETURN_CODE = 0;                                             02570000
+                                                                        02580000
+ END RCBIBOM_INIT;                                                      02590000
+                                                                        02600000
+1                                                                       02610000
+ /********************************************************************/ 02620000
+ /*      END PROGRAM                                                 */ 02630000
+ /********************************************************************/ 02640000
+ RCBIBOM_END : PROC;                                                    02650000
+                                                                        02660000
+    /* RESET LEVEL */                                                   02670000
+   PARM_INT_AREA.COUNTRY_NUMBER  =  WRK_SAVE_COUNTRY;                   02680000
+   PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                          02690000
+                                                                        02700000
+ END RCBIBOM_END;                                                       02710000
+                                                                        02720000
+1                                                                       02730000
+ /********************************************************************/ 02740000
+ /*      CALL COMMON ERROR ROUTINE AFTER FILLING VARIABLES           */ 02750000
+ /********************************************************************/ 02760000
+ RCBIBOM_ERROR : PROC     (PTR_ERROR,                                   02770000
+                           ERR_TYPE,                                    02780000
+                           CALL_ID);                                    02790000
+   DCL PTR_ERROR    POINTER;                                            02800000
+   DCL ERR_TYPE     CHAR(8);                                            02810000
+   DCL CALL_ID      CHAR(4);                                            02820000
+                                                                        02830000
+   PARM_INT_AREA.PTR_ERROR =  PTR_ERROR;                                02840000
+   PARM_INT_AREA.ERR_TYPE  =  ERR_TYPE;                                 02850000
+   PARM_INT_AREA.CALL_ID   =  CALL_ID;                                  02860000
+                                                                        02870000
+   CALL RCB0E1M (PARM_INT_AREA_PTR);                                    02880000
+                                                                        02890000
+ END RCBIBOM_ERROR;                                                     02900000
+                                                                        02910000
+1                                                                       02920000
+ /*******************************************************************/  02930000
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                    */  02940000
+ /*******************************************************************/  02950000
+                                                                        02960000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 02970000
+ $DAIMOD (RCBIBOM);                    /* MODULE TO BE COMPILED      */ 02980000
+                                                                        02990000
+ END RCBIBOM;                                                           03000000

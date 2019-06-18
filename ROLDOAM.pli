@@ -1,0 +1,1736 @@
+1/********************************************************************/ 00019011
+ /*                                                                  */ 00020002
+ /* ROLDOAM - OEI NEW EXTRACT - DETERMINE CHANGED KEYS               */ 00030002
+ /*                                                                  */ 00040002
+ /********************************************************************/ 00050002
+ /*                                                                  */ 00060002
+ /* PROGRAM          : ROLDOAM                                       */ 00070002
+ /*                                                                  */ 00080002
+ /* LANGUAGE         : PLISQL                                        */ 00090002
+ /*                                                                  */ 00100002
+ /* TYPE             : BATCH                                         */ 00110002
+ /*                                                                  */ 00120002
+ /* DESCRIPTION      : THE EXTRACT OF KEYS OF INTEREST FOR THE       */ 00130002
+ /*                    OEI HW EXTRACT, WHICH HAVE CHANGED            */ 00140002
+ /*                    SINCE THE LAST HW EXTRACT.                    */ 00150002
+ /*                                                                  */ 00160002
+ /* INPUT            : - DB2     RCBV0010_CUSTOMER                   */ 00170002
+ /*                              RCBV0011_PI_CUST                    */ 00180002
+ /*                              RCBV0030_CONTRACT                   */ 00190002
+ /*                              RCBV0040_OU                         */ 00200002
+ /*                              RCBV0051_PI_HW_PR                   */ 00210002
+ /*                              RCBV0110_HW_STATUS                  */ 00220002
+ /*                              RCBV0170_OU_HW                      */ 00230002
+ /*                              RCBV0190_HW_CUST                    */ 00240002
+ /*                              RCBV0220_SUPPL_CTR                  */ 00250002
+ /*                              RCBV0240_SERV_CTR                   */ 00260002
+ /*                              RCBV0241_PI_CTR                     */ 00270002
+ /*                              RCBV0280_ADDR_LINE                  */ 00280002
+ /*                              RCBV0300_HW_REAL                    */ 00290002
+ /*                              RCBV0350_CUST_MOD                   */ 00300002
+ /*                              RCBV0380_HW_PR_MOD                  */ 00310002
+ /*                              RCBV0400_PO_MOD1                    */ 00320002
+ /*                              RCBV0500_PARM                       */ 00330002
+ /*                                                                  */ 00340002
+ /* OUTPUT           : - DB2     ROLV0736_OEI_TP    CHANGED KEYS     */ 00350002
+ /*                    - FILE    RCB0M10            CONTROL REPORT   */ 00360002
+ /*                                                                  */ 00370002
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */ 00380002
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */ 00390002
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */ 00400002
+ /*                    RCB004M   DATE CALCULATION                    */ 00410002
+ /*                    RCB019M   RETRIEVE COUNTRY NUMBERS            */ 00420002
+ /*                    RCB020M   RETRIEVE RUN DATE                   */ 00430002
+ /*                    RCBI50M   RETRIEVE PARAMETER                  */ 00440002
+ /*                                                                  */ 00450002
+ /* MESSAGES         :                                               */ 00460002
+ /*                                                                  */ 00470002
+ /* DEPENDENCIES     : NONE                                          */ 00480002
+ /*                                                                  */ 00490002
+ /* FREQUENCY        : WEEKLY                                        */ 00500002
+ /*                                                                  */ 00510002
+ /* MAINTENANCE LOG  :                                               */ 00520002
+ /* ---------------                                                  */ 00530002
+ /*                                                                  */ 00540002
+ /*  DATE      | WORK-ITEMNO. | DESCRIPTION                          */ 00550002
+ /* --------------------------------------------------------------   */ 00560002
+ /*            |              |                                      */ 00570002
+ /* 2008-03-10 | MEI 785      | NEW VERSION INITIAL DEVELOPMENT      */ 00580002
+ /* 2013-04-19 |TEMEA-T081298 | TABLE LOCK USING RCB024M             */ 00581014
+ /*            |              |                                      */ 00590002
+ /********************************************************************/ 00600002
+1ROLDOAM: PROC                                                          00610002
+          OPTIONS (MAIN)                                                00620002
+          REORDER;                                                      00630002
+ DEFAULT RANGE (*)        STATIC;                                       00640002
+ DCL VERS     CHAR(40) INIT('CEDS 3.3    -ROLDOAM- VERS. 2008-03-10');  00650002
+1/********************************************************************/ 00660002
+ /*  PARAMETERS                                                      */ 00670002
+ /********************************************************************/ 00680002
+ DCL PTR_INT_AREA        PTR;          /* INTERFACE AREA             */ 00690002
+ DCL PTR_RETURN_AREA_BB  PTR;          /* RETURN AREA FROM BB        */ 00700002
+ DCL PTR_COUNTRY_AREA    PTR;          /* INTERFACE RCB019M          */ 00710002
+ DCL PTR_RUN_DATE_AREA   PTR;          /* INTERFACE RCB020M          */ 00720002
+                                                                        00730002
+ DCL 1 PARM_INT_AREA,                          /* INTERFACE AREA     */ 00740002
+       %INCLUDE (RCBZ01S);;                                             00750002
+ DCL 1 RETURN_AREA_BB,                         /* RETURN AREA        */ 00760002
+       %INCLUDE (RCBZ02S);;                                             00770002
+ DCL 1 COUNTRY_AREA,                           /* COUNTRY AREA       */ 00780002
+       %INCLUDE (RCBZ26S);;                                             00790002
+ DCL 1 RUN_DATE_AREA,                          /* RUN DATE AREA      */ 00800002
+       %INCLUDE (RCBZ28S);;                                             00810002
+ DCL 1 PARM_DATE_CALC,                         /* DATE CALC AREA     */ 00820002
+      %INCLUDE (RCBZ03S);;                                              00830002
+ DCL 1 PARM_RCB024M,                           /* RCB024M PARM       */ 00831015
+      %INCLUDE (RCBZ33S);;                                              00832015
+1/********************************************************************/ 00840002
+ /* EXTERNAL ENTRIES                                                 */ 00850002
+ /********************************************************************/ 00860002
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */ 00870002
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGES ROUT     */ 00880002
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* RETRIEVE SYSTEM DATE     */ 00890002
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* RETRIEVE PARAMETER       */ 00900002
+ DCL RCB004M   ENTRY  EXTERNAL;          /* DATE CALCULATION         */ 00910002
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */ 00920002
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */ 00930002
+                                                    /* TEMEA-T081298 */ 00930113
+ DCL RCB024M   ENTRY  EXTERNAL;          /* LOCK DB2 TABLE PARTITION */ 00931012
+1/********************************************************************/ 00940002
+ /* FILE DECLARATIONS                                                */ 00950002
+ /********************************************************************/ 00960002
+ DCL SYSPRINT       EXTERNAL FILE PRINT  ;                              00970002
+1/********************************************************************/ 00980002
+ /* DB2 TABLE STRUCTURES                                             */ 00990002
+ /********************************************************************/ 01000002
+ DCL 1 TB_RCBV500,                                                      01010002
+      %INCLUDE (RCB500S);;                                              01020002
+ DCL 1 TB_RCBV500_I,                                                    01030002
+      %INCLUDE (RCB500SI);;                                             01040002
+ DCL 1 TB_RCBP37S            BASED (ADDR(TB_RCBV500)),                  01050002
+      %INCLUDE (RCBP37S);;                                              01060002
+ /********************************************************************/ 01070002
+ /*  BIT SWITCHES                                                    */ 01080002
+ /********************************************************************/ 01090002
+ DCL 1 SWITCHES,                                                        01100002
+     3 TRUE                        BIT (1)         INIT ('1'B),         01110002
+     3 FALSE                       BIT (1)         INIT ('0'B),         01120002
+     3 FILL                        BIT (6)         INIT ((6)'0'B);      01130002
+ /********************************************************************/ 01140002
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01150002
+ /********************************************************************/ 01160002
+ DCL 1 WORK_FIELDS,                                                     01170002
+    3 WRK_MOD_NAME                      CHAR (08)     INIT('ROLDOAM'),  01180002
+    3 WRK_PRG_NAME                      CHAR (08)     INIT('ROLDOAP'),  01190002
+    3 WRK_SYSTEM_TYPE                   CHAR (01)     INIT('B'),        01200002
+    3 WRK_INDNULL                       FIXED BIN(15) INIT(''),         01210002
+    3 WRK_PIC_10                        PIC 'Z,ZZZ,ZZZ,ZZ9',            01220002
+    3 WRK_LAST_EXTR_DATE                CHAR (10),                      01230002
+    3 WRK_START_CHANGE_PERIOD           CHAR (10),                      01240002
+    3 WRK_RUN_DATE                      CHAR (10),                      01250002
+    3 WRK_CTRYNO                        CHAR (03),                      01260002
+    3 WRK_CTRYNO_NO                     FIXED BIN(15) INIT(1),          01270002
+    3 WRK_PGR_TYPE                      CHAR (03);                      01280002
+                                                                        01290002
+1/********************************************************************/ 01300002
+ /*  BUILTIN FUNCTIONS                                               */ 01310002
+ /********************************************************************/ 01320002
+ DCL (ADDR,                                                             01330002
+      DATE,                                                             01340002
+      DATETIME,                                                         01350002
+      TIME,                                                             01360002
+      NULL,                                                             01370002
+      STG,                                                              01380002
+      STRING,                                                           01390002
+      SUBSTR)                 BUILTIN;                                  01400002
+1/********************************************************************/ 01410002
+ /* ON ERROR CONDITIONS                                              */ 01420002
+ /********************************************************************/ 01430002
+ %INCLUDE (RCB0E0M);                                                    01440002
+  END;                                                                  01450002
+1/********************************************************************/ 01460002
+ /* DB2/SQL SQLCA                                                    */ 01470002
+ /********************************************************************/ 01480002
+  EXEC SQL                                                              01490002
+   INCLUDE SQLCA                                                        01500002
+   ;                                                                    01510002
+ /********************************************************************/ 01520002
+ /* DB2/SQL CURSORS                                                  */ 01530002
+ /********************************************************************/ 01540002
+                                                                        01550002
+1/********************************************************************/ 01560002
+ /*                 S T A R T   P R O C E S S I N G                  */ 01570002
+ /********************************************************************/ 01580002
+                                                                        01590002
+     PUT LIST(VERS)                 SKIP;                     /*CHECK*/ 01600002
+                                                                        01610002
+ CALL R900_INIT_PROGRAM;                                                01620002
+                                                                        01630002
+ CALL R800_CLEAR_OUTPUT_TABLE;                                          01640002
+                                                                        01650002
+ DO WHILE (WRK_CTRYNO_NO <= COUNTRY_AREA.COUNT_CTRY);                   01660002
+                                                                        01670002
+   CALL R700_INIT_COUNTRY;                                              01680002
+                                                                        01690002
+   CALL R701_RETR_INSERT_FROM_RCBV0040;                                 01700002
+   CALL R705_RETR_INSERT_FROM_RCBV0110;                                 01710002
+   CALL R707_RETR_INSERT_FROM_RCBV0170;                                 01720002
+   CALL R709_RETR_INSERT_FROM_RCBV0190;                                 01730002
+   CALL R711_RETR_INSERT_FROM_RCBV0220;                                 01740002
+   CALL R713_RETR_INSERT_FROM_RCBV0240;                                 01750002
+   CALL R719_RETR_INSERT_FROM_RCBV0300;                                 01760002
+   CALL R723_RETR_INSERT_FROM_RCBV0380;                                 01770002
+   CALL R725_RETR_INSERT_FROM_RCBV0400;                                 01780002
+   CALL R731_RETR_INSERT_FROM_RCBV0010;                                 01790002
+   CALL R733_RETR_INSERT_FROM_RCBV0030;                                 01800002
+   CALL R739_RETR_INSERT_FROM_RCBV0280;                                 01810002
+   CALL R741_RETR_INSERT_FROM_RCBV0350;                                 01820002
+   CALL R810_RETR_INSERT_FROM_RCBV0011;                                 01830002
+   CALL R811_RETR_INSERT_FROM_RCBV0051;                                 01840002
+   CALL R812_RETR_INSERT_FROM_RCBV0241;                                 01850002
+                                                                        01860002
+   CALL R799_END_COUNTRY;                                               01870002
+                                                                        01880002
+ END;                                                                   01890002
+                                                                        01900002
+ CALL R999_END_PROGRAM;                                                 01910002
+                                                                        01920002
+1/********************************************************************/ 01930002
+ /*                                                                  */ 01940002
+ /* MODULE NAME      : R001_LOCK_TABLES                              */ 01950002
+ /*                                                                  */ 01960002
+ /* DESCRIPTION      :                                               */ 01970002
+ /*                                                                  */ 01980002
+ /********************************************************************/ 01990002
+ R001_LOCK_TABLES: PROC;                                                02000002
+                                                /* SOC TEMEA-T081298    02010012
+ EXEC SQL                                                               02020002
+   LOCK TABLE  RCBT0010_CUSTOMER        IN SHARE MODE;                  02030002
+                                                                        02040002
+ IF SQLCODE ¬= 0                                                        02050002
+   THEN DO;                                                             02060002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02070002
+                              'DB2',                                    02080002
+                              '#001');                                  02090002
+        END;                                                            02100002
+                                                                        02110002
+ EXEC SQL                                                               02120002
+   LOCK TABLE  RCBT0030_CONTRACT        IN SHARE MODE;                  02130002
+                                                                        02140002
+ IF SQLCODE ¬= 0                                                        02150002
+   THEN DO;                                                             02160002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02170002
+                              'DB2',                                    02180002
+                              '#002');                                  02190002
+        END;                                                            02200002
+                                                                        02210002
+ EXEC SQL                                                               02220002
+   LOCK TABLE  RCBT0040_OU              IN SHARE MODE;                  02230002
+                                                                        02240002
+ IF SQLCODE ¬= 0                                                        02250002
+   THEN DO;                                                             02260002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02270002
+                              'DB2',                                    02280002
+                              '#004');                                  02290002
+        END;                                                            02300002
+                                                                        02310002
+ EXEC SQL                                                               02320002
+   LOCK TABLE  RCBT0110_HW_STATUS       IN SHARE MODE;                  02330002
+                                                                        02340002
+ IF SQLCODE ¬= 0                                                        02350002
+   THEN DO;                                                             02360002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02370002
+                              'DB2',                                    02380002
+                              '#005');                                  02390002
+        END;                                                            02400002
+                                                                        02410002
+ EXEC SQL                                                               02420002
+   LOCK TABLE  RCBT0170_OU_HW           IN SHARE MODE;                  02430002
+                                                                        02440002
+ IF SQLCODE ¬= 0                                                        02450002
+   THEN DO;                                                             02460002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02470002
+                              'DB2',                                    02480002
+                              '#007');                                  02490002
+        END;                                                            02500002
+                                                                        02510002
+ EXEC SQL                                                               02520002
+   LOCK TABLE  RCBT0190_HW_CUST         IN SHARE MODE;                  02530002
+                                                                        02540002
+ IF SQLCODE ¬= 0                                                        02550002
+   THEN DO;                                                             02560002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02570002
+                              'DB2',                                    02580002
+                              '#008');                                  02590002
+        END;                                                            02600002
+                                                                        02610002
+ EXEC SQL                                                               02620002
+   LOCK TABLE  RCBT0220_SUPPL_CTR       IN SHARE MODE;                  02630002
+                                                                        02640002
+ IF SQLCODE ¬= 0                                                        02650002
+   THEN DO;                                                             02660002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02670002
+                              'DB2',                                    02680002
+                              '#009');                                  02690002
+        END;                                                            02700002
+                                                                        02710002
+ EXEC SQL                                                               02720002
+   LOCK TABLE  RCBT0240_SERV_CTR        IN SHARE MODE;                  02730002
+                                                                        02740002
+ IF SQLCODE ¬= 0                                                        02750002
+   THEN DO;                                                             02760002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02770002
+                              'DB2',                                    02780002
+                              '#010');                                  02790002
+        END;                                                            02800002
+                                                                        02810002
+ EXEC SQL                                                               02820002
+   LOCK TABLE  RCBT0280_ADDR_LINE       IN SHARE MODE;                  02830002
+                                                                        02840002
+ IF SQLCODE ¬= 0                                                        02850002
+   THEN DO;                                                             02860002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02870002
+                              'DB2',                                    02880002
+                              '#011');                                  02890002
+        END;                                                            02900002
+                                                                        02910002
+ EXEC SQL                                                               02920002
+   LOCK TABLE  RCBT0300_HW_REAL         IN SHARE MODE;                  02930002
+                                                                        02940002
+ IF SQLCODE ¬= 0                                                        02950002
+   THEN DO;                                                             02960002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             02970002
+                              'DB2',                                    02980002
+                              '#012');                                  02990002
+        END;                                                            03000002
+                                                                        03010002
+ EXEC SQL                                                               03020002
+   LOCK TABLE  RCBT0350_CUST_MOD        IN SHARE MODE;                  03030002
+                                                                        03040002
+ IF SQLCODE ¬= 0                                                        03050002
+   THEN DO;                                                             03060002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03070002
+                              'DB2',                                    03080002
+                              '#013');                                  03090002
+        END;                                                            03100002
+                                                                        03110002
+ EXEC SQL                                                               03120002
+   LOCK TABLE  RCBT0380_HW_PR_MOD       IN SHARE MODE;                  03130002
+                                                                        03140002
+ IF SQLCODE ¬= 0                                                        03150002
+   THEN DO;                                                             03160002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03170002
+                              'DB2',                                    03180002
+                              '#014');                                  03190002
+        END;                                                            03200002
+                                                                        03210002
+ EXEC SQL                                                               03220002
+   LOCK TABLE  RCBT0400_PO_MOD1         IN SHARE MODE;                  03230002
+                                                                        03240002
+ IF SQLCODE ¬= 0                                                        03250002
+   THEN DO;                                                             03260002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03270002
+                              'DB2',                                    03280002
+                              '#015');                                  03290002
+        END;                                                            03300002
+                                                                        03310002
+ EXEC SQL                                                               03320002
+   LOCK TABLE  RCBT0011_PI_CUST         IN SHARE MODE;                  03330002
+                                                                        03340002
+ IF SQLCODE ¬= 0                                                        03350002
+   THEN DO;                                                             03360002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03370002
+                              'DB2',                                    03380002
+                              '#041');                                  03390002
+        END;                                                            03400002
+                                                                        03410002
+ EXEC SQL                                                               03420002
+   LOCK TABLE  RCBT0051_PI_HW_PR        IN SHARE MODE;                  03430002
+                                                                        03440002
+ IF SQLCODE ¬= 0                                                        03450002
+   THEN DO;                                                             03460002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03470002
+                              'DB2',                                    03480002
+                              '#042');                                  03490002
+        END;                                                            03500002
+                                                                        03510002
+ EXEC SQL                                                               03520002
+   LOCK TABLE  RCBT0241_PI_CTR          IN SHARE MODE;                  03530002
+                                                                        03540002
+ IF SQLCODE ¬= 0                                                        03550002
+   THEN DO;                                                             03560002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03570002
+                              'DB2',                                    03580002
+                              '#043');                                  03590002
+        END;                                                            03600002
+                                                                        03610002
+ EXEC SQL                                                               03620002
+   LOCK TABLE  ROLT0736_OEI_TP          IN SHARE MODE;                  03630002
+                                                                        03640002
+ IF SQLCODE ¬= 0                                                        03650002
+   THEN DO;                                                             03660002
+          CALL ROLDOAM_ERROR (ADDR (SQLCA),                             03670002
+                              'DB2',                                    03680002
+                              '#040');                                  03690002
+        END; */                                                         03700012
+                                                                        03700112
+ PARM_RCB024M.COUNTRY_NUMBER = WRK_CTRYNO;                              03701012
+ /********************************************************************/ 03703012
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0010_CUSTOMER';                     03705012
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03706012
+                                                                        03707012
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03708012
+               PTR_RETURN_AREA_BB,                                      03709012
+               PTR_INT_AREA);                                           03709112
+                                                                        03709212
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03709312
+   WHEN (0);                                                            03709412
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03709512
+     DO;                                                                03709612
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#047');                      03709712
+     END;                                                               03709812
+   OTHERWISE                                                            03709912
+     DO;                                                                03710012
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03710112
+                                 'DB2',                                 03710212
+                                 '#001');                               03710312
+     END;                                                               03710412
+ END;                                                                   03710512
+                                                                        03710612
+ /********************************************************************/ 03710712
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0030_CONTRACT';                     03710912
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03711012
+                                                                        03711112
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03711212
+               PTR_RETURN_AREA_BB,                                      03711312
+               PTR_INT_AREA);                                           03711412
+                                                                        03711512
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03711612
+   WHEN (0);                                                            03711712
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03711812
+     DO;                                                                03711912
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#048');                      03712012
+     END;                                                               03712112
+   OTHERWISE                                                            03712212
+     DO;                                                                03712312
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03712412
+                                 'DB2',                                 03712512
+                                 '#002');                               03712612
+     END;                                                               03712712
+ END;                                                                   03712812
+ /********************************************************************/ 03713012
+                                                                        03713112
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0040_OU';                           03713212
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03713312
+                                                                        03713412
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03713512
+               PTR_RETURN_AREA_BB,                                      03713612
+               PTR_INT_AREA);                                           03713712
+                                                                        03713812
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03713912
+   WHEN (0);                                                            03714012
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03714112
+     DO;                                                                03714212
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#049');                      03714312
+     END;                                                               03714412
+   OTHERWISE                                                            03714512
+     DO;                                                                03714612
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03714712
+                                 'DB2',                                 03714812
+                                 '#004');                               03714912
+     END;                                                               03715012
+ END;                                                                   03715112
+                                                                        03715212
+ /********************************************************************/ 03715312
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0110_HW_STATUS';                    03715512
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03715612
+                                                                        03715712
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03715812
+               PTR_RETURN_AREA_BB,                                      03715912
+               PTR_INT_AREA);                                           03716012
+                                                                        03716112
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03716212
+   WHEN (0);                                                            03716312
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03716412
+     DO;                                                                03716512
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#050');                      03716612
+     END;                                                               03716712
+   OTHERWISE                                                            03716812
+     DO;                                                                03716912
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03717012
+                                 'DB2',                                 03717112
+                                 '#005');                               03717212
+     END;                                                               03717312
+ END;                                                                   03717412
+                                                                        03717512
+ /********************************************************************/ 03717612
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0170_OU_HW';                        03717812
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03717912
+                                                                        03718012
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03718112
+               PTR_RETURN_AREA_BB,                                      03718212
+               PTR_INT_AREA);                                           03718312
+                                                                        03718412
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03718512
+   WHEN (0);                                                            03718612
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03718712
+     DO;                                                                03718812
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#051');                      03718912
+     END;                                                               03719012
+   OTHERWISE                                                            03719112
+     DO;                                                                03719212
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03719312
+                                 'DB2',                                 03719412
+                                 '#007');                               03719512
+     END;                                                               03719612
+ END;                                                                   03719712
+                                                                        03719812
+ /********************************************************************/ 03719912
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0190_HW_CUST';                      03720112
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03720212
+                                                                        03720312
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03720412
+               PTR_RETURN_AREA_BB,                                      03720512
+               PTR_INT_AREA);                                           03720612
+                                                                        03720712
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03720812
+   WHEN (0);                                                            03720912
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03721012
+     DO;                                                                03721112
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#052');                      03721212
+     END;                                                               03721312
+   OTHERWISE                                                            03721412
+     DO;                                                                03721512
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03721612
+                                 'DB2',                                 03721712
+                                 '#008');                               03721812
+     END;                                                               03721912
+ END;                                                                   03722012
+                                                                        03722112
+ /********************************************************************/ 03722212
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0220_SUPPL_CTR';                    03722412
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03722512
+                                                                        03722612
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03722712
+               PTR_RETURN_AREA_BB,                                      03722812
+               PTR_INT_AREA);                                           03722912
+                                                                        03723012
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03723112
+   WHEN (0);                                                            03723212
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03723312
+     DO;                                                                03723412
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#053');                      03723512
+     END;                                                               03723612
+   OTHERWISE                                                            03723712
+     DO;                                                                03723812
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03723912
+                                 'DB2',                                 03724012
+                                 '#009');                               03724112
+     END;                                                               03724212
+ END;                                                                   03724312
+                                                                        03724412
+ /********************************************************************/ 03724512
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0240_SERV_CTR';                     03724712
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03724812
+                                                                        03724912
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03725012
+               PTR_RETURN_AREA_BB,                                      03725112
+               PTR_INT_AREA);                                           03725212
+                                                                        03725312
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03725412
+   WHEN (0);                                                            03725512
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03725612
+     DO;                                                                03725712
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#054');                      03725812
+     END;                                                               03725912
+   OTHERWISE                                                            03726012
+     DO;                                                                03726112
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03726212
+                                 'DB2',                                 03726312
+                                 '#010');                               03726412
+     END;                                                               03726512
+ END;                                                                   03726612
+                                                                        03726712
+ /********************************************************************/ 03726812
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0280_ADDR_LINE';                    03727012
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03727112
+                                                                        03727212
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03727312
+               PTR_RETURN_AREA_BB,                                      03727412
+               PTR_INT_AREA);                                           03727512
+                                                                        03727612
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03727712
+   WHEN (0);                                                            03727812
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03727912
+     DO;                                                                03728012
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#055');                      03728112
+     END;                                                               03728212
+   OTHERWISE                                                            03728312
+     DO;                                                                03728412
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03728512
+                                 'DB2',                                 03728612
+                                 '#011');                               03728712
+     END;                                                               03728812
+ END;                                                                   03728912
+ /********************************************************************/ 03729112
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0300_HW_REAL';                      03729312
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03729412
+                                                                        03729512
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03729612
+               PTR_RETURN_AREA_BB,                                      03729712
+               PTR_INT_AREA);                                           03729812
+                                                                        03729912
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03730012
+   WHEN (0);                                                            03730112
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03730212
+     DO;                                                                03730312
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#056');                      03730412
+     END;                                                               03730512
+   OTHERWISE                                                            03730612
+     DO;                                                                03730712
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03730812
+                                 'DB2',                                 03730912
+                                 '#012');                               03731012
+     END;                                                               03731112
+ END;                                                                   03731212
+                                                                        03731312
+ /********************************************************************/ 03731412
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0350_CUST_MOD';                     03731612
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03731712
+                                                                        03731812
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03731912
+               PTR_RETURN_AREA_BB,                                      03732012
+               PTR_INT_AREA);                                           03732112
+                                                                        03732212
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03732312
+   WHEN (0);                                                            03732412
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03732512
+     DO;                                                                03732612
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#057');                      03732712
+     END;                                                               03732812
+   OTHERWISE                                                            03732912
+     DO;                                                                03733012
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03733112
+                                 'DB2',                                 03733212
+                                 '#013');                               03733312
+     END;                                                               03733412
+ END;                                                                   03733512
+                                                                        03733612
+ /********************************************************************/ 03733712
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0380_HW_PR_MOD';                    03734012
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03734112
+                                                                        03734212
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03734312
+               PTR_RETURN_AREA_BB,                                      03734412
+               PTR_INT_AREA);                                           03734512
+                                                                        03734612
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03734712
+   WHEN (0);                                                            03734812
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03734912
+     DO;                                                                03735012
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#058');                      03735112
+     END;                                                               03735212
+   OTHERWISE                                                            03735312
+     DO;                                                                03735412
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03735512
+                                 'DB2',                                 03735612
+                                 '#014');                               03735712
+     END;                                                               03735812
+ END;                                                                   03735912
+                                                                        03736102
+ /********************************************************************/ 03736212
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0400_PO_MOD1';                      03736312
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03736412
+                                                                        03736512
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03736612
+               PTR_RETURN_AREA_BB,                                      03736712
+               PTR_INT_AREA);                                           03736812
+                                                                        03736912
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03737012
+   WHEN (0);                                                            03737112
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03737212
+     DO;                                                                03737312
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#059');                      03737412
+     END;                                                               03737512
+   OTHERWISE                                                            03737612
+     DO;                                                                03737712
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03737812
+                                 'DB2',                                 03737912
+                                 '#015');                               03738012
+     END;                                                               03738112
+ END;                                                                   03738212
+                                                                        03738312
+ /********************************************************************/ 03738412
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0011_PI_CUST';                      03738512
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03738612
+                                                                        03738712
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03738812
+               PTR_RETURN_AREA_BB,                                      03738912
+               PTR_INT_AREA);                                           03739012
+                                                                        03739112
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03739212
+   WHEN (0);                                                            03739312
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03739412
+     DO;                                                                03739512
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#060');                      03739612
+     END;                                                               03739712
+   OTHERWISE                                                            03739812
+     DO;                                                                03739912
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03740012
+                                 'DB2',                                 03740112
+                                 '#041');                               03740212
+     END;                                                               03740312
+ END;                                                                   03740412
+                                                                        03740512
+ /********************************************************************/ 03740612
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0051_PI_HW_PR';                     03740712
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03740812
+                                                                        03740912
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03741012
+               PTR_RETURN_AREA_BB,                                      03741112
+               PTR_INT_AREA);                                           03741212
+                                                                        03741312
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03741412
+   WHEN (0);                                                            03741512
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03741612
+     DO;                                                                03741712
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#061');                      03741812
+     END;                                                               03741912
+   OTHERWISE                                                            03742012
+     DO;                                                                03742112
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03742212
+                                 'DB2',                                 03742312
+                                 '#042');                               03742412
+     END;                                                               03742512
+ END;                                                                   03742612
+                                                                        03742712
+ /********************************************************************/ 03742812
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0241_PI_CTR';                       03742912
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03743012
+                                                                        03743112
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03743212
+               PTR_RETURN_AREA_BB,                                      03743312
+               PTR_INT_AREA);                                           03743412
+                                                                        03743512
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03743612
+   WHEN (0);                                                            03743712
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03743812
+     DO;                                                                03743912
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#062');                      03744012
+     END;                                                               03744112
+   OTHERWISE                                                            03744212
+     DO;                                                                03744312
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03744412
+                                 'DB2',                                 03744512
+                                 '#043');                               03744612
+     END;                                                               03744712
+ END;                                                                   03744812
+                                                                        03744912
+ /********************************************************************/ 03745012
+ PARM_RCB024M.VIEW_NAME      = 'ROLT0736_OEI_TP';                       03745112
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03745212
+                                                                        03745312
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03745412
+               PTR_RETURN_AREA_BB,                                      03745512
+               PTR_INT_AREA);                                           03745612
+                                                                        03745712
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03745812
+   WHEN (0);                                                            03745912
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03746012
+     DO;                                                                03746112
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#063');                      03746212
+     END;                                                               03746312
+   OTHERWISE                                                            03746412
+     DO;                                                                03746512
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            03746612
+                                 'DB2',                                 03746712
+                                 '#040');                               03746812
+     END;                                                               03746912
+ END;                                                                   03747012
+                                                /* EOC TEMEA-T081298 */ 03747112
+ END R001_LOCK_TABLES;                                                  03747202
+                                                                        03747302
+1/*********************************************************************/03748002
+ /*                                                                   */03750002
+ /* MODULE NAME      :  R700_INIT_COUNTRY                             */03760002
+ /*                                                                   */03770002
+ /* DESCRIPTION      :                                                */03780002
+ /*                                                                   */03790002
+ /*********************************************************************/03800002
+ R700_INIT_COUNTRY: PROC;                                               03810002
+                                                                        03820002
+                                  /* FILL CURRENT COUNTRY            */ 03830002
+ WRK_CTRYNO    = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).CTRYNO;         03840002
+ WRK_PGR_TYPE  = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).PGR_TYPE;       03850002
+                                                                        03860002
+ CALL R001_LOCK_TABLES;                         /* TEMEA-T081298     */ 03861012
+                                                /* RETRIEVE RUN DATE */ 03870002
+ RUN_DATE_AREA.PROC_ID   =  COUNTRY_AREA.PROC_ID;                       03880002
+ RUN_DATE_AREA.CTRYNO    =  WRK_CTRYNO;                                 03890002
+ RUN_DATE_AREA.PGR_TYPE  =  WRK_PGR_TYPE;                               03900002
+                                                                        03910002
+ CALL RCB020M (PTR_RUN_DATE_AREA,                                       03920002
+               PTR_INT_AREA);                                           03930002
+                                                                        03940002
+ IF RUN_DATE_AREA.RUN_DATE = ''       /* NO RUN DATE RCB001 FOUND    */ 03950002
+ THEN                                                                   03960002
+   DO;                                                                  03970002
+     WRK_RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;                          03980002
+   END;                                                                 03990002
+ ELSE                                                                   04000002
+   DO;                                                                  04010002
+     WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;                             04020002
+   END;                                                                 04030002
+                                                                        04040002
+ PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;                           04050002
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                 04060002
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';                               04070002
+ PARM_INT_AREA.MSG_VAR_CODES    = '';                                   04080002
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';                                 04090002
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RUN_DATE;                         04100002
+ CALL RCB0M1M (PTR_INT_AREA);                                           04110002
+                                                                        04120002
+                                       /* RETRIEVE LAST EXTRACT DATE */ 04130002
+ TB_RCBV500   = '';                                                     04140002
+ TB_RCBV500_I = '';                                                     04150002
+ TB_RCBP37S.NUMBER  = 'RCB037';                                         04160002
+ TB_RCBP37S.PROC_ID = COUNTRY_AREA.PROC_ID;                             04170002
+ TB_RCBP37S.CTRYNO  = WRK_CTRYNO;                                       04180002
+                                                                        04190002
+ CALL RCBI50M ('U',                                                     04200002
+               ADDR(TB_RCBV500),                                        04210002
+               ADDR(TB_RCBV500_I),                                      04220002
+               PTR_RETURN_AREA_BB,                                      04230002
+               PTR_INT_AREA);                                           04240002
+                                                                        04250002
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04260002
+  WHEN (0)                                                              04270002
+    DO;                                                                 04280002
+       WRK_LAST_EXTR_DATE = TB_RCBP37S.LAST_EXTR_DATE;                  04290002
+                                                                        04300002
+             /* DETERMINE START_CHANGE_PERIOD = LAST_EXTR_DATE + 1   */ 04310002
+             /* TO EXCLUDE LAST_EXTR_DATE FROM EXTRACT PERIOD        */ 04320002
+       PARM_DATE_CALC = '';                                             04330002
+       PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';                           04340002
+       PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';                           04350002
+       PARM_DATE_CALC.WD_FUNCTION    = 'C';                             04360002
+       PARM_DATE_CALC.WD_PERIOD      = 1;                               04370002
+       PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';                             04380002
+       PARM_DATE_CALC.WD_IN_DATE     = TB_RCBP37S.LAST_EXTR_DATE;       04390002
+                                                                        04400002
+       CALL RCB004M (ADDR(PARM_DATE_CALC));                             04410002
+                                                                        04420002
+       IF PARM_DATE_CALC.WD_STATUS ¬= ''                                04430002
+         THEN DO;                                                       04440002
+           PARM_INT_AREA.MESSAGE_TYPE      = 'IS';                      04450002
+           PARM_INT_AREA.MESSAGE_NUMBER    = '0012';                    04460002
+           PARM_INT_AREA.MSG_VAR_CODES     = '';                        04470002
+                                                                        04480002
+           PARM_INT_AREA.MSG_VAR_CODE_6    = 'DN';                      04490002
+           PARM_INT_AREA.MSG_VAR_VALUE_6   = 'LAST_EXTR_DATE';          04500002
+           PARM_INT_AREA.MSG_VAR_CODE_7    = 'DT';                      04510002
+           PARM_INT_AREA.MSG_VAR_VALUE_7   = PARM_DATE_CALC.WD_IN_DATE; 04520002
+           PARM_INT_AREA.MSG_VAR_CODE_8    = 'RC';                      04530002
+           PARM_INT_AREA.MSG_VAR_VALUE_8   = PARM_DATE_CALC.WD_STATUS;  04540002
+           CALL RCB0M1M (PTR_INT_AREA);                                 04550002
+           CALL ROLDOAM_ERROR (NULL,                                    04560002
+                               'OTHER',                                 04570002
+                               '#016');                                 04580002
+            END;                                                        04590002
+                                                                        04600002
+       WRK_START_CHANGE_PERIOD = PARM_DATE_CALC.WD_OUT_DATE ;           04610002
+    END;                                                                04620002
+  WHEN (4)                            /* NO LAST EXTRACT DATE FOUND  */ 04630002
+    DO;                                                                 04640002
+       PARM_INT_AREA.MESSAGE_TYPE               = 'IS';                 04650002
+       PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER    = 'I050';               04660002
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES     = ' ';                  04670002
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6    = 'PN';                 04680002
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6   =                       04690002
+                                       TB_RCBV500.PARAMETER_NUMBER;     04700002
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7    = 'PK';                 04710002
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7   =                       04720002
+                                       TB_RCBV500.PARAMETER_KEY;        04730002
+       CALL RCB0M1M (PTR_INT_AREA);                                     04740002
+       CALL ROLDOAM_ERROR (NULL, 'OTHER', '#017');                      04750002
+    END;                                                                04760002
+  OTHERWISE DO;                                                         04770002
+       CALL ROLDOAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            04780002
+                                 'DB2',                                 04790002
+                                 '#018');                               04800002
+            END;                                                        04810002
+ END;                                                                   04820002
+                                                                        04830002
+ END R700_INIT_COUNTRY;                                                 04840002
+                                                                        04850002
+1/*********************************************************************/04860002
+ /*                                                                   */04870002
+ /* MODULE NAME      :  R701_RETR_INSERT_FROM_RCBV0040                */04880002
+ /*                                                                   */04890002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */04900002
+ /*                    INTO ROLT0736_OEI_TP                           */04910002
+ /*                                                                   */04920002
+ /*********************************************************************/04930002
+ R701_RETR_INSERT_FROM_RCBV0040: PROC;                                  04940002
+                                                                        04950002
+ EXEC SQL                                                               04960002
+   INSERT INTO ROLT0736_OEI_TP                                          04970002
+     SELECT                                                             04980002
+         B.COUNTRY_NUMBER                                               04990002
+        ,B.PRODUCT_TYPE                                                 05000002
+        ,B.ORIGIN                                                       05010002
+        ,B.SEQUENCE_NUMBER                                              05020002
+     FROM RCBV0040_OU       A                                           05030002
+         ,RCBV0170_OU_HW    B                                           05040002
+     WHERE A.COUNTRY_NUMBER             = :WRK_CTRYNO                   05050002
+       AND  ( A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD      05060002
+                                      AND :WRK_RUN_DATE                 05070002
+           OR A.END_DATE          BETWEEN :WRK_LAST_EXTR_DATE           05080002
+                                      AND :WRK_RUN_DATE  )   /*FUTURE*/ 05090002
+                                                                        05100002
+       AND B.COUNTRY_NUMBER             = A.COUNTRY_NUMBER              05110002
+       AND B.OU_CODE                    = A.OU_CODE                     05120002
+       AND :WRK_RUN_DATE          BETWEEN B.EFFECTIVE_DATE              05130002
+                                      AND B.END_DATE      /*EFFECTIVE*/ 05140002
+   ;                                                                    05150002
+                                                                        05160002
+ SELECT(SQLCODE);                                                       05170002
+   WHEN(0) EXEC SQL COMMIT;                                             05180002
+   WHEN(100);                                                           05190002
+   OTHERWISE                                                            05200002
+     DO;                                                                05210002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                05220002
+                           'DB2',                                       05230002
+                           '#019');                                     05240002
+     END;                                                               05250002
+ END;                                                                   05260002
+                                                                        05270002
+ EXEC SQL                                                               05280002
+   INSERT INTO ROLT0736_OEI_TP                                          05290002
+     SELECT                                                             05300002
+         B.COUNTRY_NUMBER                                               05310002
+        ,B.PRODUCT_TYPE                                                 05320002
+        ,B.ORIGIN                                                       05330002
+        ,B.SEQUENCE_NUMBER                                              05340002
+     FROM RCBV0040_OU        A                                          05350002
+         ,RCBV0051_PI_HW_PR  B                                          05360002
+     WHERE A.COUNTRY_NUMBER             = :WRK_CTRYNO                   05370002
+       AND  ( A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD      05380002
+                                      AND :WRK_RUN_DATE                 05390002
+           OR A.END_DATE          BETWEEN :WRK_LAST_EXTR_DATE           05400002
+                                      AND :WRK_RUN_DATE  )   /*FUTURE*/ 05410002
+                                                                        05420002
+       AND B.COUNTRY_NUMBER             = A.COUNTRY_NUMBER              05430002
+       AND B.OU_CODE                    = A.OU_CODE                     05440002
+       AND :WRK_RUN_DATE                > B.INSTALL_DATE  /*EFFECTIVE*/ 05450002
+   ;                                                                    05460002
+                                                                        05470002
+ SELECT(SQLCODE);                                                       05480002
+   WHEN(0) EXEC SQL COMMIT;                                             05490002
+   WHEN(100);                                                           05500002
+   OTHERWISE                                                            05510002
+     DO;                                                                05520002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                05530002
+                           'DB2',                                       05540002
+                           '#020');                                     05550002
+     END;                                                               05560002
+ END;                                                                   05570002
+                                                                        05580002
+ END R701_RETR_INSERT_FROM_RCBV0040;                                    05590002
+                                                                        05600002
+1/*********************************************************************/05610002
+ /*                                                                   */05620002
+ /* MODULE NAME      :  R705_RETR_INSERT_FROM_RCBV0110                */05630002
+ /*                                                                   */05640002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */05650002
+ /*                    INTO ROLT0736_OEI_TP                           */05660002
+ /*                                                                   */05670002
+ /*********************************************************************/05680002
+ R705_RETR_INSERT_FROM_RCBV0110: PROC;                                  05690002
+                                                                        05700002
+ EXEC SQL                                                               05710002
+   INSERT INTO ROLT0736_OEI_TP                                          05720002
+     SELECT                                                             05730002
+         COUNTRY_NUMBER                                                 05740002
+        ,PRODUCT_TYPE                                                   05750002
+        ,ORIGIN                                                         05760002
+        ,SEQUENCE_NUMBER                                                05770002
+     FROM RCBV0110_HW_STATUS                                            05780002
+     WHERE COUNTRY_NUMBER          = :WRK_CTRYNO                        05790002
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD           05800002
+                                 AND :WRK_RUN_DATE                      05810002
+   ;                                                                    05820002
+                                                                        05830002
+ SELECT(SQLCODE);                                                       05840002
+   WHEN(0) EXEC SQL COMMIT;                                             05850002
+   WHEN(100);                                                           05860002
+   OTHERWISE                                                            05870002
+     DO;                                                                05880002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                05890002
+                           'DB2',                                       05900002
+                           '#021');                                     05910002
+     END;                                                               05920002
+ END;                                                                   05930002
+                                                                        05940002
+ END R705_RETR_INSERT_FROM_RCBV0110;                                    05950002
+                                                                        05960002
+1/*********************************************************************/05970002
+ /*                                                                   */05980002
+ /* MODULE NAME      :  R707_RETR_INSERT_FROM_RCBV0170                */05990002
+ /*                                                                   */06000002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */06010002
+ /*                    INTO ROLT0736_OEI_TP                           */06020002
+ /*                                                                   */06030002
+ /*********************************************************************/06040002
+ R707_RETR_INSERT_FROM_RCBV0170: PROC;                                  06050002
+                                                                        06060002
+ EXEC SQL                                                               06070002
+   INSERT INTO ROLT0736_OEI_TP                                          06080002
+     SELECT                                                             06090002
+         COUNTRY_NUMBER                                                 06100002
+        ,PRODUCT_TYPE                                                   06110002
+        ,ORIGIN                                                         06120002
+        ,SEQUENCE_NUMBER                                                06130002
+     FROM RCBV0170_OU_HW                                                06140002
+     WHERE COUNTRY_NUMBER            = :WRK_CTRYNO                      06150002
+       AND ( LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         06160002
+                                   AND :WRK_RUN_DATE                    06170002
+           OR  END_DATE        BETWEEN :WRK_LAST_EXTR_DATE              06180002
+                                   AND :WRK_RUN_DATE )                  06190002
+   ;                                                                    06200002
+                                                                        06210002
+ SELECT(SQLCODE);                                                       06220002
+   WHEN(0) EXEC SQL COMMIT;                                             06230002
+   WHEN(100);                                                           06240002
+   OTHERWISE                                                            06250002
+     DO;                                                                06260002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                06270002
+                           'DB2',                                       06280002
+                           '#022');                                     06290002
+     END;                                                               06300002
+ END;                                                                   06310002
+                                                                        06320002
+ END R707_RETR_INSERT_FROM_RCBV0170;                                    06330002
+                                                                        06340002
+1/*********************************************************************/06350002
+ /*                                                                   */06360002
+ /* MODULE NAME      :  R709_RETR_INSERT_FROM_RCBV0190                */06370002
+ /*                                                                   */06380002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */06390002
+ /*                    INTO ROLT0736_OEI_TP                           */06400002
+ /*                                                                   */06410002
+ /*********************************************************************/06420002
+ R709_RETR_INSERT_FROM_RCBV0190: PROC;                                  06430002
+                                                                        06440002
+ EXEC SQL                                                               06450002
+   INSERT INTO ROLT0736_OEI_TP                                          06460002
+     SELECT                                                             06470002
+         COUNTRY_NUMBER                                                 06480002
+        ,PRODUCT_TYPE                                                   06490002
+        ,ORIGIN                                                         06500002
+        ,SEQUENCE_NUMBER                                                06510002
+     FROM RCBV0190_HW_CUST                                              06520002
+     WHERE COUNTRY_NUMBER          = :WRK_CTRYNO                        06530002
+       AND TYPE_OF_RELATION        = 'U'                                06540002
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD           06550002
+                                 AND :WRK_RUN_DATE                      06560002
+   ;                                                                    06570002
+                                                                        06580002
+ SELECT(SQLCODE);                                                       06590002
+   WHEN(0) EXEC SQL COMMIT;                                             06600002
+   WHEN(100);                                                           06610002
+   OTHERWISE                                                            06620002
+     DO;                                                                06630002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                06640002
+                           'DB2',                                       06650002
+                           '#023');                                     06660002
+     END;                                                               06670002
+ END;                                                                   06680002
+                                                                        06690002
+ END R709_RETR_INSERT_FROM_RCBV0190;                                    06700002
+                                                                        06710002
+1/*********************************************************************/06720002
+ /*                                                                   */06730002
+ /* MODULE NAME      :  R711_RETR_INSERT_FROM_RCBV0220                */06740002
+ /*                                                                   */06750002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */06760002
+ /*                    INTO ROLT0736_OEI_TP                           */06770002
+ /*                                                                   */06780002
+ /*********************************************************************/06790002
+ R711_RETR_INSERT_FROM_RCBV0220: PROC;                                  06800002
+                                                                        06810002
+ EXEC SQL                                                               06820002
+   INSERT INTO ROLT0736_OEI_TP                                          06830002
+     SELECT                                                             06840002
+         COUNTRY_NUMBER                                                 06850002
+        ,PRODUCT_TYPE                                                   06860002
+        ,ORIGIN                                                         06870002
+        ,SEQUENCE_NUMBER                                                06880002
+     FROM RCBV0220_SUPPL_CTR                                            06890002
+     WHERE COUNTRY_NUMBER            = :WRK_CTRYNO                      06900002
+       AND ( LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         06910002
+                                   AND :WRK_RUN_DATE                    06920002
+           OR  END_DATE        BETWEEN :WRK_LAST_EXTR_DATE              06930002
+                                   AND :WRK_RUN_DATE                    06940002
+           OR ( F_SPLT_DATE    BETWEEN :WRK_LAST_EXTR_DATE              06950002
+                                        AND :WRK_RUN_DATE               06960002
+              AND F_SPLT_DATE       IS NOT NULL ) )                     06970002
+     ;                                                                  06980002
+                                                                        06990002
+ SELECT(SQLCODE);                                                       07000002
+   WHEN(0) EXEC SQL COMMIT;                                             07010002
+   WHEN(100);                                                           07020002
+   OTHERWISE                                                            07030002
+     DO;                                                                07040002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                07050002
+                           'DB2',                                       07060002
+                           '#024');                                     07070002
+     END;                                                               07080002
+ END;                                                                   07090002
+                                                                        07100002
+ END R711_RETR_INSERT_FROM_RCBV0220;                                    07110002
+                                                                        07120002
+1/*********************************************************************/07130002
+ /*                                                                   */07140002
+ /* MODULE NAME      :  R713_RETR_INSERT_FROM_RCBV0240                */07150002
+ /*                                                                   */07160002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */07170002
+ /*                    INTO ROLT0736_OEI_TP                           */07180002
+ /*                                                                   */07190002
+ /*********************************************************************/07200002
+ R713_RETR_INSERT_FROM_RCBV0240: PROC;                                  07210002
+                                                                        07220002
+ EXEC SQL                                                               07230002
+   INSERT INTO ROLT0736_OEI_TP                                          07240002
+     SELECT                                                             07250002
+         COUNTRY_NUMBER                                                 07260002
+        ,PRODUCT_TYPE                                                   07270002
+        ,ORIGIN                                                         07280002
+        ,SEQUENCE_NUMBER                                                07290002
+     FROM RCBV0240_SERV_CTR                                             07300002
+     WHERE COUNTRY_NUMBER            = :WRK_CTRYNO                      07310002
+       AND ( LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         07320002
+                                   AND :WRK_RUN_DATE                    07330002
+           OR  END_DATE        BETWEEN :WRK_LAST_EXTR_DATE              07340002
+                                   AND :WRK_RUN_DATE )                  07350002
+   ;                                                                    07360002
+                                                                        07370002
+ SELECT(SQLCODE);                                                       07380002
+   WHEN(0) EXEC SQL COMMIT;                                             07390002
+   WHEN(100);                                                           07400002
+   OTHERWISE                                                            07410002
+     DO;                                                                07420002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                07430002
+                           'DB2',                                       07440002
+                           '#025');                                     07450002
+     END;                                                               07460002
+ END;                                                                   07470002
+                                                                        07480002
+ END R713_RETR_INSERT_FROM_RCBV0240;                                    07490002
+                                                                        07500002
+1/*********************************************************************/07510002
+ /*                                                                   */07520002
+ /* MODULE NAME      :  R719_RETR_INSERT_FROM_RCBV0300                */07530002
+ /*                                                                   */07540002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */07550002
+ /*                    INTO ROLT0736_OEI_TP                           */07560002
+ /*                                                                   */07570002
+ /*********************************************************************/07580002
+ R719_RETR_INSERT_FROM_RCBV0300: PROC;                                  07590002
+                                                                        07600002
+ EXEC SQL                                                               07610002
+   INSERT INTO ROLT0736_OEI_TP                                          07620002
+     SELECT                                                             07630002
+         COUNTRY_NUMBER                                                 07640002
+        ,PRODUCT_TYPE                                                   07650002
+        ,ORIGIN                                                         07660002
+        ,SEQUENCE_NUMBER                                                07670002
+     FROM RCBV0300_HW_REAL                                              07680002
+     WHERE COUNTRY_NUMBER          = :WRK_CTRYNO                        07690002
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD           07700002
+                                 AND :WRK_RUN_DATE                      07710002
+   ;                                                                    07720002
+                                                                        07730002
+ SELECT(SQLCODE);                                                       07740002
+   WHEN(0) EXEC SQL COMMIT;                                             07750002
+   WHEN(100);                                                           07760002
+   OTHERWISE                                                            07770002
+     DO;                                                                07780002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                07790002
+                           'DB2',                                       07800002
+                           '#026');                                     07810002
+     END;                                                               07820002
+ END;                                                                   07830002
+                                                                        07840002
+ END R719_RETR_INSERT_FROM_RCBV0300;                                    07850002
+                                                                        07860002
+1/*********************************************************************/07870002
+ /*                                                                   */07880002
+ /* MODULE NAME      :  R723_RETR_INSERT_FROM_RCBV0380                */07890002
+ /*                                                                   */07900002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */07910002
+ /*                    INTO ROLT0736_OEI_TP                           */07920002
+ /*                                                                   */07930002
+ /*********************************************************************/07940002
+ R723_RETR_INSERT_FROM_RCBV0380: PROC;                                  07950002
+                                                                        07960002
+ EXEC SQL                                                               07970002
+   INSERT INTO ROLT0736_OEI_TP                                          07980002
+     SELECT                                                             07990002
+         COUNTRY_NUMBER                                                 08000002
+        ,PRODUCT_TYPE                                                   08010002
+        ,ORIGIN                                                         08020002
+        ,SEQUENCE_NUMBER                                                08030002
+     FROM RCBV0380_HW_PR_MOD                                            08040002
+     WHERE COUNTRY_NUMBER          = :WRK_CTRYNO                        08050002
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD           08060002
+                                 AND :WRK_RUN_DATE                      08070002
+   ;                                                                    08080002
+                                                                        08090002
+ SELECT(SQLCODE);                                                       08100002
+   WHEN(0) EXEC SQL COMMIT;                                             08110002
+   WHEN(100);                                                           08120002
+   OTHERWISE                                                            08130002
+     DO;                                                                08140002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                08150002
+                           'DB2',                                       08160002
+                           '#027');                                     08170002
+     END;                                                               08180002
+ END;                                                                   08190002
+                                                                        08200002
+ END R723_RETR_INSERT_FROM_RCBV0380;                                    08210002
+                                                                        08220002
+1/*********************************************************************/08230002
+ /*                                                                   */08240002
+ /* MODULE NAME      :  R725_RETR_INSERT_FROM_RCBV0400                */08250002
+ /*                                                                   */08260002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */08270002
+ /*                    INTO ROLT0736_OEI_TP                           */08280002
+ /*                                                                   */08290002
+ /*********************************************************************/08300002
+ R725_RETR_INSERT_FROM_RCBV0400: PROC;                                  08310002
+                                                                        08320002
+ EXEC SQL                                                               08330002
+   INSERT INTO ROLT0736_OEI_TP                                          08340002
+     SELECT                                                             08350002
+         B.COUNTRY_NUMBER                                               08360002
+        ,B.PRODUCT_TYPE                                                 08370002
+        ,B.ORIGIN                                                       08380002
+        ,B.SEQUENCE_NUMBER                                              08390002
+     FROM RCBV0400_PO_MOD1   A                                          08400002
+         ,RCBV0300_HW_REAL   B                                          08410002
+     WHERE A.COUNTRY_NUMBER          = :WRK_CTRYNO                      08420002
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         08430002
+                                   AND :WRK_RUN_DATE                    08440002
+                                                                        08450002
+       AND B.COUNTRY_NUMBER          = A.COUNTRY_NUMBER                 08460002
+       AND B.PRODUCT_TYPE            = A.PRODUCT_TYPE                   08470002
+       AND B.MODEL_NUMBER            = A.MODEL_NUMBER                   08480002
+       AND (  :WRK_RUN_DATE    BETWEEN B.EFFECTIVE_DATE                 08490002
+                                   AND B.END_DATE                       08500002
+           OR :WRK_START_CHANGE_PERIOD BETWEEN B.EFFECTIVE_DATE         08510002
+                                           AND B.END_DATE )             08520002
+   ;                                                                    08530002
+                                                                        08540002
+ SELECT(SQLCODE);                                                       08550002
+   WHEN(0) EXEC SQL COMMIT;                                             08560002
+   WHEN(100);                                                           08570002
+   OTHERWISE                                                            08580002
+     DO;                                                                08590002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                08600002
+                           'DB2',                                       08610002
+                           '#028');                                     08620002
+     END;                                                               08630002
+ END;                                                                   08640002
+                                                                        08650002
+ EXEC SQL                                                               08660002
+   INSERT INTO ROLT0736_OEI_TP                                          08670002
+     SELECT                                                             08680002
+         B.COUNTRY_NUMBER                                               08690002
+        ,B.PRODUCT_TYPE                                                 08700002
+        ,B.ORIGIN                                                       08710002
+        ,B.SEQUENCE_NUMBER                                              08720002
+     FROM RCBV0400_PO_MOD1   A                                          08730002
+         ,RCBV0051_PI_HW_PR  B                                          08740002
+     WHERE A.COUNTRY_NUMBER          = :WRK_CTRYNO                      08750002
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         08760002
+                                   AND :WRK_RUN_DATE                    08770002
+                                                                        08780002
+       AND B.COUNTRY_NUMBER          = A.COUNTRY_NUMBER                 08790002
+       AND B.PRODUCT_TYPE            = A.PRODUCT_TYPE                   08800002
+       AND B.MODEL_NUMBER            = A.MODEL_NUMBER                   08810002
+       AND (  :WRK_RUN_DATE          > B.INSTALL_DATE                   08820002
+           OR :WRK_START_CHANGE_PERIOD  > B.INSTALL_DATE )/*EFFECTIVE*/ 08830002
+   ;                                                                    08840002
+                                                                        08850002
+ SELECT(SQLCODE);                                                       08860002
+   WHEN(0) EXEC SQL COMMIT;                                             08870002
+   WHEN(100);                                                           08880002
+   OTHERWISE                                                            08890002
+     DO;                                                                08900002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                08910002
+                           'DB2',                                       08920002
+                           '#029');                                     08930002
+     END;                                                               08940002
+ END;                                                                   08950002
+                                                                        08960002
+ END R725_RETR_INSERT_FROM_RCBV0400;                                    08970002
+                                                                        08980002
+1/*********************************************************************/08990002
+ /*                                                                   */09000002
+ /* MODULE NAME      :  R731_RETR_INSERT_FROM_RCBV0010                */09010002
+ /*                                                                   */09020002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */09030002
+ /*                    INTO ROLT0736_OEI_TP                           */09040002
+ /*                                                                   */09050002
+ /*********************************************************************/09060002
+ R731_RETR_INSERT_FROM_RCBV0010: PROC;                                  09070002
+                                                                        09080002
+ EXEC SQL                                                               09090002
+   INSERT INTO ROLT0736_OEI_TP                                          09100002
+     SELECT                                                             09110002
+              T190.COUNTRY_NUMBER                                       09120002
+            , T190.PRODUCT_TYPE                                         09130002
+            , T190.ORIGIN                                               09140002
+            , T190.SEQUENCE_NUMBER                                      09150002
+       FROM   RCBV0010_CUSTOMER  T010                                   09160002
+            , RCBV0190_HW_CUST   T190                                   09170002
+       WHERE  T010.COUNTRY_NUMBER          = :WRK_CTRYNO                09180002
+       AND    T010.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD   09190002
+                                     AND     :WRK_RUN_DATE              09200002
+       AND    T190.COUNTRY_NUMBER          = T010.COUNTRY_NUMBER        09210002
+       AND    T190.CUSTOMER_NUMBER         = T010.CUSTOMER_NUMBER       09220002
+       AND    T190.TYPE_OF_RELATION        = 'U'                        09230002
+       AND    :WRK_RUN_DATE          BETWEEN T190.EFFECTIVE_DATE        09240002
+                                     AND     T190.END_DATE              09250002
+   ;                                                                    09260002
+                                                                        09270002
+ SELECT(SQLCODE);                                                       09280002
+   WHEN(0) EXEC SQL COMMIT;                                             09290002
+   WHEN(100);                                                           09300002
+   OTHERWISE                                                            09310002
+     DO;                                                                09320002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                09330002
+                           'DB2',                                       09340002
+                           '#030');                                     09350002
+     END;                                                               09360002
+ END;                                                                   09370002
+                                                                        09380002
+ EXEC SQL                                                               09390002
+   INSERT INTO ROLT0736_OEI_TP                                          09400002
+     SELECT                                                             09410002
+              T051.COUNTRY_NUMBER                                       09420002
+            , T051.PRODUCT_TYPE                                         09430002
+            , T051.ORIGIN                                               09440002
+            , T051.SEQUENCE_NUMBER                                      09450002
+       FROM   RCBV0010_CUSTOMER  T010                                   09460002
+            , RCBV0051_PI_HW_PR  T051                                   09470002
+       WHERE  T010.COUNTRY_NUMBER          = :WRK_CTRYNO                09480002
+       AND    T010.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD   09490002
+                                     AND     :WRK_RUN_DATE              09500002
+       AND    T051.COUNTRY_NUMBER          = T010.COUNTRY_NUMBER        09510002
+       AND    T051.CUSTOMER_NUMBER         = T010.CUSTOMER_NUMBER       09520002
+       AND    :WRK_RUN_DATE                > T051.INSTALL_DATE          09530002
+   ;                                                                    09540002
+                                                                        09550002
+ SELECT(SQLCODE);                                                       09560002
+   WHEN(0) EXEC SQL COMMIT;                                             09570002
+   WHEN(100);                                                           09580002
+   OTHERWISE                                                            09590002
+     DO;                                                                09600002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                09610002
+                           'DB2',                                       09620002
+                           '#031');                                     09630002
+     END;                                                               09640002
+ END;                                                                   09650002
+                                                                        09660002
+ END R731_RETR_INSERT_FROM_RCBV0010;                                    09670002
+                                                                        09680002
+1/*********************************************************************/09690002
+ /*                                                                   */09700002
+ /* MODULE NAME      :  R733_RETR_INSERT_FROM_RCBV0030                */09710002
+ /*                                                                   */09720002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */09730002
+ /*                    INTO ROLT0736_OEI_TP                           */09740002
+ /*                                                                   */09750002
+ /*********************************************************************/09760002
+ R733_RETR_INSERT_FROM_RCBV0030: PROC;                                  09770002
+                                                                        09780002
+ EXEC SQL                                                               09790002
+   INSERT INTO ROLT0736_OEI_TP                                          09800002
+     SELECT                                                             09810002
+              T240.COUNTRY_NUMBER                                       09820002
+            , T240.PRODUCT_TYPE                                         09830002
+            , T240.ORIGIN                                               09840002
+            , T240.SEQUENCE_NUMBER                                      09850002
+       FROM   RCBV0030_CONTRACT  T030                                   09860002
+            , RCBV0240_SERV_CTR  T240                                   09870002
+       WHERE  T030.COUNTRY_NUMBER          = :WRK_CTRYNO                09880002
+       AND    T030.LAST_CHANGE_DATE        > :WRK_LAST_EXTR_DATE        09890002
+                                                                        09900002
+       AND    T240.COUNTRY_NUMBER          = T030.COUNTRY_NUMBER        09910002
+       AND    T240.CONTRACT_NUMBER         = T030.CONTRACT_NUMBER       09920002
+       AND    :WRK_RUN_DATE          BETWEEN T240.EFFECTIVE_DATE        09930002
+                                     AND     T240.END_DATE              09940002
+   ;                                                                    09950002
+                                                                        09960002
+ SELECT(SQLCODE);                                                       09970002
+   WHEN(0) EXEC SQL COMMIT;                                             09980002
+   WHEN(100);                                                           09990002
+   OTHERWISE                                                            10000002
+     DO;                                                                10010002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                10020002
+                           'DB2',                                       10030002
+                           '#032');                                     10040002
+     END;                                                               10050002
+ END;                                                                   10060002
+                                                                        10070002
+ END R733_RETR_INSERT_FROM_RCBV0030;                                    10080002
+                                                                        10090002
+1/*********************************************************************/10100002
+ /*                                                                   */10110002
+ /* MODULE NAME      :  R739_RETR_INSERT_FROM_RCBV0280                */10120002
+ /*                                                                   */10130002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */10140002
+ /*                    INTO ROLT0736_OEI_TP                           */10150002
+ /*                                                                   */10160002
+ /*********************************************************************/10170002
+ R739_RETR_INSERT_FROM_RCBV0280: PROC;                                  10180002
+                                                                        10190002
+ EXEC SQL                                                               10200002
+   INSERT INTO ROLT0736_OEI_TP                                          10210002
+     SELECT                                                             10220002
+              T190.COUNTRY_NUMBER                                       10230002
+            , T190.PRODUCT_TYPE                                         10240002
+            , T190.ORIGIN                                               10250002
+            , T190.SEQUENCE_NUMBER                                      10260002
+       FROM   RCBV0280_ADDR_LINE  T280                                  10270002
+            , RCBV0190_HW_CUST    T190                                  10280002
+       WHERE  T280.COUNTRY_NUMBER          = :WRK_CTRYNO                10290002
+       AND    T280.LAST_CHANGE_DATE        > :WRK_LAST_EXTR_DATE        10300002
+                                                                        10310002
+       AND    T190.COUNTRY_NUMBER          = T280.COUNTRY_NUMBER        10320002
+       AND    T190.CUSTOMER_NUMBER         = T280.CUSTOMER_NUMBER       10330002
+       AND    T190.TYPE_OF_RELATION        = 'U'                        10340002
+       AND    :WRK_RUN_DATE          BETWEEN T190.EFFECTIVE_DATE        10350002
+                                     AND     T190.END_DATE              10360002
+   ;                                                                    10370002
+                                                                        10380002
+ SELECT(SQLCODE);                                                       10390002
+   WHEN(0) EXEC SQL COMMIT;                                             10400002
+   WHEN(100);                                                           10410002
+   OTHERWISE                                                            10420002
+     DO;                                                                10430002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                10440002
+                           'DB2',                                       10450002
+                           '#035');                                     10460002
+     END;                                                               10470002
+ END;                                                                   10480002
+                                                                        10490002
+ END R739_RETR_INSERT_FROM_RCBV0280;                                    10500002
+                                                                        10510002
+1/*********************************************************************/10520002
+ /*                                                                   */10530002
+ /* MODULE NAME      :  R741_RETR_INSERT_FROM_RCBV0350                */10540002
+ /*                                                                   */10550002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */10560002
+ /*                    INTO ROLT0736_OEI_TP                           */10570002
+ /*                                                                   */10580002
+ /*********************************************************************/10590002
+ R741_RETR_INSERT_FROM_RCBV0350: PROC;                                  10600002
+                                                                        10610002
+ EXEC SQL                                                               10620002
+   INSERT INTO ROLT0736_OEI_TP                                          10630002
+     SELECT                                                             10640002
+              T190.COUNTRY_NUMBER                                       10650002
+            , T190.PRODUCT_TYPE                                         10660002
+            , T190.ORIGIN                                               10670002
+            , T190.SEQUENCE_NUMBER                                      10680002
+       FROM   RCBV0350_CUST_MOD   T350                                  10690002
+            , RCBV0190_HW_CUST    T190                                  10700002
+       WHERE  T350.COUNTRY_NUMBER          = :WRK_CTRYNO                10710002
+       AND    T350.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD   10720002
+                                     AND     :WRK_RUN_DATE              10730002
+                                                                        10740002
+       AND    T190.COUNTRY_NUMBER          = T350.COUNTRY_NUMBER        10750002
+       AND    T190.CUSTOMER_NUMBER         = T350.CUSTOMER_NUMBER       10760002
+       AND    T190.TYPE_OF_RELATION        = 'U'                        10770002
+       AND    :WRK_RUN_DATE          BETWEEN T190.EFFECTIVE_DATE        10780002
+                                     AND     T190.END_DATE              10790002
+   ;                                                                    10800002
+                                                                        10810002
+ SELECT(SQLCODE);                                                       10820002
+   WHEN(0) EXEC SQL COMMIT;                                             10830002
+   WHEN(100);                                                           10840002
+   OTHERWISE                                                            10850002
+     DO;                                                                10860002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                10870002
+                           'DB2',                                       10880002
+                           '#036');                                     10890002
+     END;                                                               10900002
+ END;                                                                   10910002
+                                                                        10920002
+ END R741_RETR_INSERT_FROM_RCBV0350;                                    10930002
+                                                                        10940002
+1/*********************************************************************/10950002
+ /*                                                                   */10960002
+ /* MODULE NAME      :  R810_RETR_INSERT_FROM_RCBV0011                */10970002
+ /*                                                                   */10980002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */10990002
+ /*                    INTO ROLT0736_OEI_TP                           */11000002
+ /*                                                                   */11010002
+ /*********************************************************************/11020002
+ R810_RETR_INSERT_FROM_RCBV0011: PROC;                                  11030002
+                                                                        11040002
+ EXEC SQL                                                               11050002
+   INSERT INTO ROLT0736_OEI_TP                                          11060002
+     SELECT                                                             11070002
+             B.COUNTRY_NUMBER                                           11080002
+           , B.PRODUCT_TYPE                                             11090002
+           , B.ORIGIN                                                   11100002
+           , B.SEQUENCE_NUMBER                                          11110002
+     FROM  RCBV0011_PI_CUST   A                                         11120002
+         , RCBV0051_PI_HW_PR  B                                         11130002
+     WHERE A.COUNTRY_NUMBER      = :WRK_CTRYNO                          11140002
+     AND   A.LAST_CHANGE_DATE    > :WRK_START_CHANGE_PERIOD             11150002
+     AND   B.COUNTRY_NUMBER      = A.COUNTRY_NUMBER                     11160002
+     AND   B.CUSTOMER_NUMBER     = A.CUSTOMER_NUMBER                    11170002
+     AND   :WRK_RUN_DATE         > B.INSTALL_DATE                       11180002
+   ;                                                                    11190002
+                                                                        11200002
+ SELECT(SQLCODE);                                                       11210002
+   WHEN(0) EXEC SQL COMMIT;                                             11220002
+   WHEN(100);                                                           11230002
+   OTHERWISE                                                            11240002
+     DO;                                                                11250002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                11260002
+                           'DB2',                                       11270002
+                           '#044');                                     11280002
+     END;                                                               11290002
+ END;                                                                   11300002
+                                                                        11310002
+ END R810_RETR_INSERT_FROM_RCBV0011;                                    11320002
+                                                                        11330002
+1/*********************************************************************/11340002
+ /*                                                                   */11350002
+ /* MODULE NAME      :  R811_RETR_INSERT_FROM_RCBV0051                */11360002
+ /*                                                                   */11370002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */11380002
+ /*                    INTO ROLT0736_OEI_TP                           */11390002
+ /*                                                                   */11400002
+ /*********************************************************************/11410002
+ R811_RETR_INSERT_FROM_RCBV0051: PROC;                                  11420002
+                                                                        11430002
+ EXEC SQL                                                               11440002
+   INSERT INTO ROLT0736_OEI_TP                                          11450002
+     SELECT                                                             11460002
+           COUNTRY_NUMBER                                               11470002
+          ,PRODUCT_TYPE                                                 11480002
+          ,ORIGIN                                                       11490002
+          ,SEQUENCE_NUMBER                                              11500002
+     FROM RCBV0051_PI_HW_PR                                             11510002
+     WHERE COUNTRY_NUMBER                 = :WRK_CTRYNO                 11520002
+       AND (  LAST_CHANGE_DATE      BETWEEN :WRK_LAST_EXTR_DATE         11530002
+                                        AND :WRK_RUN_DATE               11540002
+           OR WARRANTY_EXP_DATE     BETWEEN :WRK_LAST_EXTR_DATE         11550002
+                                        AND :WRK_RUN_DATE               11560002
+           OR ( WARRANTY_SPLT_DATE  BETWEEN :WRK_LAST_EXTR_DATE         11570002
+                                        AND :WRK_RUN_DATE               11580002
+              AND WARRANTY_SPLT_DATE     IS NOT NULL ) )                11590002
+     ;                                                                  11600002
+                                                                        11610002
+ SELECT(SQLCODE);                                                       11620002
+   WHEN(0) EXEC SQL COMMIT;                                             11630002
+   WHEN(100);                                                           11640002
+   OTHERWISE                                                            11650002
+     DO;                                                                11660002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                11670002
+                           'DB2',                                       11680002
+                           '#045');                                     11690002
+     END;                                                               11700002
+ END;                                                                   11710002
+                                                                        11720002
+ END R811_RETR_INSERT_FROM_RCBV0051;                                    11730002
+                                                                        11740002
+1/*********************************************************************/11750002
+ /*                                                                   */11760002
+ /* MODULE NAME      :  R812_RETR_INSERT_FROM_RCBV0241                */11770002
+ /*                                                                   */11780002
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */11790002
+ /*                    INTO ROLT0736_OEI_TP                           */11800002
+ /*                                                                   */11810002
+ /*********************************************************************/11820002
+ R812_RETR_INSERT_FROM_RCBV0241: PROC;                                  11830002
+                                                                        11840002
+ EXEC SQL                                                               11850002
+   INSERT INTO ROLT0736_OEI_TP                                          11860002
+     SELECT                                                             11870002
+           COUNTRY_NUMBER                                               11880002
+          ,PRODUCT_TYPE                                                 11890002
+          ,ORIGIN                                                       11900002
+          ,SEQUENCE_NUMBER                                              11910002
+     FROM RCBV0241_PI_CTR                                               11920002
+     WHERE COUNTRY_NUMBER            = :WRK_CTRYNO                      11930002
+       AND ( LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         11940002
+                                   AND :WRK_RUN_DATE                    11950002
+           OR  END_DATE        BETWEEN :WRK_LAST_EXTR_DATE              11960002
+                                   AND :WRK_RUN_DATE                    11970002
+           OR  EFFECTIVE_DATE  BETWEEN :WRK_LAST_EXTR_DATE              11980002
+                                   AND :WRK_RUN_DATE )                  11990002
+     ;                                                                  12000002
+                                                                        12010002
+ SELECT(SQLCODE);                                                       12020002
+   WHEN(0) EXEC SQL COMMIT;                                             12030002
+   WHEN(100);                                                           12040002
+   OTHERWISE                                                            12050002
+     DO;                                                                12060002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                12070002
+                           'DB2',                                       12080002
+                           '#046');                                     12090002
+     END;                                                               12100002
+ END;                                                                   12110002
+                                                                        12120002
+                                                                        12130002
+                                                                        12140002
+ END R812_RETR_INSERT_FROM_RCBV0241;                /* EOC RC01158 (L)*/12150002
+                                                                        12160002
+1/*********************************************************************/12170002
+ /*                                                                   */12180002
+ /* MODULE NAME      :  R799_END_COUNTRY                              */12190002
+ /*                                                                   */12200002
+ /* DESCRIPTION      :                                                */12210002
+ /*                                                                   */12220002
+ /*********************************************************************/12230002
+ R799_END_COUNTRY: PROC;                                                12240002
+                                                                        12250002
+                                      /* INCREASE FOR NEXT CTRYNO    */ 12260002
+ WRK_CTRYNO_NO = WRK_CTRYNO_NO + 1;                                     12270002
+                                                                        12280002
+ END R799_END_COUNTRY;                                                  12290002
+                                                                        12300002
+1/*********************************************************************/12310002
+ /*                                                                   */12320002
+ /* MODULE NAME      :  R800_CLEAR_OUTPUT_TABLE                       */12330002
+ /*                                                                   */12340002
+ /* DESCRIPTION      :  DELETE ALL OCCURENCES FROM THE OUTPUT TABLE   */12350002
+ /*                                                                   */12360002
+ /*********************************************************************/12370002
+ R800_CLEAR_OUTPUT_TABLE: PROC;                                         12380002
+                                                                        12390002
+ EXEC SQL                                                               12400002
+   DELETE FROM ROLT0736_OEI_TP;                                         12410002
+                                                                        12420002
+ SELECT(SQLCODE);                                                       12430002
+   WHEN(0)  EXEC SQL COMMIT;                                            12440002
+   WHEN(100)  EXEC SQL COMMIT;                                          12450002
+   OTHERWISE                                                            12460002
+     DO;                                                                12470002
+       CALL ROLDOAM_ERROR (ADDR (SQLCA),                                12480002
+                           'DB2',                                       12490002
+                           '#037');                                     12500002
+     END;                                                               12510002
+ END;                                                                   12520002
+                                                                        12530002
+ END R800_CLEAR_OUTPUT_TABLE;                                           12540002
+                                                                        12550002
+1/********************************************************************/ 12560002
+ /*                                                                  */ 12570002
+ /* MODULE NAME      : R900_INIT_PROGRAM                             */ 12580002
+ /*                                                                  */ 12590002
+ /* DESCRIPTION      : INIT PROGRAM                                  */ 12600002
+ /*                                                                  */ 12610002
+ /********************************************************************/ 12620002
+ R900_INIT_PROGRAM: PROC;                                               12630002
+                                                                        12640002
+                                             /* INITIALISE POINTERS  */ 12650002
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);                              12660002
+ PTR_RETURN_AREA_BB = ADDR(RETURN_AREA_BB);                             12670002
+ PTR_COUNTRY_AREA   = ADDR (COUNTRY_AREA);                              12680002
+ PTR_RUN_DATE_AREA  = ADDR (RUN_DATE_AREA);                             12690002
+                                             /* INITIALISE VARIABLES */ 12700002
+ PARM_INT_AREA.MSG_AREA       = '';                                     12710002
+ PARM_INT_AREA.ERR_AREA       = ' ';                                    12720002
+ PARM_INT_AREA.MSG_REQUEST    = 'O';                                    12730002
+ PARM_INT_AREA.MSG_TARGET     = 'F';                                    12740002
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';                                  12750002
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PRG_NAME;                           12760002
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;                           12770002
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;                                      12780002
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;                        12790002
+ PARM_INT_AREA.TXN_CODE       = '';                                     12800002
+ PARM_INT_AREA.VERSION        = '';                                     12810002
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;                                   12820002
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;                                   12830002
+                                              /* OPEN MESSAGE FILE   */ 12840002
+ CALL RCB0M1M(PTR_INT_AREA);                                            12850002
+                                              /* RETR. SYSTEM DATE   */ 12860002
+ CALL RCB0T1M(PTR_INT_AREA);                                            12870002
+                                              /* LOCK TABLES         */ 12880002
+ /* SOC TEMEA-T081298   */ /*                                           12881012
+ CALL R001_LOCK_TABLES; */                    /* EOC TEMEA-T081298   */ 12890012
+                                              /* RETRIEVE COUNTRIES  */ 12900002
+ CALL RCB019M (PTR_COUNTRY_AREA,                                        12910002
+               PTR_INT_AREA);                                           12920002
+                                                                        12930002
+                                              /* NO COUNTRIES FOUND  */ 12940002
+ IF COUNTRY_AREA.COUNT_CTRY = 0                                         12950002
+ THEN                                                                   12960002
+   DO;                                                                  12970002
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';                              12980002
+     PARM_INT_AREA.MSG_VAR_CODES     = '';                              12990002
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';                            13000002
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';                          13010002
+     CALL RCB0M1M (PTR_INT_AREA);                                       13020002
+     CALL ROLDOAM_ERROR (NULL, 'OTHER', '#038');                        13030002
+   END;                                                                 13040002
+                                                                        13050002
+ END R900_INIT_PROGRAM;                                                 13060002
+1/********************************************************************/ 13070002
+ /*                                                                  */ 13080002
+ /* MODULE NAME      : R999_END_PROGRAM                              */ 13090002
+ /*                                                                  */ 13100002
+ /* DESCRIPTION      : WRITE COUNT MESSAGES                          */ 13110002
+ /*                                                                  */ 13120002
+ /********************************************************************/ 13130002
+ R999_END_PROGRAM:  PROC;                                               13140002
+                                                                        13150002
+                                    /* WRITE SUCCESFULLY ENDED MSG   */ 13160002
+ PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                                  13170002
+ PARM_INT_AREA.MESSAGE_NUMBER  = '9999';                                13180002
+ PARM_INT_AREA.MSG_VAR_CODES   = '';                                    13190002
+ CALL RCB0M1M (PTR_INT_AREA);                                           13200002
+                                                                        13210002
+                                    /* CLOSE MESSAGE FILE            */ 13220002
+ PARM_INT_AREA.MSG_REQUEST = 'C';                                       13230002
+ CALL RCB0M1M (PTR_INT_AREA);                                           13240002
+                                                                        13250002
+ END R999_END_PROGRAM;                                                  13260002
+1/********************************************************************/ 13270002
+ /*                                                                  */ 13280002
+ /* MODULE NAME      : ROLDOAM_ERROR                                 */ 13290002
+ /*                                                                  */ 13300002
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 13310002
+ /*                    THE INPUT VARIABLES                           */ 13320002
+ /*                                                                  */ 13330002
+ /********************************************************************/ 13340002
+ ROLDOAM_ERROR: PROC    (PTR_ERROR,                                     13350002
+                         ERR_TYPE,                                      13360002
+                         CALL_ID);                                      13370002
+ DCL PTR_ERROR     PTR;                                                 13380002
+ DCL ERR_TYPE      CHAR(8);                                             13390002
+ DCL CALL_ID       CHAR(4);                                             13400002
+ PARM_INT_AREA.PTR_ERROR          = PTR_ERROR;                          13410002
+ PARM_INT_AREA.ERR_TYPE           = ERR_TYPE;                           13420002
+ PARM_INT_AREA.CALL_ID            = CALL_ID;                            13430002
+ CALL RCB0E1M (ADDR(PARM_INT_AREA));                                    13440002
+                                                                        13450002
+ END ROLDOAM_ERROR;                                                     13460002
+1/*******************************************************************/  13470002
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  13480002
+ /*******************************************************************/  13490002
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  13500002
+ $DAIMOD (ROLDOAM);                      /* MODULE TO BE COMPILED   */  13510002
+ /*******************************************************************/  13520002
+ /* END OF ABR BLOCK                                                */  13530002
+ /*******************************************************************/  13540002
+ END ROLDOAM;                                                           13550002

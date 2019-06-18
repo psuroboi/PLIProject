@@ -1,0 +1,1042 @@
+ /* RCBXC4M - XML PARSER: GENAREA TRANSACTION                        */
+ /*                                                                  */
+ /********************************************************************/
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBXC4M                                       */
+ /*                                                                  */
+ /* PROGRAM NAME     : RCBXC4P                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLI                                           */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : THE MAPPING INFORMATION TO CONVERT            */
+ /*                    OIMS/EACM INTERNAL COUNTRY CODE               */
+ /*                    TO ISO COUNTRY CODE IS PARSED USING           */
+ /*                    PLISAXC PARSER AND THE VALUES ARE             */
+ /*                    UPDATED IN CONVERSION TABLE T0695             */
+ /*                                                                  */
+ /* INPUT            : XML DOCUMENT(GEN_AREA TRANSACTION)            */
+ /*                                                                  */
+ /* OUTPUT           : : - DB2   : RCBT0695_TRANS_INT_ISO_CTRY       */
+ /*                                                                  */
+ /*                  : : - FILE  : RCB0M10                           */
+ /*                                                                  */
+ /* EXTERNAL MODULES : RCB0M1M - COMMON MESSAGE ROUTINE              */
+ /*                    RCB0T1M - RETRIEVE SYSTEM DATE                */
+ /*                    RCBF91M - INSERT/UPDATE PARAMETER             */
+ /*                                                                  */
+ /* MESSAGES         : 0301,0305,0306,0307                           */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /* DATE       | WORK-ITEMNO. | DESCRIPTION                          */
+ /* ---------------------------------------------------------------  */
+ /* 2011-08-04 | RB01315      | OIMS EACM REQUIREMENT-CEDS 3.3 A16   */
+ /*            |              | RELEASE                              */
+ /* 2012-04-12 | CEDS00000578 | ADDITION OF QMANAGER CCSID AS INPUT  */
+ /*            |              | TO 'C' PARSER                        */
+ /* 2012-05-30 | CEDS00000584 | ACTIVITY CHECK FOR GENAREA ELEMENT   */
+ /* 2012-10-26 | CEDS00000611 | CORRECT THE UPDATE COUNT OF GENAREA  */
+ /*            |              | IN SPOOL                             */
+ /* 2012-11-28 | RC01324      | PCR 10-501 RELATED TO TREC 10-1850   */
+ /* 2014-04-25 | CEDS00000679 | TREC 1826:TO PROCESS NON- ENGLISH    */
+ /*            |              | CHARACTERS SENT FROM OIMS            */
+ /********************************************************************/
+ RCBXC4M: PACKAGE EXPORTS(RCBXC4M);
+
+    DEFINE ALIAS EVENT
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31) )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_WITH_FLAG
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),
+                       BIT(8) ALIGNED )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( NODESCRIPTOR BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_WITH_NAMESPACE
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),
+                       POINTER, FIXED BIN(31),
+                       POINTER, FIXED BIN(31) )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_WITHOUT_DATA
+        LIMITED ENTRY( POINTER)
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_PI
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),
+                       POINTER, FIXED BIN(31) )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_NAMESPACE_DCL
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),
+                       POINTER, FIXED BIN(31) )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_EXCEPTION
+        LIMITED ENTRY( POINTER, FIXED BIN(31),
+                       FIXED BIN(31),
+                       FIXED BIN(31) )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DEFINE ALIAS EVENT_END_OF_INPUT
+        LIMITED ENTRY( POINTER,
+                       POINTER BYADDR,
+                       FIXED BIN(31) BYADDR )
+        RETURNS( BYVALUE FIXED BIN(31) )
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+1RCBXC4M: PROC (PTR_PARSER_INPUT,
+                PTR_MQDATA,
+                PARSER_RETURN_AREA_PTR,
+                PTR_ERROR_RETURN,
+                                                  /* SOC CEDS00000578 */
+             /* PTR_INT_AREA, */
+                PTR_INT_AREA,
+                PTR_CCSID)
+                                                  /* EOC CEDS00000578 */
+           OPTIONS (REENTRANT)
+           REORDER;
+
+    DCL
+      1 EVENTHANDLER STATIC
+
+        ,2 E01 TYPE EVENT_WITHOUT_DATA
+               INIT( START_OF_DOCUMENT )
+
+        ,2 E02 TYPE EVENT
+               INIT( VERSION_INFORMATION )
+
+        ,2 E03 TYPE EVENT
+               INIT( ENCODING_DECLARATION )
+
+        ,2 E04 TYPE EVENT
+               INIT( STANDALONE_DECLARATION )
+
+        ,2 E05 TYPE EVENT
+               INIT( DOCUMENT_TYPE_DECLARATION )
+
+        ,2 E06 TYPE EVENT_WITHOUT_DATA
+               INIT( END_OF_DOCUMENT )
+
+        ,2 E07 TYPE EVENT_WITH_NAMESPACE
+               INIT( START_OF_ELEMENT )
+
+        ,2 E08 TYPE EVENT_WITH_NAMESPACE
+               INIT( ATTRIBUTE_NAME )
+
+        ,2 E09 TYPE EVENT
+               INIT( ATTRIBUTE_CHARACTERS )
+
+        ,2 E10 TYPE EVENT_WITH_NAMESPACE
+               INIT( END_OF_ELEMENT )
+
+        ,2 E11 TYPE EVENT_WITHOUT_DATA
+               INIT( START_OF_CDATA )
+
+        ,2 E12 TYPE EVENT_WITHOUT_DATA
+               INIT( END_OF_CDATA )
+
+        ,2 E13 TYPE EVENT_WITH_FLAG
+               INIT( CONTENT_CHARACTERS )
+
+        ,2 E14 TYPE EVENT_PI
+               INIT( PROCESSING_INSTRUCTION )
+
+        ,2 E15 TYPE EVENT
+               INIT( COMMENT )
+
+        ,2 E16 TYPE EVENT_NAMESPACE_DCL
+               INIT( NAMESPACE_DECLARE )
+
+        ,2 E17 TYPE EVENT_END_OF_INPUT
+               INIT( END_OF_INPUT )
+
+        ,2 E18 TYPE EVENT
+               INIT( UNRESOLVED_REFERENCE )
+
+        ,2 E19 TYPE EVENT_EXCEPTION
+               INIT( EXCEPTION )
+        ;
+
+1/********************************************************************/
+ /*  PTR & TEMP VARIABLE DECLARATION                                 */
+ /********************************************************************/
+
+    DCL TOKEN                  CHAR(8);
+    DCL PTR_MQDATA             PTR;
+    DCL PARSER_RETURN_AREA_PTR PTR;
+    DCL PTR_INT_AREA           PTR;
+    DCL RCB695S_PTR            PTR;
+    DCL RCB695S_PTR1           PTR;                 /* CEDS00000679 */
+    DCL PTR_RET_AREA_BB        PTR;
+    DCL PTR_PARSER_INPUT       PTR;
+    DCL PTR_ERROR_RETURN       PTR;
+
+                                               /* PARSER INPUT AREA  */
+    DCL 1 PARSER_INPUT_AREA BASED (PTR_PARSER_INPUT),
+          %INCLUDE (RCBBE6S);;
+
+                                               /* ERROR RETURN AREA  */
+    DCL 1 ERROR_CODE_DET BASED (PTR_ERROR_RETURN),
+          5 PTR_ERROR                    PTR,
+          5 ERR_TYPE                     CHAR(8),
+          5 CALL_ID                      CHAR(4);
+
+                                               /* PARSER RETURN AREA */
+    DCL 1 PARSER_RETURN_AREA BASED (PARSER_RETURN_AREA_PTR),
+          %INCLUDE (RCBBE4S);;
+
+    DCL 1 PARM_INT_AREA BASED(PTR_INT_AREA),   /* INTERFACE AREA     */
+          %INCLUDE (RCBZ01S);;
+
+    DCL 1 PARM_RET_AREA_BB,                    /* RETURN AREA        */
+          %INCLUDE (RCBZ02S);;
+
+    DCL ALPHABET      CHAR(26)
+      INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ');      /* ALPHABETIC VALUES  */
+
+    DCL MQ_MESSAGE BASED(PTR_MQDATA) CHAR(MQ_MSG_LENGTH);
+    DCL MQ_CCSID   BASED(PTR_CCSID)  FIXED BIN(31); /* CEDS00000578 */
+  /*DCL GENAREA_UPD_TEMP CHAR(90); */           /* SOC CEDS00000611 */
+    DCL GENAREA_UPD_TEMP CHAR(100);             /* EOC CEDS00000611 */
+    DCL GENAREA_UPD_TEMP1 CHAR(100);            /* SOC CEDS00000679 */
+    DCL LEN_GENAREANAME_FC           FIXED BIN(31) INIT(04);
+    DCL LEN_GENAREACODE              FIXED BIN(31) INIT(02);
+    DCL LEN_GENAREANAME              FIXED BIN(31) INIT(50);
+    DCL LEN_GENAREAPAR_FC            FIXED BIN(31) INIT(04);
+    DCL LEN_GENAREAPARENT            FIXED BIN(31) INIT(30);
+                                                /* EOC CEDS00000679 */
+
+1/********************************************************************/
+ /* EXTERNAL ENTRIES DECLARATION                                     */
+ /********************************************************************/
+  DCL RCB0M1M    ENTRY EXTERNAL;        /* COMMON MESSAGE ROUTINE    */
+  DCL RCB0T1M    ENTRY EXTERNAL;        /* COMMON MESSAGE ROUTINE    */
+  DCL RCBF91M    ENTRY EXTERNAL;        /* T696 INSERT/UPDATE        */
+
+1/********************************************************************/
+ /*  COUNTS                                                          */
+ /********************************************************************/
+  DCL 1 COUNT,
+         3 CNT_TOTAL,
+           5 UPDATES       FIXED BIN(31) INIT(0),
+           5 INSERTS       FIXED BIN(31) INIT(0),
+           5 REJECTS       FIXED BIN(31) INIT(0);
+
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /*********************************************************************/
+    CALL RCBXC4M_INIT_PROGRAM;
+
+    CNT_GEN_ELEMENT1 = GENAREA_UPD_UCOUNT_DET.CNT_GEN_ELEMENT;
+
+    CALL PLISAXC( EVENTHANDLER,
+                  ADDR(TOKEN),
+                  ADDRDATA(MQ_MESSAGE),
+                                                 /* SOC CEDS00000578 */
+             /*   MQ_MSG_LENGTH, */
+                  MQ_MSG_LENGTH,
+                  MQ_CCSID);
+                                                 /* EOC CEDS00000578 */
+
+    DO J = 1 TO I;
+                                                 /* SOC CEDS00000679 */
+  /******** EBCDIC BLANK IS CHANGED WITH UNICODE SPACE X'20' **********/
+    GEN_AREA1(J).GENAREANAME_FC   =
+           RCBXC4M_TSN(GEN_AREA1(J).GENAREANAME_FC,LEN_GENAREANAME_FC);
+    GEN_AREA1(J).GENAREACODE      =
+           RCBXC4M_TSN(GEN_AREA1(J).GENAREACODE,LEN_GENAREACODE);
+    GEN_AREA1(J).GENAREANAME      =
+           RCBXC4M_TSN(GEN_AREA1(J).GENAREANAME,LEN_GENAREANAME);
+    GEN_AREA1(J).GENAREAPARENT_FC =
+           RCBXC4M_TSN(GEN_AREA1(J).GENAREAPARENT_FC,LEN_GENAREAPAR_FC);
+    GEN_AREA1(J).GENAREAPARENT    =
+           RCBXC4M_TSN(GEN_AREA1(J).GENAREAPARENT,LEN_GENAREAPARENT);
+                                                 /* EOC CEDS00000679 */
+
+    GENAREA_UPD_TEMP  = '';
+    GENAREA_UPD_TEMP  = STRING(GEN_AREA(J));
+    GENAREA_UPD_TEMP1 = STRING(GEN_AREA1(J));       /* CEDS00000679 */
+
+    CALL RCBXC4M_VALIDATION;
+
+    IF VALID_FLAG = TRUE THEN DO;
+
+                                                 /* SOC CEDS00000679 */
+  /*CALL RCBF91M (RCB695S_PTR, */
+    CALL RCBF91M (RCB695S_PTR,RCB695S_PTR1,      /* EOC CEDS00000679 */
+                  PTR_RET_AREA_BB,PTR_INT_AREA);
+
+    SELECT (PARM_RET_AREA_BB.RETURN_CODE);
+    WHEN (0)
+      DO;
+        COUNT.CNT_TOTAL.INSERTS =  COUNT.CNT_TOTAL.INSERTS + 1;
+      END;
+    WHEN (4)
+      DO;
+        COUNT.CNT_TOTAL.UPDATES =  COUNT.CNT_TOTAL.UPDATES + 1;
+      END;
+    WHEN (8)
+      DO;
+        COUNT.CNT_TOTAL.REJECTS =  COUNT.CNT_TOTAL.REJECTS + 1;
+        CALL RCBXC4M_MSG('0305');
+      END;
+    OTHERWISE
+      DO;
+      ERROR_CODE_DET.PTR_ERROR = ADDR (PARM_RET_AREA_BB.RETURN_SQL);
+      ERROR_CODE_DET.ERR_TYPE  ='DB2';
+      ERROR_CODE_DET.CALL_ID   ='#001';
+      SIGNAL ERROR;
+      END;
+    END;
+    END;
+    END;
+
+    MSG_REJ_DATA_VIOLATION = 'N';
+
+    IF ((COUNT.CNT_TOTAL.INSERTS = 0) /* NO RECORDS INSERTED/UPDATED */
+                         & (COUNT.CNT_TOTAL.UPDATES = 0)) THEN
+      DO;
+         CALL RCBXC4M_MSG('0306');
+         MSG_REJ_DATA_VIOLATION = 'Y';
+      END;
+                          /* COUNT RECORDS INSERTED/UPDATED/REJECTED */
+    T695_DETAILS.T695_INSERTS = COUNT.CNT_TOTAL.INSERTS;
+    T695_DETAILS.T695_UPDATES = COUNT.CNT_TOTAL.UPDATES;
+    NO_INVALID_DATA_REJ       = COUNT.CNT_TOTAL.REJECTS;
+
+    FREE GEN_AREA ;                                   /* SOC RC01324 */
+    FREE ACTIVITY ;                                   /* EOC RC01324 */
+    FREE GEN_AREA1 ;                             /* SOC CEDS00000679 */
+    FREE ACTIVITY1 ;                             /* EOC CEDS00000679 */
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBXC4M_VALIDATION                            */
+ /*                                                                  */
+ /* DESCRIPTION      : VALIDATION OF DATA                            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBXC4M_VALIDATION: PROC;
+
+  VALID_FLAG = TRUE;
+  IF((GEN_AREA(J).GENAREANAME_FC =' ')
+      | (GEN_AREA(J).GENAREACODE =' ')
+      | (GEN_AREA(J).GENAREANAME =' ')) THEN
+  DO;
+  VALID_FLAG = FALSE;
+  CALL RCBXC4M_MSG('0307');
+  COUNT.CNT_TOTAL.REJECTS =  COUNT.CNT_TOTAL.REJECTS + 1;
+  END;
+
+  IF (VALID_FLAG) THEN DO;
+  IF VERIFY(GEN_AREA(J).GENAREACODE,ALPHABET) ¬= 0 THEN
+  DO;
+  VALID_FLAG = FALSE;
+  CALL RCBXC4M_MSG('0301');
+  COUNT.CNT_TOTAL.REJECTS =  COUNT.CNT_TOTAL.REJECTS + 1;
+  END;
+
+  IF (ACTIVITY(J) ¬= 'update') THEN              /* SOC CEDS00000584 */
+  DO;
+     VALID_FLAG = FALSE;
+     CALL RCBXC4M_MSG('0314');
+     COUNT.CNT_TOTAL.REJECTS =  COUNT.CNT_TOTAL.REJECTS + 1;
+  END;                                            /* SOC CEDS00000584 */
+  END;
+ END RCBXC4M_VALIDATION;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBXC4M_MSG                                   */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE MESSAGE ROUTINE AFTER FILLING       */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBXC4M_MSG: PROC (A_MSG_NR);
+
+ DCL A_MSG_NR          CHAR(04);
+
+ /*RESET COMMON FIELDS*/
+ PARM_INT_AREA.MSG_VAR_CODES = ' ';
+
+ SELECT (A_MSG_NR);
+    /* 0307: MANDATORY FIELDS CANNOT BE BLANK RECORD REJECTED */
+    WHEN ('0307') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'GN';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = GEN_AREA(J).GENAREANAME_FC;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'GC';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = GEN_AREA(J).GENAREACODE;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'CN';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = GEN_AREA(J).GENAREANAME;
+    END;
+    /* 0301: GENAREACODE MUST BE FILLED WITH ALPHABETIC ONLY */
+    WHEN ('0301') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'GC';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = GEN_AREA(J).GENAREACODE;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'GN';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = GEN_AREA(J).GENAREANAME_FC;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'CN';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = GEN_AREA(J).GENAREANAME;
+    END;
+    /* 0305: DUPLICATE ISO COUNTRY EXIST IN TABLE RCBT0695 */
+    WHEN ('0305') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'GN';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = GEN_AREA(J).GENAREANAME_FC;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'GC';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = GEN_AREA(J).GENAREACODE;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'CN';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = GEN_AREA(J).GENAREANAME;
+    END;
+    /* 0306:NO VALID RECORDS FOUND FOR INSERT/UPDATE,MESSAGE REJECTED*/
+    WHEN ('0306') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'TP';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = INT_DTSOFMSG;
+    END;
+                                                 /* SOC CEDS00000584 */
+    /* 0314:RECORD REJECTED DUE TO INVALID ACTIVITY */
+    WHEN ('0314') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'GC';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = GEN_AREA(J).GENAREACODE;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'GN';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = GEN_AREA(J).GENAREANAME_FC;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'CN';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = GEN_AREA(J).GENAREANAME;
+     PARM_INT_AREA.MSG_VAR_CODE_9   = 'AY';
+     PARM_INT_AREA.MSG_VAR_VALUE_9  = ACTIVITY(J);
+    END;                                         /* EOC CEDS00000584 */
+    OTHERWISE;
+   END;
+    CALL RCB0M1M(PTR_INT_AREA);
+  END;
+                                               /*  SOC  CEDS00000679 */
+ /********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBXC4M_TRANSLATE                             */
+ /*                                                                  */
+ /* DESCRIPTION      : HANDLING OF '@' PADDINGS WHILE INSERTING      */
+ /*                    UNICODE DATA INTO TABLES                      */
+ /********************************************************************/
+  RCBXC4M_TSN: PROC (GENVAR,LENGTHA) RETURNS (CHAR(50) VARYING);
+
+     DCL INDEX2 FIXED BIN(31);
+     DCL INDEX3 FIXED BIN(31);
+     DCL LENGTHA FIXED BIN(31);
+     DCL GENVAR CHAR(50) VARYING;
+     DCL GENVAR1 CHAR(50) VARYING;
+     DCL TRANSLATE BUILTIN;
+
+     GENVAR1  = ' ';
+     GENVAR   = SUBSTR(GENVAR,1,LENGTHA);
+     INDEX2 = 0;
+     INDEX3 = 0;
+     INDEX2 = INDEX(GENVAR,' ');
+     DO UNTIL (INDEX3 <= LENGTHA & INDEX2 ¬= 0)
+       INDEX3 = INDEX(GENVAR,' ',INDEX2);
+       GENVAR1 = TRANSLATE(GENVAR,'20'X,' ');
+       INDEX3 = INDEX3 + 1;
+       INDEX2 = INDEX2 + 1;
+     END;
+    RETURN(GENVAR1);
+
+  END RCBXC4M_TSN;
+                                               /*  EOC  CEDS00000679 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBXC4M_INIT_PROGRAM                          */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALISING THE PGM RCBXC4M                  */
+ /*                                                                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBXC4M_INIT_PROGRAM: PROC;
+                                             /* INITIALISE POINTERS  */
+ PARSER_RETURN_AREA= '';
+ PARM_RET_AREA_BB  = '';
+ PTR_RET_AREA_BB   = ADDR(PARM_RET_AREA_BB);
+ RCB695S_PTR       = ADDR(GENAREA_UPD_TEMP);
+ RCB695S_PTR1      = ADDR(GENAREA_UPD_TEMP1);         /* CEDS00000679 */
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;
+                                                      /* SOC RC01324 */
+ /*
+ PARM_INT_AREA.ID_MOD_PATH(1) = 'GENAREA'; */
+ PARM_INT_AREA.ID_MOD_PATH(1) = 'RCBXC4M';
+                                                      /* EOC RC01324 */
+                                              /* RETR. SYSTEM DATE   */
+ /*PARM_INT_AREA.MSG_REQUEST = 'P';*/
+
+ CALL RCB0T1M(PTR_INT_AREA);
+
+ END RCBXC4M_INIT_PROGRAM;
+
+ END RCBXC4M;                                /* END OF MAIN PROGRAM  */
+ /********************************************************************/
+ /*  USED TEMPORARY FIELDS DECLARATION                               */
+ /********************************************************************/
+  DCL CHARS CHAR(32000) BASED;
+  DCL ST_OF_ELEMENT CHAR(20) VAR;
+  DCL ED_OF_ELEMENT CHAR(20) VAR;
+  DCL J FIXED BIN(31) INIT(0);
+  DCL I FIXED BIN(31) INIT(0);
+  DCL 1 GEN_AREA(*) CTL,
+        3  GENAREANAME_FC      CHAR(4),
+        3  GENAREACODE         CHAR(2),
+        3  GENAREANAME         CHAR(50),
+        3  GENAREAPARENT_FC    CHAR(4),
+        3  GENAREAPARENT       CHAR(30);
+  DCL 1 GEN_AREA1(*) CTL LIKE  GEN_AREA;              /* CEDS00000679 */
+  DCL 1 CNT_GEN_ELEMENT1  FIXED BIN(31);
+  DCL INT_DTSOFMSG  CHAR(26) INIT('');
+  DCL ACTIVITY(*)  CHAR(6) CTL;                      /* CEDS00000584 */
+  DCL GEN_DTSOFMSG  CHAR(26) INIT('');            /* SOC CEDS00000679 */
+  DCL ACTIVITY1(*) CHAR(6) CTL;
+  DCL ELE_CONVERT   FIXED BIN(31) INIT(0);
+  DCL TEMP_LENGTH   FIXED BIN(31) INIT(0);        /* EOC CEDS00000679 */
+ /********************************************************************/
+ /*  BIT SWITCHES                                                    */
+ /********************************************************************/
+  DCL GEN_AREA_ELEMENT_FLAG           BIT(1) INIT('0'B);
+  DCL VALID_FLAG                      BIT(1);
+  DCL 1 SWITCHES,
+      3 TRUE                          BIT (1)           INIT ('1'B),
+      3 FALSE                         BIT (1)           INIT ('0'B);
+1/********************************************************************/
+ /* MODULE NAME      : START_OF_DOCUMENT                             */
+ /*                                                                  */
+ /********************************************************************/
+  START_OF_DOCUMENT:
+    PROC( USERTOKEN )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+                                          /* ALLOCATE DYNAMIC ARRAY  */
+    ALLOCATE GEN_AREA(CNT_GEN_ELEMENT1);
+    ALLOCATE ACTIVITY(CNT_GEN_ELEMENT1);             /* CEDS00000584 */
+    ALLOCATE GEN_AREA1(CNT_GEN_ELEMENT1);        /* SOC CEDS00000679 */
+    ALLOCATE ACTIVITY1(CNT_GEN_ELEMENT1);        /* EOC CEDS00000679 */
+                                                      /* SOC RC01324 */
+    /*
+    GEN_AREA='';
+    ACTIVITY='';  */                                 /* CEDS00000584 */
+    GEN_AREA(*) ='';
+    ACTIVITY(*) ='';
+    GEN_AREA1(*) ='';                            /* SOC CEDS00000679 */
+    ACTIVITY1(*) ='';                            /* EOC CEDS00000679 */
+                                                      /* EOC RC01324 */
+    I=0;
+    J=0;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : VERSION_INFORMATION                           */
+ /*                                                                  */
+ /********************************************************************/
+  VERSION_INFORMATION:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : ENCODING_DECLARATION                          */
+ /*                                                                  */
+ /********************************************************************/
+  ENCODING_DECLARATION:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : STANDALONE_DECLARATION                        */
+ /*                                                                  */
+ /********************************************************************/
+  STANDALONE_DECLARATION:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31))
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : DOCUMENT_TYPE_DECLARATION                     */
+ /*                                                                  */
+ /********************************************************************/
+  DOCUMENT_TYPE_DECLARATION:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : NAMESPACE_DECLARE                             */
+ /*                                                                  */
+ /********************************************************************/
+  NAMESPACE_DECLARE:
+    PROC( USERTOKEN, NSPREFIX, NSPREFIXLENGTH,
+                     NSURI, NSURILENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL NSPREFIX       POINTER;
+    DCL NSPREFIXLENGTH FIXED BIN(31);
+    DCL NSURI          POINTER;
+    DCL NSURILENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : END_OF_DOCUMENT                               */
+ /*                                                                  */
+ /********************************************************************/
+  END_OF_DOCUMENT:
+    PROC( USERTOKEN )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : START_OF_ELEMENT                              */
+ /*                                                                  */
+ /********************************************************************/
+  START_OF_ELEMENT:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,
+          NSPREFIX, NSPREFIXLENGTH,
+          NSURI, NSURILENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+    DCL NSPREFIX       POINTER;
+    DCL NSPREFIXLENGTH FIXED BIN(31);
+    DCL NSURI          POINTER;
+    DCL NSURILENGTH    FIXED BIN(31);
+                                                /* SOC CEDS00000679 */
+    DCL ST_ELEMENT_PTR               POINTER;
+    DCL TEMP_ST_ELEMENT              CHAR(50) VARYING;
+    DCL ST_ELEMENT_PTR_1             POINTER;
+    DCL TEMP_ST_ELEMENT_1            CHAR(50) VARYING;
+                                                /* EOC CEDS00000679 */
+
+                                                /* SOC CEDS00000679 */
+  /*ST_OF_ELEMENT = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH );*/
+    TEMP_ST_ELEMENT            = '';
+    TEMP_ST_ELEMENT_1          = '';
+    /***************** CONVERTING TO EBCDIC ********************/
+
+    TEMP_ST_ELEMENT_1          = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH );
+    ST_ELEMENT_PTR_1           = ADDR(TEMP_ST_ELEMENT_1);
+    ST_ELEMENT_PTR             = ADDR(TEMP_ST_ELEMENT);
+    TEMP_LENGTH                = TOKENLENGTH + 2;
+
+    ELE_CONVERT   = MEMCONVERT (ST_ELEMENT_PTR,TEMP_LENGTH,500,
+                               ST_ELEMENT_PTR_1,TEMP_LENGTH,1208);
+    ST_OF_ELEMENT = SUBSTR(TEMP_ST_ELEMENT,1,TOKENLENGTH);
+                                                /* EOC CEDS00000679 */
+    IF ST_OF_ELEMENT='GENAREAELEMENT' THEN DO;
+    I=I+1;
+    GEN_AREA_ELEMENT_FLAG = TRUE;
+    END;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : ATTRIBUTE_NAME                                */
+ /*                                                                  */
+ /********************************************************************/
+  ATTRIBUTE_NAME:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,
+          NSPREFIX, NSPREFIXLENGTH,
+          NSURI, NSURILENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+    DCL NSPREFIX       POINTER;
+    DCL NSPREFIXLENGTH FIXED BIN(31);
+    DCL NSURI          POINTER;
+    DCL NSURILENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : END_OF_ELEMENT                                */
+ /*                                                                  */
+ /********************************************************************/
+  END_OF_ELEMENT:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,
+          NSPREFIX, NSPREFIXLENGTH,
+          NSURI, NSURILENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+    DCL NSPREFIX       POINTER;
+    DCL NSPREFIXLENGTH FIXED BIN(31);
+    DCL NSURI          POINTER;
+    DCL NSURILENGTH    FIXED BIN(31);
+                                                /* SOC CEDS00000679 */
+    DCL ED_ELEMENT_PTR               POINTER;
+    DCL TEMP_ED_ELEMENT              CHAR(50) VARYING;
+    DCL ED_ELEMENT_PTR_1             POINTER;
+    DCL TEMP_ED_ELEMENT_1            CHAR(50) VARYING;
+                                                /* EOC CEDS00000679 */
+
+                                                /* SOC CEDS00000679 */
+  /*ED_OF_ELEMENT = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH );*/
+   TEMP_ED_ELEMENT            = '';
+   TEMP_ED_ELEMENT_1          = '';
+  /***************** CONVERTING TO EBCDIC ********************/
+
+   TEMP_ED_ELEMENT_1          = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH );
+   ED_ELEMENT_PTR_1           = ADDR(TEMP_ED_ELEMENT_1);
+   ED_ELEMENT_PTR             = ADDR(TEMP_ED_ELEMENT);
+   TEMP_LENGTH                = TOKENLENGTH + 2;
+
+   ELE_CONVERT   = MEMCONVERT (ED_ELEMENT_PTR,TEMP_LENGTH,500,
+                              ED_ELEMENT_PTR_1,TEMP_LENGTH,1208);
+   ED_OF_ELEMENT = SUBSTR(TEMP_ED_ELEMENT,1,TOKENLENGTH);
+                                                /* EOC CEDS00000679 */
+    IF ED_OF_ELEMENT='GENAREAELEMENT' THEN DO;
+    GEN_AREA_ELEMENT_FLAG = FALSE;
+    END;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : CONTENT_CHARACTERS                            */
+ /*                                                                  */
+ /********************************************************************/
+  CONTENT_CHARACTERS:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH)
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( NODESCRIPTOR, BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+  /*  DCL FLAGS          BIT(8) ALIGNED; */
+    DCL PTR_GEN      POINTER;                    /* SOC CEDS00000679 */
+    DCL PTR_GEN_1    POINTER;                    /* EOC CEDS00000679 */
+
+  IF (ST_OF_ELEMENT = 'DTSOFMSG')
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+  /*INT_DTSOFMSG=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/
+    INT_DTSOFMSG             = ' ';
+    GEN_DTSOFMSG             = SUBSTR(XMLTOKEN->CHARS,1,26);
+
+    ELE_CONVERT             = 0;
+    TEMP_LENGTH             = 26;
+    PTR_GEN                 = ADDR(INT_DTSOFMSG);
+    PTR_GEN_1               = ADDR(GEN_DTSOFMSG);
+    ELE_CONVERT             = MEMCONVERT (PTR_GEN,
+                                          TEMP_LENGTH,
+                                          500,
+                                          PTR_GEN_1,
+                                          TEMP_LENGTH,
+                                          1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+
+  IF (ST_OF_ELEMENT = 'GENAREANAME_FC' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+  /*   GEN_AREA(I).GENAREANAME_FC=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+  */
+      GEN_AREA(I).GENAREANAME_FC = ' ';
+      GEN_AREA1(I).GENAREANAME_FC =
+                               SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(GEN_AREA(I).GENAREANAME_FC);
+    PTR_GEN_1              = ADDR(GEN_AREA1(I).GENAREANAME_FC);
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+  IF (ST_OF_ELEMENT = 'GENAREACODE' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+  /*GEN_AREA(I).GENAREACODE=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/
+    GEN_AREA(I).GENAREACODE    = ' ';
+    GEN_AREA1(I).GENAREACODE   =
+                             SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(GEN_AREA(I).GENAREACODE);
+    PTR_GEN_1              = ADDR(GEN_AREA1(I).GENAREACODE);
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+
+  IF (ST_OF_ELEMENT = 'GENAREANAME' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+   /*GEN_AREA(I).GENAREANAME=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/
+    GEN_AREA(I).GENAREANAME    = ' ';
+    GEN_AREA1(I).GENAREANAME   =
+                             SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(GEN_AREA(I).GENAREANAME);
+    PTR_GEN_1              = ADDR(GEN_AREA1(I).GENAREANAME);
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+
+  IF (ST_OF_ELEMENT = 'GENAREAPARENT_FC' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+  /*GEN_AREA(I).GENAREAPARENT_FC=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+  */
+    GEN_AREA(I).GENAREAPARENT_FC  = ' ';
+    GEN_AREA1(I).GENAREAPARENT_FC =
+                             SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(GEN_AREA(I).GENAREAPARENT_FC);
+    PTR_GEN_1              = ADDR(GEN_AREA1(I).GENAREAPARENT_FC);
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+
+  IF (ST_OF_ELEMENT = 'GENAREAPARENT' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                  /* SOC CEDS00000679 */
+  /*GEN_AREA(I).GENAREAPARENT=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/
+    GEN_AREA(I).GENAREAPARENT  = ' ';
+    GEN_AREA1(I).GENAREAPARENT =
+                             SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(GEN_AREA(I).GENAREAPARENT);
+    PTR_GEN_1              = ADDR(GEN_AREA1(I).GENAREAPARENT);
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+                                                  /* EOC CEDS00000679 */
+  END;
+                                                 /* SOC CEDS00000584 */
+  IF (ST_OF_ELEMENT = 'ACTIVITY' & GEN_AREA_ELEMENT_FLAG = TRUE)
+  THEN DO;
+                                                 /* SOC CEDS00000679 */
+  /*ACTIVITY(I)=LOWERCASE(SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH));*/
+    ACTIVITY(I) = ' ';
+    ACTIVITY1(I) = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);
+
+    ELE_CONVERT            = 0;
+    PTR_GEN                = ADDR(ACTIVITY(I));
+    PTR_GEN_1              = ADDR(ACTIVITY1(I));
+    ELE_CONVERT            = MEMCONVERT (PTR_GEN,
+                                         TOKENLENGTH,
+                                         500,
+                                         PTR_GEN_1,
+                                         TOKENLENGTH,
+                                         1208);
+    ACTIVITY(I) = LOWERCASE(ACTIVITY(I));
+                                                 /* EOC CEDS00000679 */
+  END;                                           /* EOC CEDS00000584 */
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : ATTRIBUTE_CHARACTERS                          */
+ /*                                                                  */
+ /********************************************************************/
+  ATTRIBUTE_CHARACTERS:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : START_OF_CDATA                                */
+ /*                                                                  */
+ /********************************************************************/
+  START_OF_CDATA:
+    PROC( USERTOKEN )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : END_OF_CDATA                                  */
+ /*                                                                  */
+ /********************************************************************/
+  END_OF_CDATA:
+    PROC( USERTOKEN )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : PROCESSING_INSTRUCTION                        */
+ /*                                                                  */
+ /********************************************************************/
+  PROCESSING_INSTRUCTION:
+    PROC( USERTOKEN,
+          PITARGET, PITARGETLENGTH,
+          PIDATA, PIDATALENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL PITARGET       POINTER;
+    DCL PITARGETLENGTH FIXED BIN(31);
+    DCL PIDATA         POINTER;
+    DCL PIDATALENGTH   FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : COMMENT                                       */
+ /*                                                                  */
+ /********************************************************************/
+  COMMENT:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : UNRESOLVED_REFERENCE                          */
+ /*                                                                  */
+ /********************************************************************/
+  UNRESOLVED_REFERENCE:
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL XMLTOKEN       POINTER;
+    DCL TOKENLENGTH    FIXED BIN(31);
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : EXCEPTION                                     */
+ /*                                                                  */
+ /********************************************************************/
+  EXCEPTION:
+    PROC( USERTOKEN, CURRENTOFFSET, RETURN_CODE, REASON_CODE )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL CURRENTOFFSET  FIXED BIN(31);
+    DCL RETURN_CODE    FIXED BIN(31);
+    DCL REASON_CODE    FIXED BIN(31);
+    RETURN(0);
+  END;
+1/********************************************************************/
+ /* MODULE NAME      : END_OF_INPUT                                  */
+ /*                                                                  */
+ /********************************************************************/
+  END_OF_INPUT:
+    PROC( USERTOKEN, ADDR_XML, LENGTH_XML )
+    RETURNS( BYVALUE FIXED BIN(31) )
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );
+
+    DCL USERTOKEN      POINTER;
+    DCL ADDR_XML       BYADDR POINTER;
+    DCL LENGTH_XML     BYADDR FIXED BIN(31);
+
+    RETURN(1);
+  END;
+
+ END;                                              /* END OF PACKAGE  */

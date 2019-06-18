@@ -1,0 +1,535 @@
+ /* RCBDMAM - CCM/S INTERFACE: RETRIEVE ENTITLEMENT DATA             */ 00019321
+ /********************************************************************/ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /********************************************************************/ 00060000
+ /* PROGRAM          : RCBDMAM                                       */ 00070000
+ /*                                                                  */ 00080000
+ /* LANGUAGE         : PLISQL                                        */ 00090000
+ /*                                                                  */ 00100000
+ /* TYPE             : BATCH                                         */ 00110000
+ /*                                                                  */ 00120000
+ /* DESCRIPTION      : RETRIEVE ENTITLEMENT DATA FOR CCM/S INTERFACE */ 00130000
+ /*                                                                  */ 00140000
+ /* INPUT            : - PARM  : RUNTIME PARAMETER                   */ 00150000
+ /*                  : - DB2   : 23 SHARED CHIS TABLES               */ 00160000
+ /*                                                                  */ 00170000
+ /* EXTERNAL MODULES : QCH0CCM   CHIS LAM: CONTRACT COMPONENT        */ 00180000
+ /*                    QCH0PEM   CHIS LAM: CONTACT DATA      RA01210 */ 00190000
+ /*                    DSNTIAR   (SQL MSG TRANSLATION)               */ 00200000
+ /*                                                                  */ 00210000
+ /* MESSAGES         :                                               */ 00220000
+ /*                                                                  */ 00230000
+ /* DEPENDENCIES     : NONE                                          */ 00240000
+ /*                                                                  */ 00250000
+ /* FREQUENCY        : USER DEPENDENT                                */ 00260000
+ /*                                                                  */ 00270000
+ /* MAINTENANCE LOG  :                                               */ 00280000
+ /* ---------------                                                  */ 00290000
+ /*                                                                  */ 00300000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00310000
+ /*           |              |                                       */ 00320000
+ /* 1997-12-15| WI6101       | CREATION                              */ 00330000
+ /* 1998-06-18| RA01210      | NEW CHIS LAM QCH0PEM                  */ 00340000
+ /*                                                                  */ 00350000
+ /********************************************************************/ 00360000
+1RCBDMAM: PROC(P_ARG) OPTIONS (MAIN) REORDER;                           00370000
+ DEFAULT RANGE (*) STATIC;                                              00380000
+1/********************************************************************/ 00390000
+ /*  PARAMETERS                                                      */ 00400000
+ /********************************************************************/ 00410000
+ DCL P_ARG                 CHAR(256) VAR,                               00420000
+     P_COUNTRY             CHAR(3)   VAR,                               00430000
+     P_CONTRACT            CHAR(6)   VAR,                               00440000
+     P_DATE1               CHAR(10)  VAR,                               00450000
+     P_DATE2               CHAR(10)  VAR;                               00460000
+ DCL 1 PARM_INT_AREA,                                                   00470000
+       %INCLUDE (RCBZ01S);;                                             00480000
+1/********************************************************************/ 00490000
+ /* EXTERNAL ENTRIES                                                 */ 00500000
+ /********************************************************************/ 00510000
+ DCL PLIXOPT      EXTERNAL CHAR(30)  VAR INIT ('ISA(10K),NOSTAE');      00520000
+ DCL QCH0CCM   ENTRY  EXTERNAL;          /* CHIS RETRIEVE CONTR.COMP.*/ 00530000
+ DCL QCH0PEM   ENTRY  EXTERNAL; /* CHIS RETRIEVE CONT.DATA.  RA01210 */ 00540000
+ DCL DSNTIAR   ENTRY  EXTERNAL  OPTIONS (ASM INTER RETCODE);            00550000
+0/********************************************************************/ 00560000
+ /*  GENERAL CHIS LAM DECLARATIONS                                   */ 00570000
+ /********************************************************************/ 00580000
+0DCL (CHIS_IN_PTR,CHIS_OUT_PTR,                                         00590000
+      CHIS_SQLCA_PTR)    PTR;                                           00600000
+ DCL 1 LAM_SQLCA BASED(ADDR(SQLCA))                                     00610000
+      LIKE SQLCA;                                                       00620000
+0/********************************************************************/ 00630000
+ /*  QCH0CCM PARAMETER DECLARATIONS                                  */ 00640000
+ /********************************************************************/ 00650000
+ DCL 1 QCH0CCM_IN,                                                      00660000
+      %INCLUDE QCH0CCSI;;                                               00670000
+ DCL 1 QCH0CCM_OUT,                                                     00680000
+      %INCLUDE QCH0CCSO;;                                               00690000
+0/********************************************************************/ 00700000
+ /*  QCH0PEM PARAMETER DECLARATIONS                                  */ 00710000
+ /********************************************************************/ 00720000
+ DCL 1 QCH0PEM_IN,                                                      00730000
+      %INCLUDE QCH0PESI;;                                               00740000
+ DCL 1 QCH0PEM_OUT,                                                     00750000
+      %INCLUDE QCH0PESO;;                                               00760000
+1/********************************************************************/ 00770000
+ /*  BIT SWITCHES                                                    */ 00780000
+ /********************************************************************/ 00790000
+ DCL 1 SWITCHES,                                                        00800000
+     3 TRUE                        BIT (1)         INIT ('1'B),         00810000
+     3 FALSE                       BIT (1)         INIT ('0'B),         00820000
+     3 SW_CONTRACT_END             BIT (1)         INIT ('0'B);         00830000
+0/********************************************************************/ 00840000
+ /*      ERRORS                                                      */ 00850000
+ /********************************************************************/ 00860000
+ DCL ERR_TYPE              CHAR(8);                                     00870000
+ DCL CALL_ID               CHAR(4);                                     00880000
+0/********************************************************************/ 00890000
+ /*  ATTRIBUTE HEADERS                                               */ 00900000
+ /********************************************************************/ 00910000
+ DCL 1 CONTRACT_COMPONENTS_HEADERS,                                     00920000
+     2 HEADCC01             CHAR(16) INIT('COUNTRY_NUMBER::'),          00930000
+     2 HEADCC02             CHAR(17) INIT('CONTRACT_NUMBER::'),         00940000
+     2 HEADCC03             CHAR(14) INIT('CUSTNUM_USER::'),            00950000
+     2 HEADCC04             CHAR(15) INIT('OFFERING_NICK::'),           00960000
+     2 HEADCC05             CHAR(15) INIT('OFFERING_NAME::'),           00970000
+     2 HEADCC06             CHAR(17) INIT('OFFR_START_DATE::'),         00980000
+     2 HEADCC07             CHAR(16) INIT('OFFR_STOP_DATE::'),          00990000
+     2 HEADCC08             CHAR(10) INIT('COVERAGE::'),                01000000
+     2 HEADCC09             CHAR(19) INIT('OBJECT_OF_SERVICE::')        01010000
+     ;                                                                  01020000
+ DCL 1 CONTACT_DATA_HEADERS,                                            01030000
+     2 HEADCD01             CHAR(16) INIT('COUNTRY_NUMBER::'),          01040000
+     2 HEADCD02             CHAR(17) INIT('CONTRACT_NUMBER::'),         01050000
+     2 HEADCD03             CHAR(18) INIT('CALLBACK_SEX_DEP::'),        01060000
+     2 HEADCD04             CHAR(20) INIT('CALLBACK_LAST_NAME::'),      01070000
+     2 HEADCD05             CHAR(19) INIT('CALLBACK_MID_NAME::'),       01080000
+     2 HEADCD06             CHAR(21) INIT('CALLBACK_FIRST_NAME::'),     01090000
+     2 HEADCD07             CHAR(18) INIT('CALLBACK_CUSTNUM::'),        01100000
+     2 HEADCD08             CHAR(20) INIT('CALLBACK_OCCURENCE::'),      01110000
+     2 HEADCD09             CHAR(21) INIT('CALLBACK_TOTAL_NAME::'),     01120000
+     2 HEADCD10             CHAR(16) INIT('CALLBACK_TITLE::'),          01130000
+     2 HEADCD11             CHAR(16) INIT('CALLBACK_PHONE::'),          01140000
+     2 HEADCD12             CHAR(18) INIT('CALLBACK_PHONE_X::'),        01150000
+     2 HEADCD13             CHAR(20) INIT('CALLBACK_MOB_PHONE::'),      01160000
+     2 HEADCD14             CHAR(14) INIT('CALLBACK_FAX::'),            01170000
+     2 HEADCD15             CHAR(16) INIT('CALLBACK_EMAIL::'),          01180000
+     2 HEADCD16             CHAR(18) INIT('CALLBACK_ADDRESS::'),        01190000
+     2 HEADCD17             CHAR(15) INIT('CALLBACK_CITY::'),           01200000
+     2 HEADCD18             CHAR(14) INIT('CALLBACK_ZIP::'),            01210000
+     2 HEADCD19             CHAR(18) INIT('CALLBACK_COMMENT::')         01220000
+     ;                                                                  01230000
+0/********************************************************************/ 01240000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01250000
+ /********************************************************************/ 01260000
+ DCL 1 WORK,                                                            01270000
+     2 OUTREC              CHAR(132) VAR,                               01280000
+     2 I             FIXED BIN(15,0);                                   01290000
+1/********************************************************************/ 01300000
+ /*  BUILTIN FUNCTIONS                                               */ 01310000
+ /********************************************************************/ 01320000
+ DCL (ADDR,                                                             01330000
+      DATE,                                                             01340000
+      TIME,                                                             01350000
+      LENGTH,                                                           01360000
+      INDEX,                                                            01370000
+      NULL,                                                             01380000
+      VERIFY,                                                           01390000
+      PLIDUMP,                                                          01400000
+      STRING,                                                           01410000
+      SUBSTR)                 BUILTIN;                                  01420000
+1/********************************************************************/ 01430000
+ /* ON ERROR CONDITIONS                                              */ 01440000
+ /********************************************************************/ 01450000
+  ON ERROR BEGIN;                                                       01460000
+    ON ERROR SYSTEM;                                                    01470000
+    CALL RCBDMAM_ERROR ('OTHER','#000');                                01480000
+  END;                                                                  01490000
+1/********************************************************************/ 01500000
+ /* DB2/SQL SQLCA                                                    */ 01510000
+ /********************************************************************/ 01520000
+  EXEC SQL                                                              01530000
+   INCLUDE SQLCA;                                                       01540000
+1/********************************************************************/ 01550000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01560000
+ /********************************************************************/ 01570000
+ CALL R900_INIT_PROGRAM;                                                01580000
+ CALL R800_OPEN_CONTRACT;                                               01590000
+ CALL R999_END_PROGRAM;                                                 01600000
+1/*********************************************************************/01610000
+ /*                                                          RA01210  */01620000
+ /* MODULE NAME      :  R300_READ_CONTACT_DATA                        */01630000
+ /*                                                                   */01640000
+ /* DESCRIPTION      :  READ CONTACT DATA                             */01650000
+ /*                                                                   */01660000
+ /*********************************************************************/01670000
+ R300_READ_CONTACT_DATA: PROC;                                          01680000
+                                                                        01690000
+ QCH0PEM_IN.ACCMODE  = 'READ';                                          01700000
+ QCH0PEM_IN.IOPUCTY  = P_COUNTRY;                                       01710000
+ QCH0PEM_IN.IAGRCID  = P_CONTRACT;                                      01720000
+ CHIS_IN_PTR         = ADDR(QCH0PEM_IN);                                01730000
+ CHIS_OUT_PTR        = ADDR(QCH0PEM_OUT);                               01740000
+                                                                        01750000
+ CALL QCH0PEM(CHIS_IN_PTR,CHIS_OUT_PTR,CHIS_SQLCA_PTR);                 01760000
+                                                                        01770000
+ SELECT(LAM_SQLCA.SQLCODE);                                             01780000
+   WHEN(0)                                                              01790000
+     DO;                                                                01800000
+       CALL R720_CONTACT_DATA_FOUND;                                    01810000
+     END;                                                               01820000
+   WHEN(100)                                                            01830000
+     DO;                                                                01840000
+       CALL R730_CONTACT_DATA_NOT_FOUND;                                01850000
+     END;                                                               01860000
+   WHEN(9999)                                                           01870000
+     DO;                                                                01880000
+       PUT SKIP DATA(QCH0PEM_IN);        /* INTERNAL ERROR           */ 01890000
+       CALL RCBDMAM_ERROR ('OTHER','#001');                             01900000
+     END;                                                               01910000
+   OTHERWISE                                                            01920000
+     DO;                                                                01930000
+       CALL RCBDMAM_ERROR ('DB2','#002');                               01940000
+     END;                                                               01950000
+ END; /* SELECT */                                                      01960000
+                                                                        01970000
+ END R300_READ_CONTACT_DATA;                                            01980000
+1/*********************************************************************/01990000
+ /*                                                                   */02000000
+ /* MODULE NAME      :  R400_WRITE_OUTREC                             */02010000
+ /*                                                                   */02020000
+ /* DESCRIPTION      :  WRITE RECORD TO OUTPUT FILE                   */02030000
+ /*                                                                   */02040000
+ /*********************************************************************/02050000
+ R400_WRITE_OUTREC: PROC;                                               02060000
+                                                                        02070000
+ PUT SKIP EDIT (OUTREC) (A);                                            02080000
+                                                                        02090000
+ END R400_WRITE_OUTREC;                                                 02100000
+1/*********************************************************************/02110000
+ /*                                                                   */02120000
+ /* MODULE NAME      :  R700_CONTRACT_FOUND                           */02130000
+ /*                                                                   */02140000
+ /* DESCRIPTION      :  PROCESS CONTRACT COMPONENTS                   */02150000
+ /*                                                                   */02160000
+ /*********************************************************************/02170000
+ R700_CONTRACT_FOUND: PROC;                                             02180000
+                                                                        02190000
+ OUTREC = HEADCC01||QCH0CCM_OUT.IOPUCTY;                                02200000
+ CALL R400_WRITE_OUTREC;                 /* CONTRACT ID              */ 02210000
+ OUTREC = HEADCC02||QCH0CCM_OUT.IAGRCID;                                02220000
+ CALL R400_WRITE_OUTREC;                 /* CONTRACT ID              */ 02230000
+                                                                        02240000
+ DO WHILE (SW_CONTRACT_END = FALSE);                                    02250000
+   OUTREC = HEADCC04||QCH0CCM_OUT.IOFFNIK;                              02260000
+   CALL R400_WRITE_OUTREC;               /* OFFERING_NICKNAME        */ 02270000
+   OUTREC = HEADCC05||QCH0CCM_OUT.TOFFSDC;                              02280000
+   CALL R400_WRITE_OUTREC;               /* OFFERING_SHORT DESCR.    */ 02290000
+   OUTREC = HEADCC03||QCH0CCM_OUT.ICUSUSE;                              02300000
+   CALL R400_WRITE_OUTREC;               /* CUSTOMER NUMBER          */ 02310000
+   OUTREC = HEADCC06||QCH0CCM_OUT.DAGRCAS;                              02320000
+   CALL R400_WRITE_OUTREC;               /* OFFERING_START_DATE      */ 02330000
+   OUTREC = HEADCC07||QCH0CCM_OUT.DAGRVEX;                              02340000
+   CALL R400_WRITE_OUTREC;               /* OFFERING_STOP_DATE       */ 02350000
+   I = LENGTH(QCH0CCM_OUT.IOBJNIK);                                     02360000
+                                                                        02370000
+   DO WHILE(SUBSTR(QCH0CCM_OUT.IOBJNIK,I,1) = ' ' & I > 1);             02380000
+     I = I - 1;                                                         02390000
+   END;                                                                 02400000
+                                                                        02410000
+   IF I = 0                                                             02420000
+   THEN                                                                 02430000
+     DO;                                                                02440000
+       OUTREC = HEADCC09||QCH0CCM_OUT.IOVSNIK;                          02450000
+     END;                                                               02460000
+   ELSE                                                                 02470000
+     DO;                                                                02480000
+       OUTREC = HEADCC09||SUBSTR(QCH0CCM_OUT.IOBJNIK,1,I)||' '          02490000
+                       ||QCH0CCM_OUT.IOVSNIK;                           02500000
+     END;                                                               02510000
+                                                                        02520000
+   CALL R400_WRITE_OUTREC;               /* SERV.OBJ. SHORT DESC.    */ 02530000
+   CALL R810_FETCH_CONTRACT;                                            02540000
+ END;                                                                   02550000
+                                                                        02560000
+ CALL R300_READ_CONTACT_DATA;                             /* RA01210 */ 02570000
+                                                                        02580000
+ END R700_CONTRACT_FOUND;                                               02590000
+1/*********************************************************************/02600000
+ /*                                                                   */02610000
+ /* MODULE NAME      :  R710_CONTRACT_NOT_FOUND                       */02620000
+ /*                                                                   */02630000
+ /* DESCRIPTION      :  PROCESS CONTRACT COMPONENTS                   */02640000
+ /*                                                                   */02650000
+ /*********************************************************************/02660000
+ R710_CONTRACT_NOT_FOUND: PROC;                                         02670000
+                                                                        02680000
+ OUTREC = HEADCC01||P_COUNTRY;                                          02690000
+ CALL R400_WRITE_OUTREC;                 /* COUNTRY NUMBER           */ 02700000
+ OUTREC = HEADCC02||'NOTFND';                                           02710000
+ CALL R400_WRITE_OUTREC;                 /* CONTRACT ID              */ 02720000
+                                                                        02730000
+ END R710_CONTRACT_NOT_FOUND;                                           02740000
+1/*********************************************************************/02750000
+ /*                                                           RA01210 */02760000
+ /* MODULE NAME      :  R720_CONTACT_DATA_FOUND                       */02770000
+ /*                                                                   */02780000
+ /* DESCRIPTION      :  PROCESS CONTACT DATA                          */02790000
+ /*                                                                   */02800000
+ /*********************************************************************/02810000
+ R720_CONTACT_DATA_FOUND: PROC;                                         02820000
+                                                                        02830000
+ OUTREC = HEADCD01||QCH0PEM_OUT.IOPUCTY;                                02840000
+ CALL R400_WRITE_OUTREC;               /* COUNTRY NUMBER           */   02850000
+ OUTREC = HEADCD02||P_CONTRACT;                                         02860000
+ CALL R400_WRITE_OUTREC;               /* CONTRACT NUMBER          */   02870000
+ OUTREC = HEADCD03||QCH0PEM_OUT.FCOPSEX;                                02880000
+ CALL R400_WRITE_OUTREC;               /* SEX/DEPARTMENT           */   02890000
+ OUTREC = HEADCD04||QCH0PEM_OUT.CLSTNAM;                                02900000
+ CALL R400_WRITE_OUTREC;               /* LAST NAME                */   02910000
+ OUTREC = HEADCD05||QCH0PEM_OUT.CMIDNAM;                                02920000
+ CALL R400_WRITE_OUTREC;               /* MIDDLE INITIAL           */   02930000
+ OUTREC = HEADCD06||QCH0PEM_OUT.CFSTNAM;                                02940000
+ CALL R400_WRITE_OUTREC;               /* FIRST NAME               */   02950000
+ OUTREC = HEADCD07||QCH0PEM_OUT.CPCUSNO;                                02960000
+ CALL R400_WRITE_OUTREC;               /* CUSTOMER NUMBER          */   02970000
+ OUTREC = HEADCD08||QCH0PEM_OUT.CPOCCUR;                                02980000
+ CALL R400_WRITE_OUTREC;               /* OCCURRENCE               */   02990000
+ OUTREC = HEADCD09||QCH0PEM_OUT.CPERSON;                                03000000
+ CALL R400_WRITE_OUTREC;               /* TOTAL NAME               */   03010000
+ OUTREC = HEADCD10||QCH0PEM_OUT.CPERTIT;                                03020000
+ CALL R400_WRITE_OUTREC;               /* TITLE                    */   03030000
+ OUTREC = HEADCD11||QCH0PEM_OUT.CPPHONE;                                03040000
+ CALL R400_WRITE_OUTREC;               /* PHONE (DIGITS ONLY)      */   03050000
+ OUTREC = HEADCD12||QCH0PEM_OUT.CPPHONX;                                03060000
+ CALL R400_WRITE_OUTREC;               /* PHONE (INCL DASHES)      */   03070000
+ OUTREC = HEADCD13||QCH0PEM_OUT.CPMPHON;                                03080000
+ CALL R400_WRITE_OUTREC;               /* PHONE (INCL DASHES)      */   03090000
+ OUTREC = HEADCD14||QCH0PEM_OUT.COPEFAX;                                03100000
+ CALL R400_WRITE_OUTREC;               /* FAX                      */   03110000
+ OUTREC = HEADCD15||QCH0PEM_OUT.CPEMAIL;                                03120000
+ CALL R400_WRITE_OUTREC;               /* EMAIL                    */   03130000
+ OUTREC = HEADCD16||QCH0PEM_OUT.CPADDRE;                                03140000
+ CALL R400_WRITE_OUTREC;               /* ADDRESS                  */   03150000
+ OUTREC = HEADCD17||QCH0PEM_OUT.CPECITY;                                03160000
+ CALL R400_WRITE_OUTREC;               /* CITY                     */   03170000
+ OUTREC = HEADCD18||QCH0PEM_OUT.COPEZIP;                                03180000
+ CALL R400_WRITE_OUTREC;               /* ZIP CODE                 */   03190000
+ OUTREC = HEADCD19||QCH0PEM_OUT.CPCOMNT;                                03200000
+ CALL R400_WRITE_OUTREC;               /* PERSON COMMENTS          */   03210000
+                                                                        03220000
+ END R720_CONTACT_DATA_FOUND;                                           03230000
+1/*********************************************************************/03240000
+ /*                                                           RA01210 */03250000
+ /* MODULE NAME      :  R730_CONTACT_DATA_NOT_FOUND                   */03260000
+ /*                                                                   */03270000
+ /* DESCRIPTION      :  PROCESS CONTRACT COMPONENTS                   */03280000
+ /*                                                                   */03290000
+ /*********************************************************************/03300000
+ R730_CONTACT_DATA_NOT_FOUND: PROC;                                     03310000
+                                                                        03320000
+ OUTREC = HEADCD01||P_COUNTRY;                                          03330000
+ CALL R400_WRITE_OUTREC;                 /* COUNTRY NUMBER           */ 03340000
+ OUTREC = HEADCD02||'NOTFND';                                           03350000
+ CALL R400_WRITE_OUTREC;                 /* CONTRACT ID              */ 03360000
+                                                                        03370000
+ END R730_CONTACT_DATA_NOT_FOUND;                                       03380000
+1/*********************************************************************/03390000
+ /*                                                                   */03400000
+ /* MODULE NAME      :  R800_OPEN_CONTRACT                            */03410000
+ /*                                                                   */03420000
+ /* DESCRIPTION      :  OPEN CURSOR ON CONTRACT                       */03430000
+ /*                                                                   */03440000
+ /*********************************************************************/03450000
+ R800_OPEN_CONTRACT: PROC;                                              03460000
+                                                                        03470000
+ SW_CONTRACT_END    = FALSE;                                            03480000
+ QCH0CCM_IN.ACCMODE = 'OPEN';                                           03490000
+ QCH0CCM_IN.IOPUCTY = P_COUNTRY;                                        03500000
+ QCH0CCM_IN.ICUSUSE = '';                                               03510000
+ QCH0CCM_IN.IAGRCID = P_CONTRACT;                                       03520000
+ QCH0CCM_IN.ITXMSID = '';                                               03530000
+ QCH0CCM_IN.DFLTSRT = P_DATE1;                                          03540000
+ QCH0CCM_IN.DFLTEND = P_DATE2;                                          03550000
+ QCH0CCM_IN.IOBJNIK = '';                                               03560000
+ QCH0CCM_IN.IOVSNIK = '';                                               03570000
+ QCH0CCM_IN.IOFFNIK = '';                                               03580000
+ CHIS_IN_PTR        = ADDR(QCH0CCM_IN);                                 03590000
+ CHIS_OUT_PTR       = ADDR(QCH0CCM_OUT);                                03600000
+                                                                        03610000
+ CALL QCH0CCM(CHIS_IN_PTR,CHIS_OUT_PTR,CHIS_SQLCA_PTR);                 03620000
+                                                                        03630000
+ SELECT(LAM_SQLCA.SQLCODE);                                             03640000
+   WHEN(0)                                                              03650000
+     DO;                                                                03660000
+       CALL R810_FETCH_CONTRACT;                                        03670000
+       IF SW_CONTRACT_END = FALSE        /* FOUND                    */ 03680000
+       THEN                                                             03690000
+         DO;                                                            03700000
+           CALL R700_CONTRACT_FOUND;                                    03710000
+         END;                                                           03720000
+       ELSE                              /* NOT FOUND                */ 03730000
+         DO;                                                            03740000
+           CALL R710_CONTRACT_NOT_FOUND;                                03750000
+         END;                                                           03760000
+     END;                                                               03770000
+   WHEN(9999)                                                           03780000
+     DO;                                                                03790000
+       PUT SKIP DATA(QCH0CCM_IN);        /* INTERNAL ERROR           */ 03800000
+       CALL RCBDMAM_ERROR ('OTHER','#007');                             03810000
+     END;                                                               03820000
+   OTHERWISE                                                            03830000
+     DO;                                                                03840000
+       CALL RCBDMAM_ERROR ('DB2','#008');                               03850000
+     END;                                                               03860000
+ END; /* SELECT */                                                      03870000
+                                                                        03880000
+ END R800_OPEN_CONTRACT;                                                03890000
+1/*********************************************************************/03900000
+ /*                                                                   */03910000
+ /* MODULE NAME      :  R810_FETCH_CONTRACT                           */03920000
+ /*                                                                   */03930000
+ /* DESCRIPTION      :  FETCH CONTRACT COMPONENT                      */03940000
+ /*                                                                   */03950000
+ /*********************************************************************/03960000
+ R810_FETCH_CONTRACT: PROC;                                             03970000
+                                                                        03980000
+ QCH0CCM_IN.ACCMODE = 'FETCH';                                          03990000
+ CHIS_IN_PTR        = ADDR(QCH0CCM_IN);                                 04000000
+ CHIS_OUT_PTR       = ADDR(QCH0CCM_OUT);                                04010000
+                                                                        04020000
+ CALL QCH0CCM(CHIS_IN_PTR,CHIS_OUT_PTR,CHIS_SQLCA_PTR);                 04030000
+                                                                        04040000
+ SELECT(LAM_SQLCA.SQLCODE);                                             04050000
+   WHEN(0);                                                             04060000
+   WHEN(100)                                                            04070000
+     DO;                                                                04080000
+       SW_CONTRACT_END = TRUE;           /* NOT FOUND                */ 04090000
+     END;                                                               04100000
+   WHEN(9999)                                                           04110000
+     DO;                                                                04120000
+       PUT SKIP DATA(QCH0CCM_IN);        /* INTERNAL ERROR           */ 04130000
+       CALL RCBDMAM_ERROR ('OTHER','#009');                             04140000
+     END;                                                               04150000
+   OTHERWISE                                                            04160000
+     DO;                                                                04170000
+       CALL RCBDMAM_ERROR ('DB2','#010');                               04180000
+     END;                                                               04190000
+ END; /* SELECT */                                                      04200000
+                                                                        04210000
+ END R810_FETCH_CONTRACT;                                               04220000
+1/*********************************************************************/04230000
+ /*                                                                   */04240000
+ /* MODULE NAME      :  R820_CLOSE_CONTRACT                           */04250000
+ /*                                                                   */04260000
+ /* DESCRIPTION      :  CLOSE CURSOR ON CONTRACT                      */04270000
+ /*                                                                   */04280000
+ /*********************************************************************/04290000
+ R820_CLOSE_CONTRACT: PROC;                                             04300000
+                                                                        04310000
+ QCH0CCM_IN.ACCMODE = 'CLOSE';                                          04320000
+ CHIS_IN_PTR        = ADDR(QCH0CCM_IN);                                 04330000
+ CHIS_OUT_PTR       = ADDR(QCH0CCM_OUT);                                04340000
+                                                                        04350000
+ CALL QCH0CCM(CHIS_IN_PTR,CHIS_OUT_PTR,CHIS_SQLCA_PTR);                 04360000
+                                                                        04370000
+ SELECT(LAM_SQLCA.SQLCODE);                                             04380000
+   WHEN(0);                                                             04390000
+   WHEN(9999)                                                           04400000
+     DO;                                                                04410000
+       PUT SKIP DATA(QCH0CCM_IN);        /* INTERNAL ERROR           */ 04420000
+       CALL RCBDMAM_ERROR ('OTHER','#011');                             04430000
+     END;                                                               04440000
+   OTHERWISE                                                            04450000
+     DO;                                                                04460000
+       CALL RCBDMAM_ERROR ('DB2','#012');                               04470000
+     END;                                                               04480000
+ END; /* SELECT */                                                      04490000
+                                                                        04500000
+ END R820_CLOSE_CONTRACT;                                               04510000
+1/********************************************************************/ 04520000
+ /*                                                                  */ 04530000
+ /* MODULE NAME      : R900_INIT_PROGRAM                             */ 04540000
+ /*                                                                  */ 04550000
+ /* DESCRIPTION      : INIT PROGRAM                                  */ 04560000
+ /*                                                                  */ 04570000
+ /********************************************************************/ 04580000
+ R900_INIT_PROGRAM: PROC;                                               04590000
+                                                                        04600000
+ P_COUNTRY  = '';                                                       04610000
+ P_CONTRACT = '';                                                       04620000
+ P_DATE1    = '';                                                       04630000
+ P_DATE2    = '';                                                       04640000
+                                                                        04650000
+ IF LENGTH(P_ARG) > 0                                                   04660000
+ THEN                                                                   04670000
+   DO;                                                                  04680000
+     P_ARG     = P_ARG||',';                                            04690000
+     P_COUNTRY = SUBSTR(P_ARG,1,(INDEX(P_ARG,',')-1));                  04700000
+     P_ARG     = SUBSTR(P_ARG,(INDEX(P_ARG,',')+1),LENGTH(P_ARG));      04710000
+     P_CONTRACT= SUBSTR(P_ARG,1,(INDEX(P_ARG,',')-1));                  04720000
+     P_ARG     = SUBSTR(P_ARG,(INDEX(P_ARG,',')+1),LENGTH(P_ARG));      04730000
+     P_DATE1   = SUBSTR(P_ARG,1,(INDEX(P_ARG,',')-1));                  04740000
+     P_ARG     = SUBSTR(P_ARG,(INDEX(P_ARG,',')+1),LENGTH(P_ARG));      04750000
+     P_DATE2   = SUBSTR(P_ARG,1,(INDEX(P_ARG,',')-1));                  04760000
+   END;                                                                 04770000
+                                                                        04780000
+ CHIS_SQLCA_PTR     = ADDR(LAM_SQLCA);   /* INITIALISE POINTERS      */ 04790000
+                                                                        04800000
+ END R900_INIT_PROGRAM;                                                 04810000
+1/********************************************************************/ 04820000
+ /*                                                                  */ 04830000
+ /* MODULE NAME      : R999_END_PROGRAM                              */ 04840000
+ /*                                                                  */ 04850000
+ /* DESCRIPTION      : WRITE COUNT MESSAGES                          */ 04860000
+ /*                                                                  */ 04870000
+ /********************************************************************/ 04880000
+ R999_END_PROGRAM:  PROC;                                               04890000
+                                                                        04900000
+ CALL R820_CLOSE_CONTRACT;                                              04910000
+                                                                        04920000
+ END R999_END_PROGRAM;                                                  04930000
+1/********************************************************************/ 04940000
+ /*                                                                  */ 04950000
+ /* MODULE NAME      : RCBDMAM_ERROR                                 */ 04960000
+ /*                                                                  */ 04970000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 04980000
+ /*                    THE INPUT VARIABLES                           */ 04990000
+ /*                                                                  */ 05000000
+ /********************************************************************/ 05010000
+ RCBDMAM_ERROR: PROC    (ERR_TYPE,                                      05020000
+                         CALL_ID);                                      05030000
+                                                                        05040000
+  DCL ERR_TYPE             CHAR(8);                                     05050000
+  DCL CALL_ID              CHAR(4);                                     05060000
+  DCL 1 WRK_MSG_SQL,                                                    05070000
+      3 LENGTH       FIXED BIN(15,0) UNAL INIT((7*80)),                 05080000
+      3 SQLTEXT (7)        CHAR(80) INIT('');                           05090000
+  DCL WRK_LEN_DATA   FIXED BIN(31,0) INIT(80);                          05100000
+                                                                        05110000
+  IF ERR_TYPE = 'DB2'                                                   05120000
+  THEN                                                                  05130000
+    DO;                                                                 05140000
+      OUTREC = 'RCBDMAP_ERROR::'||CALL_ID;                              05150000
+      CALL R400_WRITE_OUTREC;            /* ERROR MESSAGE            */ 05160000
+      CALL DSNTIAR (LAM_SQLCA,WRK_MSG_SQL,WRK_LEN_DATA);                05170000
+      DO I = 1 TO 7;                                                    05180000
+        OUTREC =SQLTEXT(I);                                             05190000
+        CALL R400_WRITE_OUTREC;          /* ERROR MESSAGE            */ 05200000
+      END;                                                              05210000
+    END;                                                                05220000
+                                                                        05230000
+ CALL PLIDUMP('TFSAHB','USERABEND = '||CALL_ID);                        05240000
+                                                                        05250000
+ END RCBDMAM_ERROR;                                                     05260000
+1/*******************************************************************/  05270000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  05280000
+ /*******************************************************************/  05290000
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP  */ 05300000
+ $DAIMOD (RCBDMAM);                      /* MODULE TO BE COMPILED    */ 05310000
+ /*******************************************************************/  05320000
+ /* END OF ABR BLOCK                                                */  05330000
+ /*******************************************************************/  05340000
+ END RCBDMAM;                                                           05350000

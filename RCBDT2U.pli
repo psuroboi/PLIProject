@@ -1,0 +1,517 @@
+1/* RCBDT2U - BMT CUSTOMER EXTRACT USER EXIT                         */ 00010043
+ /********************************************************************/ 00020043
+ /*                                                                  */ 00030043
+ /* MODULE NAME      : RCBDT2U                                       */ 00040043
+ /*                                                                  */ 00050043
+ /* PROGRAM NAME     : RCBDTFP                                       */ 00060043
+ /*                                                                  */ 00070043
+ /* LANGUAGE         : PLISQL                                        */ 00080043
+ /*                                                                  */ 00090043
+ /* TYPE             : LINKABLE MODULE                               */ 00100043
+ /*                                                                  */ 00110043
+ /* DESCRIPTION      : USER EXIT FOR CUSTOMER INFORMATION            */ 00120043
+ /*                    TO BE USED IN THE BMT - CU EXTRACT            */ 00130043
+ /*                                                                  */ 00140043
+ /* NOTE 1           : IF YOU WANT TO USE THIS EXIT BE SURE TO SET   */ 00150043
+ /*                    SWITCH_USER_EXIT TO TRUE                      */ 00160043
+ /*                                                                  */ 00170043
+ /* NOTE 2                                                           */ 00180043
+ /*                                                                  */ 00190043
+ /* IN CASE THE DATA_ORIGIN IS SET TO '0':                           */ 00200043
+ /* - PTR_RCBDTF1_REC WILL POINT TO A STRUCTURE FILLED WITH          */ 00210043
+ /*   DATA FROM BAU CEDS                                             */ 00220043
+ /* - PTR_REC_PI WILL POINT TO AN EMPTY STRUCTURE                    */ 00230043
+ /* - PTR_USER_EXTRA_INFO WILL POINT TO AN EMPTY STRUCTURE           */ 00240043
+ /*                                                                  */ 00250043
+ /* IN CASE THE DATA_ORIGIN IS SET TO '1':                           */ 00260043
+ /* - PTR_RCBDTF1_REC WILL POINT TO A STRUCTURE FILLED WITH          */ 00270043
+ /*   DATA FROM PRIME INPUT                                          */ 00280043
+ /* - PTR_REC_PI WILL POINT TO AN EMPTY STRUCTURE                    */ 00290043
+ /* - PTR_USER_EXTRA_INFO WILL POINT TO A ARRAY FILLED WITH          */ 00300043
+ /*   ADDRESS LINES FROM PRIME INPUT                                 */ 00310043
+ /*                                                                  */ 00320043
+ /* IN CASE THE DATA_ORIGIN IS SET TO '2'                            */ 00330043
+ /* - PTR_RCBDTF1_REC WILL POINT TO A STRUCTURE FILLED WITH          */ 00340043
+ /*   DATA FROM BAU CEDS                                             */ 00350043
+ /* - PTR_REC_PI WILL POINT TO A STRUCTURE FILLED WITH               */ 00360043
+ /*   DATA FROM PRIME INPUT                                          */ 00370043
+ /* - PTR_USER_EXTRA_INFO WILL POINT TO A ARRAY FILLED WITH          */ 00380043
+ /*   ADDRESS LINES FROM PRIME INPUT                                 */ 00390043
+ /*                                                                  */ 00400043
+ /* INPUT            : - PARAMETER INTERFACE (FROM CALLING MODULE)   */ 00410043
+ /*                    - DB2   :                                     */ 00420043
+ /*                                                                  */ 00430043
+ /* OUTPUT           : - PARAMETER INTERFACE (FROM CALLING MODULE)   */ 00440043
+ /*                  : - FILE : RCB0M10                              */ 00450043
+ /*                                                                  */ 00460043
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00470043
+ /*                                                                  */ 00480043
+ /* MESSAGES         : ----                                          */ 00490043
+ /*                                                                  */ 00500043
+ /* DEPENDENCIES     : NONE                                          */ 00510043
+ /*                                                                  */ 00520043
+ /* FREQUENCY        : ----                                          */ 00530043
+ /*                                                                  */ 00540043
+ /*  MAINTENANCE LOG :                                               */ 00550043
+ /*  ---------------                                                 */ 00560043
+ /*                                                                  */ 00570043
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00580043
+ /*  --------------------------------------------------------------  */ 00590043
+ /*  1999-03-26 | RA01217      | NEW INTERFACE TO BMT                */ 00600043
+ /*  1999-06-30 | W.BECHTEL    | DIE BEREITS VON UITHOORN INSTALL.   */ 00610043
+ /*             |              | LOKALE LOGIK, UM 2 ELSE STATEMENTS  */ 00620043
+ /*             |              | ERWEITERT (SIEHE VERMERK ** BCH**)  */ 00630043
+ /*  1999-07-01 | K.PUHL       | IF-ABFRAGE AUF COUNTRY 724 DURCH    */ 00640043
+ /*             |              | SELECT - WHEN ERSETZT UND COUNTRY   */ 00650043
+ /*             |              | 618 AUSTRIA HINZUGEF}GT.            */ 00660043
+ /*  1999-09-21 | K.PUHL       | AUSTRIA EXCLUDED IN WHEN-CLAUSE.    */ 00670043
+ /*             |              | CODE FOR SWITZERLAND 848 ADDED.     */ 00680043
+ /*  2012-04-30 | PCR 358      | ADDRESSES OUTSIDE OF GERMANY FOR    */ 00690043
+ /*             |              | BMT                                 */ 00700043
+ /*  2015-11-12 | PCR 595      | TO ELIMINATE DUPLICATE ADDESS LINE  */ 00701050
+ /*             |              | WHILE SELECT FOR PCR 358           */  00702050
+ /********************************************************************/ 00710043
+1RCBDT2U: PROC    (PTR_SWITCH_USER_EXIT,                                00720043
+                   PTR_DATA_ORIGIN,                                     00730043
+                   PTR_RCBDTF1_REC,                                     00740043
+                   PTR_REC_PI,                                          00750043
+                   PTR_USER_EXTRA_INFO,                                 00760043
+                   PTR_INT_AREA)                                        00770043
+          REORDER;                                                      00780043
+0              @PDGXI6: ENTRY;     DCL @SCHFIRST BIT(1)                 00790043
+               STATIC INIT('1'B); IF @SCHFIRST THEN DO;                 00800043
+               @SCHFIRST='0'B;        ON  UNDEFINEDFILE                 00810043
+               (SYSPRINT) GOTO @END; PUT FILE(SYSPRINT)                 00820043
+               EDIT    ('RCBDT2U  VERSION 1999.09.21' ,                 00830043
+               ' 15H53.15      MIT DEM VERSIONS-ENTRY',                 00840043
+               ' @PDGXI6',' ')     (SKIP,A,A,A,SKIP,A);                 00850043
+               @END: ON UNDEFINEDFILE(SYSPRINT) SYSTEM;                 00860043
+               END;     /* ENDE DER VERSIONS-GRUPPE  */                 00870043
+ DEFAULT RANGE (*)        STATIC;                                       00880043
+1/********************************************************************/ 00890043
+ /*  PARAMETERS                                                      */ 00900043
+ /********************************************************************/ 00910043
+ DCL PTR_SWITCH_USER_EXIT    PTR;                                       00920043
+ DCL PTR_RCBDTF1_REC         PTR;                                       00930043
+ DCL PTR_DATA_ORIGIN         PTR;                                       00940043
+ DCL PTR_REC_PI              PTR;                                       00950043
+ DCL PTR_USER_EXTRA_INFO     PTR;                                       00960043
+ DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00970043
+1/********************************************************************/ 00980043
+ /*  EXTERNAL ENTRIES                                                */ 00990043
+ /********************************************************************/ 01000043
+ DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 01010043
+ /********************************************************************/ 01020043
+ /* ON ERROR CONDITIONS                                              */ 01030043
+ /********************************************************************/ 01040043
+ %INCLUDE (RCB0E0M);                                                    01050043
+  END;                                                                  01060043
+ /********************************************************************/ 01070043
+ /*                                                                  */ 01080043
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 01090043
+ /* AND CALL THE ERROR ROUTINE:                                      */ 01100043
+ /*                                                                  */ 01110043
+ /*                                                                  */ 01120043
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 01130043
+ /*                                                                  */ 01140043
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 01150043
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 01160043
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 01170043
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 01180043
+ /*                                                                  */ 01190043
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 01200043
+ /*                                                                  */ 01210043
+ /********************************************************************/ 01220043
+ /********************************************************************/ 01230043
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 01240043
+ /********************************************************************/ 01250043
+ DCL SWITCH_USER_EXIT        BIT (1) BASED(PTR_SWITCH_USER_EXIT);       01260043
+ DCL 1 PARM_RCBDTF1_REC    BASED(PTR_RCBDTF1_REC),                      01270043
+      %INCLUDE (RCBDTFS);;                                              01280043
+ DCL DATA_ORIGIN             CHAR(1) BASED(PTR_DATA_ORIGIN);            01290043
+ DCL 1 PARM_REC_PI           BASED(PTR_REC_PI),                         01300043
+      %INCLUDE (RCBDTFS);;                                              01310043
+ DCL 1 PARM_USER_EXTRA_INFO BASED(PTR_USER_EXTRA_INFO),                 01320043
+      %INCLUDE (RCBDTFSU);;                                             01330043
+ DCL 1 PARM_INT_AREA       BASED(PTR_INT_AREA),                         01340043
+      %INCLUDE (RCBZ01S);;                                              01350043
+1/********************************************************************/ 01360043
+ /* DB2 TABLE STRUCTURES                                             */ 01370043
+ /********************************************************************/ 01380043
+                                                   /* PCR-358 START */  01390043
+ DCL 1 TB_RCBV150,                                                      01400043
+      %INCLUDE (RCB150S);;                                              01410043
+ DCL 1 TB_RCBV280,                                                      01420043
+      %INCLUDE (RCB280S);;                                              01430043
+ /********************************************************************/ 01440043
+ /* TEMPORARY FIELDS                                                 */ 01450043
+ /********************************************************************/ 01460043
+ DCL TRIM  BUILTIN;                                                     01470043
+                                                                        01480043
+ /********************************************************************/ 01490043
+ /* DB2/SQL CURSORS                                       2003-06-23 */ 01500043
+ /********************************************************************/ 01510043
+                                           /* RETRIEVE OU_CODE V0040 */ 01520043
+ EXEC SQL                                                               01530043
+   DECLARE CURSOR_V040 CURSOR FOR                                       01540043
+   SELECT COUNTRY_NUMBER, OU_CODE                                       01550043
+   FROM   RCBV0040_OU WHERE                                             01560043
+   COUNTRY_NUMBER IN ('666','726','755','758','822','838','862')        01570043
+                                                                        01580043
+   FOR FETCH ONLY                                                       01590043
+           ;                                                            01600043
+1/********************************************************************/ 01610043
+ /*  BIT SWITCHES                                                    */ 01620043
+ /********************************************************************/ 01630043
+ DCL TRUE     BIT (1) INIT ('1'B);                                      01640043
+ DCL FALSE    BIT (1) INIT ('0'B);                                      01650043
+ /********************************************************************/ 01660043
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01670043
+ /********************************************************************/ 01680043
+ DCL 1 WORK_FIELDS,                                                     01690043
+       3 WRK_LEVEL      FIXED BIN (15);                                 01700043
+ DCL   CHAR4_OU_CODE    CHAR(4) INIT(' ');                              01710043
+ DCL W_COUNTRY_NUMBER    CHAR(03)      INIT(' ');                       01720043
+ DCL W_OU_CODE           CHAR(07)      INIT(' ');                       01730043
+ DCL W_CU_ENGINEERING_OU CHAR(07)      INIT(' ');                       01740043
+ DCL FIRST               BIT (1)       INIT('0'B);                      01750043
+ DCL FETCH_EOC_CURS      BIT (1)       INIT('0'B);                      01760043
+ DCL I                   FIXED BIN(15) INIT(0);                         01770043
+ DCL II                  FIXED BIN(15) INIT(0);                         01780043
+ DCL TAB_I               FIXED BIN(15) INIT(0);                         01790043
+ DCL MAX_I               FIXED BIN(15) INIT(0);                         01800043
+ DCL OU_FOUND            CHAR(01)      INIT('N');                       01810043
+ DCL 1 TB_V040(TAB_I) CTL,                                              01820043
+       3  COUNTRY_NUMBER CHAR(03),                                      01830043
+       3  OU_CODE        CHAR(07);                                      01840043
+1/********************************************************************/ 01850043
+ /*  BUILTIN FUNCTIONS                                               */ 01860043
+ /********************************************************************/ 01870043
+ DCL (ADDR,                                                             01880043
+      SUBSTR,                                                           01890043
+      NULL)   BUILTIN;                                                  01900043
+1/********************************************************************/ 01910043
+ /* DB2/SQL SQLCA                                                    */ 01920043
+ /********************************************************************/ 01930043
+  EXEC SQL                                                              01940043
+    INCLUDE SQLCA                                                       01950043
+    ;                                                                   01960043
+1/********************************************************************/ 01970043
+ /*                 S T A R T   P R O C E S S I N G                  */ 01980043
+ /********************************************************************/ 01990043
+                                         /* SET LEVEL AND MOD NAME   */ 02000043
+ WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            02010043
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     02020043
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCBDT2U';                     02030043
+                                         /* USER DEFINED PROCESS     */ 02040043
+ SWITCH_USER_EXIT = TRUE;                                               02050043
+                                                                        02060043
+ /*********************************************************************/02070043
+ /***       LOKALE AENDERUNG         BEGINN                         ***/02080043
+ /***       LOKALE AENDERUNG         BEGINN                         ***/02090043
+ /***       LOKALE AENDERUNG         BEGINN                         ***/02100043
+ /*********************************************************************/02110043
+                                                                        02120043
+                             /**** SELECT THE COUNTRY TO BE PROCESSED */02130043
+ SELECT (PARM_INT_AREA.COUNTRY_NUMBER);                                 02140043
+                                                                        02150043
+   WHEN ('724'      ) DO;    /**** START COUNTRY 724 = DEUTSCHLAND ****/02160043
+                                                                        02170043
+                                /* PREPARE CU_ENGINEERING_OU FOR BMT */ 02180043
+   /* IF SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,4,4) ¬= ''           02190043
+      THEN DO;                                                          02200043
+        CHAR4_OU_CODE = SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,4,4); 02210043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '000' || CHAR4_OU_CODE;    02220043
+      END;                                                              02230043
+      ELSE                                                              02240043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';   /*** BCH ***/ 02250043
+                                             /*  PCR 358  START */      02260043
+      IF PARM_RCBDTF1_REC.CU_ENGINEERING_OU = ''                        02270043
+      THEN DO;                                                          02280043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000'                  02290043
+      END;                                                              02300043
+      ELSE                                                              02310043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '000' ||                   02320043
+              SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,1,4);           02330043
+                                             /*  PCR 358  END */        02340043
+                                /* PREPARE MKT_INSTALLING_OU FOR BMT */ 02350043
+   /* IF SUBSTR(PARM_RCBDTF1_REC.MKT_INSTALLING_OU,4,4) ¬= ''           02360043
+      THEN DO;                                                          02370043
+        CHAR4_OU_CODE = SUBSTR(PARM_RCBDTF1_REC.MKT_INSTALLING_OU,4,4); 02380043
+        PARM_RCBDTF1_REC.MKT_INSTALLING_OU = '000' || CHAR4_OU_CODE;    02390043
+      END;                                                              02400043
+      ELSE                                                              02410043
+        PARM_RCBDTF1_REC.MKT_INSTALLING_OU = '0000000';   /*** BCH ***/ 02420043
+                                              /*  PCR 358  START */     02430043
+      IF PARM_RCBDTF1_REC.MKT_INSTALLING_OU = ''                        02440043
+      THEN DO;                                                          02450043
+        PARM_RCBDTF1_REC.MKT_INSTALLING_OU = '0000000'                  02460043
+      END;                                                              02470043
+      ELSE                                                              02480043
+        PARM_RCBDTF1_REC.MKT_INSTALLING_OU = '000' ||                   02490043
+              SUBSTR(PARM_RCBDTF1_REC.MKT_INSTALLING_OU,1,4);           02500043
+                                              /*  PCR 358  END   */     02510043
+   /******************************************************************/ 02520043
+   /*  PCR 358 MAIN PROCESS                          PCR 358  START  */ 02530043
+   /******************************************************************/ 02540043
+ EXEC SQL                                                               02550043
+   SELECT A.TEXT INTO :TB_RCBV280.TEXT                                  02560152
+    FROM RCBV0280_ADDR_LINE A ,RCBV0150_CUST_ADDR B                     02560250
+   WHERE A.TEXT LIKE 'CTY=%' AND                                        02580043
+   A.CUSTOMER_NUMBER = :PARM_RCBDTF1_REC.CUSTOMER_NUMBER AND            02590049
+   B.CUSTOMER_NUMBER =  A.CUSTOMER_NUMBER AND                           02600047
+   A.COUNTRY_NUMBER  =  B.COUNTRY_NUMBER AND                            02610043
+   A.ADDRESS_NUMBER  =  B.ADDRESS_NUMBER  AND                           02620043
+   SUBSTR(B.ADDRESS_MASK,3,1) = '1'                                     02630043
+   AND A.COUNTRY_NUMBER='724'                                           02640052
+   FETCH FIRST ROW ONLY;                                 /* PCR 595  */ 02641052
+  SELECT (SQLCODE);                                                     02650045
+    WHEN(0)                                                             02660043
+    DO;                                                                 02670043
+       PARM_RCBDTF1_REC.CUSTOMER_LOCATION =                             02680043
+             SUBSTR(TRIM(PARM_RCBDTF1_REC.CUSTOMER_LOCATION)            02690043
+             || " " || PARM_RCBDTF1_REC.ZIP_CODE,1,12);                 02700043
+       PARM_RCBDTF1_REC.ZIP_CODE =                                      02710043
+             SUBSTR(TB_RCBV280.TEXT,5,2);                               02720043
+     END;                                                               02730043
+    WHEN(100);                                                          02740043
+   OTHERWISE                                                            02750043
+     DO;                                                                02760043
+        CALL RCBDT2U_ERROR (ADDR (SQLCA),                               02770043
+                    'DB2',                                              02780043
+                    '#005');                                            02790043
+     END;                                                               02800043
+    END;                                         /* PCR-358 END */      02810043
+   END;                      /**** END   COUNTRY 724 = DEUTSCHLAND ****/02820043
+ /*********************************************************************/02830043
+                                                                        02840043
+   WHEN ('848'      ) DO;    /**** START COUNTRY 848 = SWITZERLAND ****/02850043
+                                                                        02860043
+                                /* PREPARE CU_ENGINEERING_OU FOR BMT */ 02870043
+      IF SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,3,4) ¬= ''           02880043
+      THEN DO;                                                          02890043
+        CHAR4_OU_CODE = SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,3,4); 02900043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '000' || CHAR4_OU_CODE;    02910043
+      END;                                                              02920043
+      ELSE                                                              02930043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';   /*** BCH ***/ 02940043
+                                                                        02950043
+                                /* PREPARE MKT_INSTALLING_OU FOR BMT */ 02960043
+                                /**** REMAINS UNCHANGED           ****/ 02970043
+                                                                        02980043
+   END;                      /**** END   COUNTRY 848 = SWITZERLAND ****/02990043
+                           /**** START COUNTRY 618 & CER COUNTRIES ****/03000043
+   WHEN ('603','607','618','626','644','651','668','693','694',         03010043
+         '695','699','704','705','707','708','740','741','787',         03020043
+         '820','821','826','889') DO;                                   03030043
+                                                                        03040043
+                                /* PREPARE CU_ENGINEERING_OU FOR BMT */ 03050043
+      IF SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,1,4) ¬= ''           03060043
+      THEN DO;                                                          03070043
+        CHAR4_OU_CODE = SUBSTR(PARM_RCBDTF1_REC.CU_ENGINEERING_OU,1,4); 03080043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '000' || CHAR4_OU_CODE;    03090043
+      END;                                                              03100043
+      ELSE                                                              03110043
+        PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';   /*** BCH ***/ 03120043
+                                                                        03130043
+                                /* PREPARE MKT_INSTALLING_OU FOR BMT */ 03140043
+                                /**** REMAINS UNCHANGED           ****/ 03150043
+                                                                        03160043
+   END;                    /**** END   COUNTRY 618 & CER COUNTRIES ****/03170043
+ /*********************************************************************/03180043
+   WHEN ('666','726', '755' , '758' , '822' , '838' , '862') DO;        03190043
+      CALL PROCESS_SOUTH_OU;                                            03200043
+   END;                                                                 03210043
+ /*********************************************************************/03220043
+                                                                        03230043
+   OTHERWISE                 /**** FOR OTHER COUNTRIES             ****/03240043
+      DO;                                                               03250043
+                                                                        03260043
+      END;                                                              03270043
+                                                                        03280043
+ END;              /**** SELECT (PARM_INT_AREA.COUNTRY_NUMBER);    ****/03290043
+ /*********************************************************************/03300043
+ PROCESS_SOUTH_OU: PROC;                                                03310043
+ IF FIRST = FALSE THEN DO;                                              03320043
+    CALL RCBDT2U_LOAD_TB040;                                            03330043
+    FIRST = TRUE;                                                       03340043
+ END;                                                                   03350043
+ IF W_COUNTRY_NUMBER    = PARM_RCBDTF1_REC.COUNTRY_NUMBER    &          03360043
+    W_CU_ENGINEERING_OU = PARM_RCBDTF1_REC.CU_ENGINEERING_OU THEN DO;   03370043
+    IF OU_FOUND = 'Y' THEN DO;                                          03380043
+       IF PARM_RCBDTF1_REC.CU_ENGINEERING_OU = ' ' THEN DO;             03390043
+          PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';               03400043
+       END;                                                             03410043
+    END;                                                                03420043
+    ELSE DO ;                                                           03430043
+       PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';                  03440043
+    END;                                                                03450043
+ END;                                                                   03460043
+ ELSE DO ;                                                              03470043
+    W_COUNTRY_NUMBER    = PARM_RCBDTF1_REC.COUNTRY_NUMBER;              03480043
+    W_CU_ENGINEERING_OU = PARM_RCBDTF1_REC.CU_ENGINEERING_OU;           03490043
+    CALL RCBDT2U_FIND_OU_CODE;                                          03500043
+    IF OU_FOUND = 'Y' THEN DO;                                          03510043
+       IF PARM_RCBDTF1_REC.CU_ENGINEERING_OU = ' ' THEN DO;             03520043
+          PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';               03530043
+       END;                                                             03540043
+    END;                                                                03550043
+    ELSE DO;                                                            03560043
+       PARM_RCBDTF1_REC.CU_ENGINEERING_OU = '0000000';                  03570043
+    END;                                                                03580043
+ END;                                                                   03590043
+ END PROCESS_SOUTH_OU;                                                  03600043
+                                                                        03610043
+ /********************************************************************/ 03620043
+ /* MODULE NAME      : RCBDT2U_LOAD_TB040                 2003-06-23 */ 03630043
+ /* DESCRIPTION      : LOAD TB_V040                                  */ 03640043
+ /********************************************************************/ 03650043
+ RCBDT2U_LOAD_TB040: PROC;                                              03660043
+                                                                        03670043
+ TAB_I = 5000;                                                          03680043
+ ALLOC TB_V040;                                                         03690043
+ TB_V040 = '';                                                          03700043
+ CALL RCBDT2U_OPEN_CURSOR;                                              03710043
+ CALL RCBDT2U_FETCH_CURSOR;                                             03720043
+ I = 1;                                                                 03730043
+ DO WHILE ( ¬ FETCH_EOC_CURS);                                          03740043
+    TB_V040.COUNTRY_NUMBER(I) = W_COUNTRY_NUMBER;                       03750043
+    TB_V040.OU_CODE(I)        = W_OU_CODE       ;                       03760043
+    I = I + 1;                                                          03770043
+    IF I > TAB_I THEN DO;                                               03780043
+       CALL RCBDT2U_ERROR (NULL,                                        03790043
+                   'OTHER',                                             03800043
+                   '#001');                                             03810043
+    END;                                                                03820043
+    CALL RCBDT2U_FETCH_CURSOR;                                          03830043
+ END;                                                                   03840043
+ MAX_I = I - 1 ;                                                        03850043
+ CALL RCBDT2U_CLOSE_CURSOR;                                             03860043
+                                                                        03870043
+ END RCBDT2U_LOAD_TB040;                                                03880043
+                                                                        03890043
+ /********************************************************************/ 03900043
+ /* MODULE NAME      : RCBDT2U_FIND_OU_CODE               2003-06-23 */ 03910043
+ /* DESCRIPTION      : FIND OU_CODE                                  */ 03920043
+ /********************************************************************/ 03930043
+ RCBDT2U_FIND_OU_CODE: PROC;                                            03940043
+                                                                        03950043
+ OU_FOUND = 'N';                                                        03960043
+ DO II = 1 TO MAX_I WHILE (OU_FOUND = 'N');                             03970043
+                                                                        03980043
+    IF TB_V040.COUNTRY_NUMBER(II) = W_COUNTRY_NUMBER &                  03990043
+       TB_V040.OU_CODE(II)        = W_CU_ENGINEERING_OU THEN DO;        04000043
+       OU_FOUND = 'Y';                                                  04010043
+    END;                                                                04020043
+ END;                                                                   04030043
+                                                                        04040043
+ END RCBDT2U_FIND_OU_CODE;                                              04050043
+                                                                        04060043
+ /********************************************************************/ 04070043
+ /* MODULE NAME      : RCBDT2U_OPEN_CURSOR                2003-06-23 */ 04080043
+ /* DESCRIPTION      : OPEN CURSOR FOR TAB V0040                     */ 04090043
+ /********************************************************************/ 04100043
+ RCBDT2U_OPEN_CURSOR: PROC;                                             04110043
+ EXEC SQL                                                               04120043
+   OPEN CURSOR_V040;                                                    04130043
+                                                                        04140043
+ SELECT (SQLCODE);                                                      04150043
+   WHEN (0);                                                            04160043
+   OTHERWISE                                                            04170043
+     DO;                                                                04180043
+        CALL RCBDT2U_ERROR (ADDR (SQLCA),                               04190043
+                    'DB2',                                              04200043
+                    '#002');                                            04210043
+     END;                                                               04220043
+ END;                                                                   04230043
+ END RCBDT2U_OPEN_CURSOR;                                               04240043
+ /*********************************************************************/04250043
+ /* MODULE NAME      :  RCBDT2U_FETCH_CURSOR               2003-06-23 */04260043
+ /* DESCRIPTION      :  RETRIEVE ROW OF RCBV0040_OU                   */04270043
+ /*********************************************************************/04280043
+ RCBDT2U_FETCH_CURSOR: PROC;                                            04290043
+                                                                        04300043
+ W_COUNTRY_NUMBER = '';                                                 04310043
+ W_OU_CODE        = '';                                                 04320043
+                                                                        04330043
+ EXEC SQL                                                               04340043
+   FETCH CURSOR_V040                                                    04350043
+   INTO :W_COUNTRY_NUMBER,                                              04360043
+        :W_OU_CODE                                                      04370043
+   ;                                                                    04380043
+                                                                        04390043
+ SELECT (SQLCODE);                                                      04400043
+   WHEN (0)                                                             04410043
+     DO;                                                                04420043
+       FETCH_EOC_CURS = FALSE;                                          04430043
+     END;                                                               04440043
+   WHEN (100)                                                           04450043
+     DO;                                                                04460043
+       FETCH_EOC_CURS = TRUE;                                           04470043
+     END;                                                               04480043
+   OTHERWISE                                                            04490043
+     DO;                                                                04500043
+        CALL RCBDT2U_ERROR (ADDR (SQLCA),                               04510043
+                    'DB2',                                              04520043
+                    '#003');                                            04530043
+     END;                                                               04540043
+ END;                                                                   04550043
+ END RCBDT2U_FETCH_CURSOR;                                              04560043
+                                                                        04570043
+ /********************************************************************/ 04580043
+ /* MODULE NAME      : RCBDT2U_CLOSE_CURSOR            PCR 358 START */ 04590043
+ /* DESCRIPTION      : CLOSE CURSOR FOR TAB V0040                    */ 04600043
+ /********************************************************************/ 04610043
+ RCBDT2U_CLOSE_CURSOR: PROC;                                            04620043
+                                                                        04630043
+ EXEC SQL                                                               04640043
+   CLOSE CURSOR_V040;                                                   04650043
+                                                                        04660043
+ SELECT (SQLCODE);                                                      04670043
+   WHEN (0);                                                            04680043
+   OTHERWISE                                                            04690043
+     DO;                                                                04700043
+        CALL RCBDT2U_ERROR (ADDR (SQLCA),                               04710043
+                    'DB2',                                              04720043
+                    '#004');                                            04730043
+     END;                                                               04740043
+ END;                                                                   04750043
+                                                                        04760043
+ END RCBDT2U_CLOSE_CURSOR;                                              04770043
+                                                    /* PCR 358 END   */ 04780043
+1/********************************************************************/ 05000043
+ /* MODULE NAME      : RCBDT2U_ERROR                      2003-06-23 */ 05010043
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 05020043
+ /*                    THE INPUT VARIABLES                           */ 05030043
+ /********************************************************************/ 05040043
+0RCBDT2U_ERROR: PROC     (PTR_ERROR,                                    05050043
+                          ERR_TYPE,                                     05060043
+                          CALL_ID);                                     05070043
+ DCL PTR_ERROR    PTR;                                                  05080043
+ DCL ERR_TYPE     CHAR(8);                                              05090043
+ DCL CALL_ID      CHAR(4);                                              05100043
+                                                                        05110043
+ PARM_INT_AREA.PTR_ERROR = PTR_ERROR;                                   05120043
+ PARM_INT_AREA.ERR_TYPE  = ERR_TYPE;                                    05130043
+ PARM_INT_AREA.CALL_ID   = CALL_ID;                                     05140043
+                                                                        05150043
+ CALL RCB0E1M (PTR_INT_AREA);                                           05160043
+                                                                        05170043
+0END RCBDT2U_ERROR;                                                     05180043
+ /*********************************************************************/05190043
+ /***       LOKALE AENDERUNG         ENDE                           ***/05200043
+ /***       LOKALE AENDERUNG         ENDE                           ***/05210043
+ /***       LOKALE AENDERUNG         ENDE                           ***/05220043
+ /*********************************************************************/05230043
+                                         /* END USER DEFINED PROCESS */ 05240043
+                                         /* RESET LEVEL              */ 05250043
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            05260043
+1/*******************************************************************/  05270043
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  05280043
+ /*******************************************************************/  05290043
+  %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  05300043
+ $DAIMOD (RCBDT2U);                      /* MODULE TO BE COMPILED   */  05310043
+ /*******************************************************************/  05320043
+ /* END OF ABR BLOCK                                                */  05330043
+ /*******************************************************************/  05340043
+ END RCBDT2U;                                                           05350043

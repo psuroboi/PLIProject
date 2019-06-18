@@ -1,0 +1,613 @@
+ /********************************************************************/ 00019111
+ /* PROGRAM          : ROLREJM                                       */ 00020000
+ /*                                                                  */ 00030000
+ /* LANGUAGE         : PLI                                           */ 00040000
+ /*                                                                  */ 00050000
+ /* TYPE             : BATCH                                         */ 00060000
+ /*                                                                  */ 00070000
+ /* DESCRIPTION      : BUILT TO PREPARE A REPORT CONSISTING OF THE   */ 00080000
+ /*                    RECORDS REJECTED IN PRIMEINPUT PROCESSES      */ 00090000
+ /*                    UI03 - SHRINK WRAP, UI05 - CISCO, UI07 - PEW  */ 00100000
+ /*                    WHICH WILL THEN BE SENT TO KEY USERS          */ 00110000
+ /*                                                                  */ 00120000
+ /*                                                                  */ 00130000
+ /* INPUT            : ROLREJI     REJECT FILE                       */ 00140000
+ /*                                                                  */ 00150000
+ /* OUTPUT           : ROLREPO     REPORT CONTAINING REJECT FILE     */ 00160000
+ /*                                INFORMATION                       */ 00170000
+ /*                                                                  */ 00180000
+ /* EXTERNAL MODULES : NONE                                          */ 00190000
+ /*                                                                  */ 00200000
+ /* MESSAGES         :                                               */ 00210000
+ /*                                                                  */ 00220000
+ /* DEPENDENCIES     : NONE                                          */ 00230000
+ /*                                                                  */ 00240000
+ /* FREQUENCY        : USER DEPENDENT                                */ 00250000
+ /*                                                                  */ 00260000
+ /* MAINTENANCE LOG  :                                               */ 00270000
+ /* ---------------                                                  */ 00280000
+ /*                                                                  */ 00290000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00300000
+ /*           |              |                                       */ 00310000
+ /* 2002-07-08| ----         | CEDS INITIAL DEVELOPMENT              */ 00320000
+ /* --------------------------------------------------------------   */ 00330000
+ /********************************************************************/ 00340000
+ ROLREJM:PROC(PARM) OPTIONS(MAIN) REORDER;                              00350000
+    DCL (ADDR,                                                          00360000
+         STRING,                                                        00370000
+         NULL,                                                          00380000
+         DATETIME,                                                      00390000
+         SUBSTR) BUILTIN;                                               00400000
+                                                                        00410000
+    DCL ROLREJI  FILE RECORD   INPUT;                                   00420000
+    DCL ROLREPO  FILE RECORD   OUTPUT;                                  00430000
+    DCL SYSPRINT FILE EXTERNAL PRINT;                                   00440000
+                                                                        00450000
+    DCL   ROLREJ_REC        CHAR  (300) VARYING;                        00460000
+    DCL   ROLREP_REC        CHAR  (80) ;                                00470000
+                                                                        00480000
+    DCL   REJ_COUNT  FIXED DEC(5,0);                                    00490000
+    DCL   REJ_COUNT_PIC PIC'ZZZZ9';                                     00500000
+    DCL   CURRENT_DATE      CHAR(10);                                   00510000
+    DCL   PROCESS_NAME      CHAR(30);                                   00520000
+    DCL   PROCESS_ID        CHAR(04);                                   00530000
+    DCL   COUNTRY_NUMBER    CHAR(03);                                   00540000
+    DCL   CSET              CHAR(02);                                   00550000
+    DCL   SLQ               CHAR(04);                                   00560000
+    DCL   LLQ               CHAR(08);                                   00570000
+                                                                        00580000
+    DCL   RETURN_CODE      FIXED BIN(15);                               00590000
+                                                                        00600000
+    DCL PARM              CHAR(08) VARYING;                             00610000
+    DCL 1 PROCESS_DETAILS   BASED (ADDR(PARM)),                         00620000
+         3 LENGTH           FIXED BIN(15),                              00630000
+         3 PROCESS_ID       CHAR(04),                                   00640000
+         3 CSET             CHAR(02);                                   00650000
+    DCL I PIC'9';                                                       00660000
+    DCL EOF_ROLREJ          BIT (1)         INIT ('0'B);                00670000
+    DCL TRUE                BIT (1)         INIT ('1'B);                00680000
+    DCL FALSE               BIT (1)         INIT ('0'B);                00690000
+                                                                        00700000
+                                                                        00710000
+                                                                        00720000
+ /********************************************************************/ 00730000
+ /*           ON CONDITIONS                                          */ 00740000
+ /********************************************************************/ 00750000
+                                                                        00760000
+    ON ENDFILE(ROLREJI) EOF_ROLREJ  = '1'B;                             00770000
+ /********************************************************************/ 00780000
+ /*           START PROCESSING                                       */ 00790000
+ /********************************************************************/ 00800000
+                                                                        00810000
+    CALL A000_INIT_PROCESSING;                                          00820000
+    CALL A100_FILL_REPORT;                                              00830000
+    CALL A999_FINAL_PROCESSING;                                         00840000
+                                                                        00850000
+ A000_INIT_PROCESSING:PROC;                                             00860000
+                                                                        00870000
+    OPEN FILE(ROLREJI),                                                 00880000
+         FILE(ROLREPO);                                                 00890000
+    REJ_COUNT = 0;                                                      00900000
+ SELECT (PROCESS_DETAILS.PROCESS_ID);                                   00910000
+    WHEN('UIL1')                                                        00920000
+      DO;                                                               00930000
+        PROCESS_NAME = 'LOCAL PEW FOR SOUTH';                           00940000
+        PROCESS_ID   = 'UIL1';                                          00950000
+        LLQ          = 'ROLSIHF1';                                      00960000
+      END;                                                              00970000
+    WHEN('UIL2')                                                        00980000
+      DO;                                                               00990000
+        PROCESS_NAME = 'LOCAL SOUTH PI INVEN UPDATE';                   01000000
+        PROCESS_ID   = 'UIL2';                                          01010000
+        LLQ          = 'ROLSIBF1';                                      01020000
+      END;                                                              01030000
+    WHEN('UCL2')                                                        01040000
+      DO;                                                               01050000
+        PROCESS_NAME = 'LOCAL SOUTH PI CONTR UPDATE';                   01060000
+        PROCESS_ID   = 'UIL2';                                          01070000
+        LLQ          = 'ROLSICF1';                                      01080000
+      END;                                                              01090000
+    WHEN('UI03')                                                        01100000
+      DO;                                                               01110000
+        PROCESS_NAME = 'SHRINK WRAP';                                   01120000
+        PROCESS_ID   = 'UI03';                                          01130000
+        LLQ          = 'RCBBIFF1';                                      01140000
+      END;                                                              01150000
+    WHEN('UI05')                                                        01160000
+      DO;                                                               01170000
+        PROCESS_NAME = 'CISCO      ';                                   01180000
+        PROCESS_ID   = 'UI05';                                          01190000
+        LLQ          = 'RCBBIGF1' ;                                     01200000
+      END;                                                              01210000
+    WHEN('UI07')                                                        01220000
+      DO;                                                               01230000
+        PROCESS_NAME = 'PEW        ';                                   01240000
+        PROCESS_ID   = 'UI07';                                          01250000
+        LLQ          = 'RCBBIHF1';                                      01260000
+      END;                                                              01270000
+    WHEN('UI13')                                                        01280000
+      DO;                                                               01290000
+        PROCESS_NAME = 'E-SERVPAC  ';                                   01300000
+        PROCESS_ID   = 'UI13';                                          01310000
+        LLQ          = 'RCBBIFF1';                                      01320000
+      END;                                                              01330000
+    WHEN('UI23')                                                        01340000
+      DO;                                                               01350000
+        PROCESS_NAME = 'CISCO S-PAC';                                   01360000
+        PROCESS_ID   = 'UI23';                                          01370000
+        LLQ          = 'RCBBIFF1';                                      01380000
+      END;                                                              01390000
+    OTHERWISE;                                                          01400000
+ END;                                                                   01410000
+ SELECT(PROCESS_DETAILS.CSET);                                          01420000
+   WHEN('C1')                                                           01430000
+     DO;                                                                01440000
+        CSET  = 'C1';                                                   01450000
+        COUNTRY_NUMBER = '695' ;                                        01460000
+        SLQ            = 'R695';                                        01470000
+     END;                                                               01480000
+   WHEN('C2')                                                           01490000
+     DO;                                                                01500000
+        CSET  = 'C2';                                                   01510000
+        COUNTRY_NUMBER = '787' ;                                        01520000
+        SLQ            = 'R787' ;                                       01530000
+     END;                                                               01540000
+   WHEN('C3')                                                           01550000
+     DO;                                                                01560000
+        CSET  = 'C3';                                                   01570000
+        COUNTRY_NUMBER = '358' ;                                        01580000
+        SLQ            = 'R358' ;                                       01590000
+     END;                                                               01600000
+   WHEN('C4')                                                           01610000
+     DO;                                                                01620000
+        CSET  = 'C4';                                                   01630000
+        COUNTRY_NUMBER = '359' ;                                        01640000
+        SLQ            = 'R359' ;                                       01650000
+     END;                                                               01660000
+   WHEN('C5')                                                           01670000
+     DO;                                                                01680000
+        CSET  = 'C5';                                                   01690000
+        COUNTRY_NUMBER = '363' ;                                        01700000
+        SLQ            = 'R363' ;                                       01710000
+     END;                                                               01720000
+   WHEN('CA')                                                           01730000
+     DO;                                                                01740000
+        CSET  = 'CA';                                                   01750000
+        COUNTRY_NUMBER = 'N/A' ;                                        01760000
+        SLQ            = 'ROCA' ;                                       01770000
+     END;                                                               01780000
+   WHEN('CC')                                                           01790000
+     DO;                                                                01800000
+        CSET  = 'CC';                                                   01810000
+        COUNTRY_NUMBER = 'N/A' ;                                        01820000
+        SLQ            = 'ROCC' ;                                       01830000
+     END;                                                               01840000
+   WHEN('CD')                                                           01850000
+     DO;                                                                01860000
+        CSET  = 'CD';                                                   01870000
+        COUNTRY_NUMBER = '740' ;                                        01880000
+        SLQ            = 'R740' ;                                       01890000
+     END;                                                               01900000
+   WHEN('CE')                                                           01910000
+     DO;                                                                01920000
+        CSET  = 'CE';                                                   01930000
+        COUNTRY_NUMBER = '668' ;                                        01940000
+        SLQ            = 'R668' ;                                       01950000
+     END;                                                               01960000
+   WHEN('CF')                                                           01970000
+     DO;                                                                01980000
+        CSET  = 'CF';                                                   01990000
+        COUNTRY_NUMBER = '821' ;                                        02000000
+        SLQ            = 'R821' ;                                       02010000
+     END;                                                               02020000
+   WHEN('CG')                                                           02030000
+     DO;                                                                02040000
+        CSET  = 'CG';                                                   02050000
+        COUNTRY_NUMBER = '724' ;                                        02060000
+        SLQ            = 'R724' ;                                       02070000
+     END;                                                               02080000
+   WHEN('CH')                                                           02090000
+     DO;                                                                02100000
+        CSET  = 'CH';                                                   02110000
+        COUNTRY_NUMBER = '704' ;                                        02120000
+        SLQ            = 'R704' ;                                       02130000
+     END;                                                               02140000
+   WHEN('CI')                                                           02150000
+     DO;                                                                02160000
+        CSET  = 'CI';                                                   02170000
+        COUNTRY_NUMBER = '644' ;                                        02180000
+        SLQ            = 'R644' ;                                       02190000
+     END;                                                               02200000
+   WHEN('CJ')                                                           02210000
+     DO;                                                                02220000
+        CSET  = 'CJ';                                                   02230000
+        COUNTRY_NUMBER = '826' ;                                        02240000
+        SLQ            = 'R826' ;                                       02250000
+     END;                                                               02260000
+   WHEN('CK')                                                           02270000
+     DO;                                                                02280000
+        CSET  = 'CK';                                                   02290000
+        COUNTRY_NUMBER = '693' ;                                        02300000
+        SLQ            = 'R693' ;                                       02310000
+     END;                                                               02320000
+   WHEN('CL')                                                           02330000
+     DO;                                                                02340000
+        CSET  = 'CL';                                                   02350000
+        COUNTRY_NUMBER = '708' ;                                        02360000
+        SLQ            = 'R708' ;                                       02370000
+     END;                                                               02380000
+   WHEN('CM')                                                           02390000
+     DO;                                                                02400000
+        CSET  = 'CM';                                                   02410000
+        COUNTRY_NUMBER = '694' ;                                        02420000
+        SLQ            = 'R694' ;                                       02430000
+     END;                                                               02440000
+   WHEN('CN')                                                           02450000
+     DO;                                                                02460000
+        CSET  = 'CN';                                                   02470000
+        COUNTRY_NUMBER = '699' ;                                        02480000
+        SLQ            = 'R699' ;                                       02490000
+     END;                                                               02500000
+   WHEN('CO')                                                           02510000
+     DO;                                                                02520000
+        CSET  = 'CO';                                                   02530000
+        COUNTRY_NUMBER = '618' ;                                        02540000
+        SLQ            = 'R618' ;                                       02550000
+     END;                                                               02560000
+   WHEN('CP')                                                           02570000
+     DO;                                                                02580000
+        CSET  = 'CP';                                                   02590000
+        COUNTRY_NUMBER = '820' ;                                        02600000
+        SLQ            = 'R820' ;                                       02610000
+     END;                                                               02620000
+   WHEN('CQ')                                                           02630000
+     DO;                                                                02640000
+        CSET  = 'CQ';                                                   02650000
+        COUNTRY_NUMBER = '705' ;                                        02660000
+        SLQ            = 'R705' ;                                       02670000
+     END;                                                               02680000
+   WHEN('CR')                                                           02690000
+     DO;                                                                02700000
+        CSET  = 'CR';                                                   02710000
+        COUNTRY_NUMBER = '707' ;                                        02720000
+        SLQ            = 'R707' ;                                       02730000
+     END;                                                               02740000
+   WHEN('CS')                                                           02750000
+     DO;                                                                02760000
+        CSET  = 'CS';                                                   02770000
+        COUNTRY_NUMBER = '848' ;                                        02780000
+        SLQ            = 'R848' ;                                       02790000
+     END;                                                               02800000
+   WHEN('CT')                                                           02810000
+     DO;                                                                02820000
+        CSET  = 'CT';                                                   02830000
+        COUNTRY_NUMBER = '741' ;                                        02840000
+        SLQ            = 'R741' ;                                       02850000
+     END;                                                               02860000
+   WHEN('CU')                                                           02870000
+     DO;                                                                02880000
+        CSET  = 'CU';                                                   02890000
+        COUNTRY_NUMBER = '889' ;                                        02900000
+        SLQ            = 'R889' ;                                       02910000
+     END;                                                               02920000
+   WHEN('CV')                                                           02930000
+     DO;                                                                02940000
+        CSET  = 'CV';                                                   02950000
+        COUNTRY_NUMBER = '603' ;                                        02960000
+        SLQ            = 'R603' ;                                       02970000
+     END;                                                               02980000
+   WHEN('CW')                                                           02990000
+     DO;                                                                03000000
+        CSET  = 'CW';                                                   03010000
+        COUNTRY_NUMBER = '607' ;                                        03020000
+        SLQ            = 'R607' ;                                       03030000
+     END;                                                               03040000
+   WHEN('CX')                                                           03050000
+     DO;                                                                03060000
+        CSET  = 'CX';                                                   03070000
+        COUNTRY_NUMBER = '626' ;                                        03080000
+        SLQ            = 'R626' ;                                       03090000
+     END;                                                               03100000
+   WHEN('CY')                                                           03110000
+     DO;                                                                03120000
+        CSET  = 'CY';                                                   03130000
+        COUNTRY_NUMBER = '651' ;                                        03140000
+        SLQ            = 'R651' ;                                       03150000
+     END;                                                               03160000
+   WHEN('NA')                                                           03170000
+     DO;                                                                03180000
+        CSET  = 'NA';                                                   03190000
+        COUNTRY_NUMBER = 'N/A' ;                                        03200000
+        SLQ            = 'RONA' ;                                       03210000
+     END;                                                               03220000
+   WHEN('NB')                                                           03230000
+     DO;                                                                03240000
+        CSET  = 'NB';                                                   03250000
+        COUNTRY_NUMBER = '754' ;                                        03260000
+        SLQ            = 'R754' ;                                       03270000
+     END;                                                               03280000
+   WHEN('NC')                                                           03290000
+     DO;                                                                03300000
+        CSET  = 'NC';                                                   03310000
+        COUNTRY_NUMBER = '788' ;                                        03320000
+        SLQ            = 'R788' ;                                       03330000
+     END;                                                               03340000
+   WHEN('ND')                                                           03350000
+     DO;                                                                03360000
+        CSET  = 'ND';                                                   03370000
+        COUNTRY_NUMBER = '864' ;                                        03380000
+        SLQ            = 'R864' ;                                       03390000
+     END;                                                               03400000
+   WHEN('NE')                                                           03410000
+     DO;                                                                03420000
+        CSET  = 'NE';                                                   03430000
+        COUNTRY_NUMBER = '866' ;                                        03440000
+        SLQ            = 'R866' ;                                       03450000
+     END;                                                               03460000
+   WHEN('DA')                                                           03470000
+     DO;                                                                03480000
+        CSET  = 'DA';                                                   03490000
+        COUNTRY_NUMBER = 'N/A' ;                                        03500000
+        SLQ            = 'RODA' ;                                       03510000
+     END;                                                               03520000
+   WHEN('DB')                                                           03530000
+     DO;                                                                03540000
+        CSET  = 'DB';                                                   03550000
+        COUNTRY_NUMBER = '678' ;                                        03560000
+        SLQ            = 'R678' ;                                       03570000
+     END;                                                               03580000
+   WHEN('DC')                                                           03590000
+     DO;                                                                03600000
+        CSET  = 'DC';                                                   03610000
+        COUNTRY_NUMBER = '702' ;                                        03620000
+        SLQ            = 'R702' ;                                       03630000
+     END;                                                               03640000
+   WHEN('DD')                                                           03650000
+     DO;                                                                03660000
+        CSET  = 'DD';                                                   03670000
+        COUNTRY_NUMBER = '806' ;                                        03680000
+        SLQ            = 'R806' ;                                       03690000
+     END;                                                               03700000
+   WHEN('DE')                                                           03710000
+     DO;                                                                03720000
+        CSET  = 'DE';                                                   03730000
+        COUNTRY_NUMBER = '846' ;                                        03740000
+        SLQ            = 'R846' ;                                       03750000
+     END;                                                               03760000
+   WHEN('WA')                                                           03770000
+     DO;                                                                03780000
+        CSET  = 'WA';                                                   03790000
+        COUNTRY_NUMBER = 'N/A' ;                                        03800000
+        SLQ            = 'ROWA' ;                                       03810000
+     END;                                                               03820000
+   WHEN('WB')                                                           03830000
+     DO;                                                                03840000
+        CSET  = 'WB';                                                   03850000
+        COUNTRY_NUMBER = '624' ;                                        03860000
+        SLQ            = 'R624' ;                                       03870000
+     END;                                                               03880000
+   WHEN('WD')                                                           03890000
+     DO;                                                                03900000
+        CSET  = 'WD';                                                   03910000
+        COUNTRY_NUMBER = '620' ;                                        03920000
+        SLQ            = 'R620' ;                                       03930000
+     END;                                                               03940000
+   WHEN('WE')                                                           03950000
+     DO;                                                                03960000
+        CSET  = 'WE';                                                   03970000
+        COUNTRY_NUMBER = '677' ;                                        03980000
+        SLQ            = 'R677' ;                                       03990000
+     END;                                                               04000000
+   WHEN('WF')                                                           04010000
+     DO;                                                                04020000
+        CSET  = 'WF';                                                   04030000
+        COUNTRY_NUMBER = '706' ;                                        04040000
+        SLQ            = 'R706' ;                                       04050000
+     END;                                                               04060000
+   WHEN('WG')                                                           04070000
+     DO;                                                                04080000
+        CSET  = 'WG';                                                   04090000
+        COUNTRY_NUMBER = '767' ;                                        04100000
+        SLQ            = 'R767' ;                                       04110000
+     END;                                                               04120000
+   WHEN('WH')                                                           04130000
+     DO;                                                                04140000
+        CSET  = 'WH';                                                   04150000
+        COUNTRY_NUMBER = '805' ;                                        04160000
+        SLQ            = 'R805' ;                                       04170000
+     END;                                                               04180000
+   WHEN('WJ')                                                           04190000
+     DO;                                                                04200000
+        CSET  = 'WJ';                                                   04210000
+        COUNTRY_NUMBER = '808' ;                                        04220000
+        SLQ            = 'R808' ;                                       04230000
+     END;                                                               04240000
+   WHEN('WK')                                                           04250000
+     DO;                                                                04260000
+        CSET  = 'WK';                                                   04270000
+        COUNTRY_NUMBER = '823' ;                                        04280000
+        SLQ            = 'R823' ;                                       04290000
+     END;                                                               04300000
+   WHEN('WL')                                                           04310000
+     DO;                                                                04320000
+        CSET  = 'WL';                                                   04330000
+        COUNTRY_NUMBER = '832' ;                                        04340000
+        SLQ            = 'R832' ;                                       04350000
+     END;                                                               04360000
+   WHEN('WM')                                                           04370000
+     DO;                                                                04380000
+        CSET  = 'WM';                                                   04390000
+        COUNTRY_NUMBER = '865' ;                                        04400000
+        SLQ            = 'R865' ;                                       04410000
+     END;                                                               04420000
+   WHEN('WN')                                                           04430000
+     DO;                                                                04440000
+        CSET  = 'WN';                                                   04450000
+        COUNTRY_NUMBER = '680' ;                                        04460000
+        SLQ            = 'R680' ;                                       04470000
+     END;                                                               04480000
+   WHEN('WP')                                                           04490000
+     DO;                                                                04500000
+        CSET  = 'WP';                                                   04510000
+        COUNTRY_NUMBER = '048' ;                                        04520000
+        SLQ            = 'R048' ;                                       04530000
+     END;                                                               04540000
+   WHEN('WR')                                                           04550000
+     DO;                                                                04560000
+        CSET  = 'WR';                                                   04570000
+        COUNTRY_NUMBER = '642' ;                                        04580000
+        SLQ            = 'R642' ;                                       04590000
+     END;                                                               04600000
+   WHEN('WS')                                                           04610000
+     DO;                                                                04620000
+        CSET  = 'WS';                                                   04630000
+        COUNTRY_NUMBER = '047' ;                                        04640000
+        SLQ            = 'R047' ;                                       04650000
+     END;                                                               04660000
+   WHEN('WT')                                                           04670000
+     DO;                                                                04680000
+        CSET  = 'WT';                                                   04690000
+        COUNTRY_NUMBER = '729' ;                                        04700000
+        SLQ            = 'R729' ;                                       04710000
+     END;                                                               04720000
+   WHEN('SA')                                                           04730000
+     DO;                                                                04740000
+        CSET  = 'SA';                                                   04750000
+        COUNTRY_NUMBER = 'N/A' ;                                        04760000
+        SLQ            = 'ROSA' ;                                       04770000
+     END;                                                               04780000
+   WHEN('SB')                                                           04790000
+     DO;                                                                04800000
+        CSET  = 'SB';                                                   04810000
+        COUNTRY_NUMBER = '666' ;                                        04820000
+        SLQ            = 'R666' ;                                       04830000
+     END;                                                               04840000
+   WHEN('SC')                                                           04850000
+     DO;                                                                04860000
+        CSET  = 'SC';                                                   04870000
+        COUNTRY_NUMBER = '726' ;                                        04880000
+        SLQ            = 'R726' ;                                       04890000
+     END;                                                               04900000
+   WHEN('SD')                                                           04910000
+     DO;                                                                04920000
+        CSET  = 'SD';                                                   04930000
+        COUNTRY_NUMBER = '755' ;                                        04940000
+        SLQ            = 'R755' ;                                       04950000
+     END;                                                               04960000
+   WHEN('SE')                                                           04970000
+     DO;                                                                04980000
+        CSET  = 'SE';                                                   04990000
+        COUNTRY_NUMBER = '758' ;                                        05000000
+        SLQ            = 'R758' ;                                       05010000
+     END;                                                               05020000
+   WHEN('SF')                                                           05030000
+     DO;                                                                05040000
+        CSET  = 'SF';                                                   05050000
+        COUNTRY_NUMBER = '822' ;                                        05060000
+        SLQ            = 'R822' ;                                       05070000
+     END;                                                               05080000
+   WHEN('SG')                                                           05090000
+     DO;                                                                05100000
+        CSET  = 'SG';                                                   05110000
+        COUNTRY_NUMBER = '838' ;                                        05120000
+        SLQ            = 'R838' ;                                       05130000
+     END;                                                               05140000
+   WHEN('SH')                                                           05150000
+     DO;                                                                05160000
+        CSET  = 'SB';                                                   05170000
+        COUNTRY_NUMBER = '862' ;                                        05180000
+        SLQ            = 'R862' ;                                       05190000
+     END;                                                               05200000
+   WHEN('A9')                                                           05210000
+     DO;                                                                05220000
+        CSET  = 'A9';                                                   05230000
+        COUNTRY_NUMBER = '999' ;                                        05240000
+        SLQ            = 'R999' ;                                       05250000
+     END;                                                               05260000
+ END;                                                                   05270000
+ END A000_INIT_PROCESSING;                                              05280000
+                                                                        05290000
+ A100_FILL_REPORT: PROC;                                                05300000
+    READ FILE (ROLREJI) INTO (ROLREJ_REC);                              05310000
+    IF ¬EOF_ROLREJ                                                      05320000
+    THEN DO;                                                            05330000
+       DO WHILE (¬EOF_ROLREJ);                                          05340000
+          REJ_COUNT = REJ_COUNT + 1;                                    05350000
+          READ FILE (ROLREJI) INTO (ROLREJ_REC);                        05360000
+       END;                                                             05370000
+    END;                                                                05380000
+    ELSE DO;                                                            05390000
+       PUT SKIP LIST( 'NO RECORDS ARE REJECTED.REJECT FILE IS EMPTY');  05400000
+       RETURN_CODE = 4;                                                 05410000
+       CALL PLIRETC(RETURN_CODE);                                       05420000
+    END;                                                                05430000
+    CURRENT_DATE = SUBSTR(DATETIME,1,4)||'-' ||                         05440000
+                   SUBSTR(DATETIME,5,2)||'-' ||                         05450000
+                   SUBSTR(DATETIME,7,2);                                05460000
+                                                                        05470000
+    IF REJ_COUNT ¬= 0  THEN  DO;                                        05480000
+        REJ_COUNT_PIC = REJ_COUNT;                                      05490000
+        ROLREP_REC = (80)'*';                                           05500000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05510000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05520000
+                                                                        05530000
+        ROLREP_REC = '**' ||(76)' '||'**';                              05540000
+        DO I = 1 TO 4;                                                  05550000
+            WRITE FILE (ROLREPO) FROM (ROLREP_REC);                     05560000
+        END;                                                            05570000
+        ROLREP_REC = '**' || (17)' ' ||                                 05580000
+        'C E D S    U P S T R E A M   P R O C E S S'||(17)' '||'**';    05590000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05600000
+        ROLREP_REC = '**' ||(76)' '||'**';                              05610000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05620000
+        ROLREP_REC = '**' || (22)' ' ||                                 05630000
+        'R E J E C T I O N    R E P O R T'||(22)' '||'**';              05640000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05650000
+        ROLREP_REC = '**' ||(76)' '||'**';                              05660000
+        DO I = 1 TO 2;                                                  05670000
+            WRITE FILE (ROLREPO) FROM (ROLREP_REC);                     05680000
+        END;                                                            05690000
+        ROLREP_REC = '**' || (17)' ' ||                                 05700000
+        'DATE'||(17)' '||':'|| (10)' '||CURRENT_DATE||(17)' '||'**';    05710000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05720000
+        ROLREP_REC = '**' || (17)' ' ||                                 05730000
+        'PROCESS ID'||(11)' '||':'|| (10)' '||PROCESS_ID||(23)' '||'**';05740000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05750000
+        ROLREP_REC = '**' || (17)' ' ||                                 05760000
+        'PROCESS NAME'||(9)' '||':'||                                   05770000
+        (10)' '||PROCESS_NAME||(16)' '||'**';                           05780000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05790000
+        ROLREP_REC = '**' || (17)' ' ||                                 05800000
+        'REGION - CSET'||(8)' '||':'|| (10)' '||CSET||(25)' '||'**';    05810000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05820000
+        ROLREP_REC = '**' || (17)' ' ||                                 05830000
+        'COUNTRY NUMBER'||(7)' '||':'|| (10)' '||                       05840000
+        COUNTRY_NUMBER||(24)' '||'**';                                  05850000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05860000
+        ROLREP_REC = '**' || (17)' ' ||                                 05870000
+        'REJECT FILE NAME'||(5)' '||':'|| (10)' '||                     05880000
+        'CEDSDT.'||SLQ||'.'||LLQ||(7)' ' ||'**';                        05890000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05900000
+        ROLREP_REC = '**' || (17)' ' ||                                 05910000
+        'NUMBER OF'||(50)' '||'**';                                     05920000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05930000
+        ROLREP_REC = '**' || (17)' ' ||                                 05940000
+        'RECORDS REJECTED'||(5)' '||':'|| (10)' '||                     05950000
+        REJ_COUNT_PIC||(22)' '||'**';                                   05960000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         05970000
+        ROLREP_REC = '**' ||(76)' '||'**';                              05980000
+        DO I = 1 TO 4;                                                  05990000
+            WRITE FILE (ROLREPO) FROM (ROLREP_REC);                     06000000
+        END;                                                            06010000
+        ROLREP_REC = (80)'*';                                           06020000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         06030000
+        WRITE FILE (ROLREPO) FROM (ROLREP_REC);                         06040000
+                                                                        06050000
+ END A100_FILL_REPORT;                                                  06060000
+                                                                        06070000
+ A999_FINAL_PROCESSING:PROC;                                            06080000
+    CLOSE FILE(ROLREJI),                                                06090000
+          FILE(ROLREPO);                                                06100000
+ END A999_FINAL_PROCESSING;                                             06110000
+                                                                        06120000
+ END ROLREJM;                                                           06130000

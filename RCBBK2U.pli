@@ -1,0 +1,453 @@
+1/* RCBBK2U - CHIS CONTRACTS MAINTAINING OU USER EXIT                */ 00010000
+ /********************************************************************/ 00020000
+ /*                                                                  */ 00030000
+ /* MODULE NAME      : RCBBK2U                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* PROGRAM NAME     : RCBBK2U                                       */ 00060000
+ /*                                                                  */ 00070000
+ /* LANGUAGE         : PLISQL                                        */ 00080000
+ /*                                                                  */ 00090000
+ /* TYPE             : LINKABLE MODULE                               */ 00100000
+ /*                                                                  */ 00110000
+ /* DESCRIPTION      : USER EXIT FOR FILLING THE OU CODE IN THE      */ 00120000
+ /*                    TABLE LIKE FILE OU - HW PRODUCT (RCBT0170)    */ 00130000
+ /*                    UPON CREATION FROM THE CHIS CONTRACT DATA.    */ 00140000
+ /*                                                                  */ 00150000
+ /*                    FIELD PARM_OU_CODE MUST BE FILLED WITH THE    */ 00160000
+ /*                    USER DEFINED OU CODE.                         */ 00170000
+ /*                                                                  */ 00180000
+ /* NOTE 1           : IF YOU WANT TO USE THIS EXIT BE SURE TO SET   */ 00190000
+ /*                    SWITCH_USER_EXIT TO TRUE                      */ 00200000
+ /*                                                                  */ 00210000
+ /* INPUT            : - SWITCH_USER_EXIT                            */ 00220000
+ /*                    - CHIS CONTRACT DATA RECORD ('C002')          */ 00230000
+ /*                    - OU_CODE                                     */ 00240000
+ /*                    - PTR_INT_AREA                                */ 00250000
+ /*                                                                  */ 00260000
+ /* OUTPUT           : - SWITCH_USER_EXIT                            */ 00270000
+ /*                    - CHIS CONTRACT DATA RECORD ('C002')          */ 00280000
+ /*                    - OU_CODE                                     */ 00290000
+ /*                    - PTR_INT_AREA                                */ 00300000
+ /*                                                                  */ 00310000
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00320000
+ /*                                                                  */ 00330000
+ /* MESSAGES         : ----                                          */ 00340000
+ /*                                                                  */ 00350000
+ /* DEPENDENCIES     : NONE                                          */ 00360000
+ /*                                                                  */ 00370000
+ /* FREQUENCY        : ----                                          */ 00380000
+ /*                                                                  */ 00390000
+ /*  MAINTENANCE LOG :                                               */ 00400000
+ /*  ---------------                                                 */ 00410000
+ /*                                                                  */ 00420000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00430000
+ /*  --------------------------------------------------------------  */ 00440000
+ /*  1993-02-02 | ------       | CEDS INITIAL DEVELOPMENT            */ 00450000
+ /*  1993-11-30 | CED0014      | CHANGE FETCH INTO CALL SEE PTM 374  */ 00460000
+ /*  1997-04-11 | PTM1036      | CORRECTED PROLOG                    */ 00470000
+ /*  1997-04-29 | PTM0892      | REMOVE DECLARES UNUSED EXT.ENTRIES  */ 00480000
+ /*                                                                  */ 00490000
+ /*  1999-10-27 | RUN ONCE NORD| ADD NORDIC SPECIFIC CODE - BG       */ 00500000
+ /*  1999-11-05 | RUN ONCE CNTL| ADD CENTRAL SPECIFIC CODE - SG      */ 00510000
+ /*  2000-07-13 | RUN ONCE CNTL| ADD CENTRAL SPECIFIC CODE - SG      */ 00520000
+ /*  2002-11-19 | C0073 - 1002 | CHANGE REQUEST C0073-1002(OU_CODE)  */ 00530000
+ /*  2009-07-09 |   CHG0027C   | CEEMEA COUNTRY HANDLING CHANGES     */ 00540000
+ /*  2011-05-13 |   R09-0221   | CEEMEA COUNTRY HANDLING CHANGES     */ 00550000
+ /*  2011-09-07 |   TREC 80389 | CEEMEA COUNTRY HANDLING CHANGES     */ 00560000
+ /*  2012-03-07 |   PCR 0181   | INCLUDE A CHECK FOR UL01 PROCESS    */ 00570000
+ /*  2012-06-19 | TREC 80749   | OU CODE SET IN INVENTORY OF GBM/SBM */ 00580000
+ /*             |              | COUNTRIES(XCLS REGION)              */ 00590000
+ /*  2013-12-17 |   PCR 0443   | BH 1.0 REDUCE BLANK OU CODES FROM   */ 00591005
+ /*             |              | CHISI/P                             */ 00592015
+ /*  2015-05-26 |  PCEDSP-0547 | LA PROJECT: CHIS INTERFACE          */ 00593015
+ /*             |              |                                     */ 00594015
+ /********************************************************************/ 00600000
+1RCBBK2U: PROC    (PTR_SWITCH_USER_EXIT,                                00610000
+                   PTR_RCBBKA0_C002,                                    00620000
+                   PTR_OU_CODE,                                         00630000
+                   PTR_INT_AREA)                                        00640000
+          REORDER;                                                      00650000
+0              @E1PP6J: ENTRY;     DCL @SCHFIRST BIT(1)                 00660000
+               STATIC INIT('1'B); IF @SCHFIRST THEN DO;                 00670000
+               @SCHFIRST='0'B;        ON  UNDEFINEDFILE                 00680000
+               (SYSPRINT) GOTO @END; PUT FILE(SYSPRINT)                 00690000
+               EDIT    ('RCBBK2U  VERSION 2011.05.16' ,                 00700000
+               ' 15H22.13      MIT DEM VERSIONS-ENTRY',                 00710000
+               ' @E1PP6J',' ')     (SKIP,A,A,A,SKIP,A);                 00720000
+               @END: ON UNDEFINEDFILE(SYSPRINT) SYSTEM;                 00730000
+               END;     /* ENDE DER VERSIONS-GRUPPE  */                 00740000
+0DEFAULT RANGE (*)        STATIC;                                       00750000
+1/********************************************************************/ 00760000
+ /*  PARAMETERS                                                      */ 00770000
+ /********************************************************************/ 00780000
+0DCL PTR_SWITCH_USER_EXIT    PTR;                                       00790000
+0DCL PTR_RCBBKA0_C002        PTR;                                       00800000
+0DCL PTR_OU_CODE             PTR;                                       00810000
+0DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00820000
+1/********************************************************************/ 00830000
+ /*  EXTERNAL ENTRIES                                                */ 00840000
+ /********************************************************************/ 00850000
+0DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 00860000
+0/********************************************************************/ 00870000
+ /* ON ERROR CONDITIONS                                              */ 00880000
+ /********************************************************************/ 00890000
+0%INCLUDE (RCB0E0M);                                                    00900000
+  END;                                                                  00910000
+ /********************************************************************/ 00920000
+ /*                                                                  */ 00930000
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 00940000
+ /* AND CALL THE ERROR ROUTINE:                                      */ 00950000
+ /*                                                                  */ 00960000
+ /*                                                                  */ 00970000
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 00980000
+ /*                                                                  */ 00990000
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 01000000
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 01010000
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 01020000
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 01030000
+ /*                                                                  */ 01040000
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 01050000
+ /*                                                                  */ 01060000
+ /********************************************************************/ 01070000
+0/********************************************************************/ 01080000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 01090000
+ /********************************************************************/ 01100000
+0DCL SWITCH_USER_EXIT BIT (1)     BASED (PTR_SWITCH_USER_EXIT);         01110000
+                                                                        01120000
+0DCL PARM_OU_CODE     CHAR (07)   BASED (PTR_OU_CODE);                  01130000
+                                                                        01140000
+0DCL 1 PARM_RCBBKA0_C002          BASED (PTR_RCBBKA0_C002),             01150000
+       %INCLUDE (RCBBKAS3);;                                            01160000
+                                                                        01170000
+0DCL 1 PARM_INT_AREA              BASED (PTR_INT_AREA),                 01180000
+      %INCLUDE (RCBZ01S);;                                              01190000
+1/********************************************************************/ 01200000
+ /* DB2 TABLE STRUCTURES                                             */ 01210000
+ /********************************************************************/ 01220000
+1/********************************************************************/ 01230000
+ /*  BIT SWITCHES                                                    */ 01240000
+ /********************************************************************/ 01250000
+0DCL TRUE     BIT (1) INIT ('1'B);                                      01260000
+ DCL FALSE    BIT (1) INIT ('0'B);                                      01270000
+0/********************************************************************/ 01280000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01290000
+ /********************************************************************/ 01300000
+0DCL 1 WORK_FIELDS,                                                     01310000
+       3 WRK_LEVEL      FIXED BIN (15),                                 01320000
+       3 WRK_INDNULL    FIXED BIN (15);                                 01330000
+1/********************************************************************/ 01340000
+ /*  BUILTIN FUNCTIONS                                               */ 01350000
+ /********************************************************************/ 01360000
+0DCL (ADDR,                                                             01370000
+      NULL)   BUILTIN;                                                  01380000
+1/********************************************************************/ 01390000
+ /* DB2/SQL SQLCA                                                    */ 01400000
+ /********************************************************************/ 01410000
+0 EXEC SQL                                                              01420000
+    INCLUDE SQLCA                                                       01430000
+    ;                                                                   01440000
+                                                                        01450000
+1/********************************************************************/ 01460000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 01470000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 01480000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 01490000
+ /********************************************************************/ 01500000
+                                                                        01510000
+ /*------------------------------------------------------------------*/ 01520000
+ /***   BIT                                                        ***/ 01530000
+ /*------------------------------------------------------------------*/ 01540000
+                                                                        01550000
+   DCL  FIRST      BIT(1) EXTERNAL INIT ('1'B); /*1. AUFRUF USER EXIT*/ 01560000
+                                                                        01570000
+0/*------------------------------------------------------------------*/ 01580000
+ /***   ENTRIES                                                    ***/ 01590000
+ /*------------------------------------------------------------------*/ 01600000
+                                                                        01610000
+   DCL  SUG400M    EXTERNAL ENTRY;         /* LADEN STRUKTURTABELLE  */ 01620000
+   DCL  SUG401M    EXTERNAL ENTRY;         /* BINARY SEARCH STRUKTAB */ 01630000
+   DCL  SUG410M    EXTERNAL ENTRY;         /* LADEN FILE AUS TAB 350 */ 01640000
+   DCL  SUG411M    EXTERNAL ENTRY;         /*BINARY SEARCH FILE T.350*/ 01650000
+                                                                        01660000
+0/*------------------------------------------------------------------*/ 01670000
+ /***   BUILTIN                                                    ***/ 01680000
+ /*------------------------------------------------------------------*/ 01690000
+                                                                        01700000
+ DCL  SUBSTR      BUILTIN;                                              01710000
+                                                                        01720000
+0/*------------------------------------------------------------------*/ 01730000
+ /***   FILES                                                      ***/ 01740000
+ /*------------------------------------------------------------------*/ 01750000
+                                                                        01760000
+ DCL  SYSPRINT    FILE EXTERNAL PRINT;                                  01770000
+                                                                        01780000
+0/*------------------------------------------------------------------*/ 01790000
+ /***   INCLUDES / TABELLEN                                        ***/ 01800000
+ /*------------------------------------------------------------------*/ 01810000
+                                                                        01820000
+   DCL  1 ST_TB (*) CTL EXTERNAL,             /* STRUKTURTABELLE      */01830000
+         % INCLUDE SUG400I;                                             01840000
+                                                                        01850000
+   DCL 1 TB_T350(*) CTL EXTERNAL,             /* KUNDENNUMMER/OU TAB.*/ 01860000
+         2 KDNR   CHAR(08),                                             01870000
+         2 OU_CD  CHAR(04);                                             01880000
+                                                                        01890000
+0/*------------------------------------------------------------------*/ 01900000
+ /***   ARBEITSVARIABLE                                            ***/ 01910000
+ /*------------------------------------------------------------------*/ 01920000
+                                                                        01930000
+   DCL  XREF       CHAR(04) EXTERNAL;        /*ZU SUCHENDE KST       */ 01940000
+   DCL  XKDNR      CHAR(08) EXTERNAL;        /*ZU SUCHENDE KUNDEN-NR.*/ 01950000
+   DCL  I0         BIN FIXED(31) EXTERNAL;   /*TABELLENPLATZ V. XKDNR*/ 01960000
+   DCL  I1         BIN FIXED(31) EXTERNAL;   /*TABELLENPLATZ V. XREF */ 01970000
+                                                                        01980000
+0/********************************************************************/ 01990000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 02000000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 02010000
+ /***       LOKALE DECLARES          CENTRAL REGION                ***/ 02020000
+ /********************************************************************/ 02030000
+                                                                        02040000
+1/********************************************************************/ 02050000
+ /*                 S T A R T   P R O C E S S I N G                  */ 02060000
+ /********************************************************************/ 02070000
+0                                        /* SET LEVEL AND MOD NAME   */ 02080000
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            02090000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     02100000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCBBK2U';                     02110000
+                                                                        02120000
+0                                        /* USER DEFINED PROCESS     */ 02130000
+                                                                        02140000
+1/*******************************************************************/  02150000
+ /* BEGIN COUNTRY SPECIFIC CODE                                     */  02160000
+ /*******************************************************************/  02170000
+                                                                        02180000
+ SELECT (PARM_INT_AREA.COUNTRY_NUMBER) ;                                02190000
+    WHEN ('846')      /*   SWEDEN   */                                  02200000
+       DO ;                                                             02210000
+          IF PARM_RCBBKA0_C002.CODPBUC = '       ' &                    02220000
+             PARM_RCBBKA0_C002.IAGRNOE = 'N'   THEN                     02230000
+             DO;                                                        02240000
+                IF PARM_RCBBKA0_C002.IOPUCTY = '846' THEN               02250000
+                PARM_OU_CODE = '9CHIS  ';        /* SET OUCODE */       02260000
+             END;                                                       02270000
+          ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                02280000
+       END ;                                                            02290000
+    WHEN ('702')      /*   FINLAND  */                                  02300000
+       DO ;                                                             02310000
+          IF PARM_RCBBKA0_C002.CODPBUC = '       ' &                    02320000
+             PARM_RCBBKA0_C002.IAGRNOE = 'N'   THEN                     02330000
+             DO;                                                        02340000
+                IF PARM_RCBBKA0_C002.IOPUCTY = '702' THEN               02350000
+                PARM_OU_CODE = '8CHIS  ';        /* SET OUCODE */       02360000
+             END;                                                       02370000
+          ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                02380000
+       END ;                                                            02390000
+    WHEN ('678')      /*   DENMARK  */                                  02400000
+       DO ;                                                             02410000
+          IF PARM_RCBBKA0_C002.CODPBUC = '       ' &                    02420000
+             PARM_RCBBKA0_C002.IAGRNOE = 'N'   THEN                     02430000
+             DO;                                                        02440000
+                IF PARM_RCBBKA0_C002.IOPUCTY = '678' THEN               02450000
+                PARM_OU_CODE = '7CHIS  ';        /* SET OUCODE */       02460000
+             END;                                                       02470000
+          ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                02480000
+       END ;                                                            02490000
+    WHEN ('806')      /*   NORWAY   */                                  02500000
+       DO ;                                                             02510000
+          IF PARM_RCBBKA0_C002.CODPBUC = '       ' &                    02520000
+             PARM_RCBBKA0_C002.IAGRNOE = 'N'   THEN                     02530000
+             DO;                                                        02540000
+                IF PARM_RCBBKA0_C002.IOPUCTY = '806' THEN               02550000
+                PARM_OU_CODE = '6CHIS  ';        /* SET OUCODE */       02560000
+             END;                                                       02570000
+          ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                02580000
+       END ;                                                            02590000
+                                                                        02600000
+ /* CENTRAL REGION START   */                                           02610000
+                                                                        02620000
+   WHEN ('724') DO;          /**** START COUNTRY 724 = DEUTSCHLAND ****/02630000
+                                                                        02640000
+       IF FIRST = '1'B                                                  02650000
+          THEN DO;                                                      02660000
+             FIRST = '0'B;               /* BEIM 1. AUFRUF USER EXIT */ 02670000
+       SELECT (PROC_ID);                 /* PCR 0181*/                  02680000
+         WHEN ('UC01')                                                  02690000
+          DO;                                                           02700000
+           SWITCH_USER_EXIT = TRUE;      /* USER DEFINED PROCESS     */ 02710000
+            CALL SUG400M;                /*-> LADEN STRUKTURTABELLE  */ 02720000
+            CALL SUG410M;                /*-> LADEN FILE AUS TAB.350 */ 02730000
+          END;                                                          02740000
+         WHEN ('UL01')                                                  02750000
+          DO;                                                           02760000
+          SWITCH_USER_EXIT = FALSE;                                     02770000
+          END;                                                          02780000
+         OTHERWISE;                                                     02790000
+       END;                                                             02800000
+       END;                              /* PCR 0181*/                  02810000
+                                                                        02820000
+    /*----------------------------------------------------------------*/02830000
+    /***   BINARY SEARCH AUF INTERNE TABELLE TB_T350 AUF BASIS      ***/02840000
+    /***   DER KUNDEN-NR. BEI MATCH WIRD DER OU-CODE AUS DIESER     ***/02850000
+    /***   TABELLE UEBERNOMMEN UND ZU DER ANSCHLIESSENDEN ABLEITUNG ***/02860000
+    /***   DER CE BRANCH OFFICE AUS DER STRUKTUR-TAB. VERWENDET.    ***/02870000
+    /***   WENN KUNDEN-NR. NICHT GEFUNDEN, DANN                     ***/02880000
+    /***   FELD = PARM_OU_CODE AUF "BLANK"                          ***/02890000
+    /*----------------------------------------------------------------*/02900000
+    /* IF SUBSTR(PARM_RCBBKA0_C002.CODPBUC,4,4) ¬= '    '//* PCR 0443*/ 02910010
+    /*    THEN                                                          02920001
+            DO;                                                         02930000
+    /*        XKDNR = PARM_RCBBKA0_C002.ICUSHWU;     /* KUNDEN NUMMER */02940001
+                                                                        02950000
+    /*        CALL SUG411M;                          /* BINARY SEARCH */02960000
+                                                                        02970000
+    /*        IF XKDNR = TB_T350.KDNR(I0)            /* KDNR GEFUNDEN */02980000
+    /*           THEN                                                   02990000
+                   DO;                                                  03000000
+    /*               XREF = TB_T350.OU_CD(I0);                          03010000
+                                                                        03020000
+    /*----------------------------------------------------------------*/03030000
+    /***   BINARY SEARCH MIT OU-CODE (XREF) AUF STRUK-TABELLE,      ***/03040000
+    /***   WENN GEFUNDEN, DANN UEBERNAHME DES OU-CODE IN FELD =     ***/03050000
+    /***   PARM_OU_CODE.                                            ***/03060000
+    /***   WENN NICHT GEFUNDEN, FELD = PARM_OU_CODE AUF "BLANK"     ***/03070000
+    /*----------------------------------------------------------------*/03080000
+                                                                        03090000
+    /*               CALL SUG401M;                   /* BINARY SEARCH */03100000
+                                                                        03110000
+    /*               IF XREF = ST_TB.REF(I1)         /* KST GEFUNDEN  */03120000
+    /*                  THEN PARM_OU_CODE = XREF;                       03130000
+    /*                  ELSE PARM_OU_CODE = '       ';                  03140000
+                                                                        03150000
+    /*             END;                                                 03160000
+                                                                        03170000
+    /*        ELSE PARM_OU_CODE = '       ';                            03180000
+                                                                        03190000
+    /*      END;                                                        03200000
+ /*END;                      /**** END   COUNTRY 724 = DEUTSCHLAND ****/03210000
+                                                                        03210104
+                                                                        03210204
+ /* PCR 0443 /                                                          03211002
+    /* GET CUSTOMER NUMBER FROM CHIS INTERFACE,THEN CHECK IF CUSTOMER */03220001
+    /* NUMBER IS VALID                                                */03220101
+                                                                        03220202
+        PARM_OU_CODE = 'DE0724'                                         03221002
+        XKDNR = PARM_RCBBKA0_C002.ICUSHWU                               03221102
+        CALL SUG411M;                                                   03222002
+        IF XKDNR ¬= '' &                                                03223007
+           XKDNR = TB_T350.KDNR(I0)   THEN                              03224002
+           DO;                                                          03225002
+                                                                        03225102
+    /* WHEN CUSTOMER IS VALID, THEN GET OU OF CUSTOMER AND CHECK      */03226002
+    /* IF OU IS VALID                                                 */03227002
+                                                                        03227102
+           XREF = TB_T350.OU_CD(I0)                                     03228002
+           CALL SUG401M;                                                03229002
+           IF XREF ¬= '' &                                              03229107
+              XREF = ST_TB.REF(I1)     THEN                             03229202
+              DO;                                                       03229302
+              PARM_OU_CODE = XREF ;                                     03229411
+              END;                                                      03229502
+           ELSE ;                                                       03229603
+           END;                                                         03229702
+        ELSE ;                                                          03229803
+     /* GET OU FROM CHIS INTERFACE AND CHECK IF OU IS VALID.          */03229902
+        IF PARM_OU_CODE = 'DE0724' THEN DO;                             03230111
+          XREF = SUBSTR(PARM_RCBBKA0_C002.CODPBUC,4,4)                  03230206
+          CALL SUG401M;                                                 03230306
+          IF XREF ¬= '' &                                               03230407
+             XREF = ST_TB.REF(I1) THEN                                  03230506
+             DO;                                                        03230606
+                PARM_OU_CODE = XREF ;                                   03230711
+             END;                                                       03230806
+        END;                                                            03231006
+   END;                      /**** END   COUNTRY 724 = DEUTSCHLAND ****/03231104
+   /* END OF PCR0443 */                                                 03231202
+                             /**** FOR OTHER CENTRAL REGION COUNTRIES */03232002
+                                                                        03240000
+                                     /**** R09-0221 START ****/         03250000
+  /* WHEN ('603','607','358','618','626','699','644','704','668','695', 03260000
+          '740','694','651','705','787','820','826','821','707','693',  03270000
+      '   '708','848','363','359','889','741') */                       03280000
+                                              /* TEMEA-T080749 START */ 03290000
+ /* WHEN ('358','359','363','603','607','618','626','651','668','693',  03300000
+ /*       '694','695','699','704','705','708','740','741','787','820',  03310000
+ /*       '821','826','848')                                         */ 03320000
+    WHEN ('358','359','363','603','607','618','626','644','651','668',  03330000
+          '693','694','695','699','704','705','708','740','741','787',  03340000
+          '820','821','826','848')      /* TEMEA-T080749 END */         03350000
+                                    /**** R09-0221 END   ****/          03360000
+      DO;                    /****   TAKE THE CURRENT CONTENT OF   ****/03370000
+                             /****   FIELD CODPBUC (CE BRANCH OFFICE) */03380000
+                             /****   OF CHIS CONTRACT FILE RECORD  ****/03390000
+         PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                      03400000
+                                                                        03410000
+      END;                                                              03420000
+                                                                        03430000
+  /* CENTRAL REGION END   */                                            03440000
+                                /**** R09-0221 START ****/              03450000
+                                /* INIT REGION GMEA = GROWING MARKETS*/ 03460000
+                                                                        03470000
+                                             /* TEMEA-T080749 START */  03480000
+ /* WHEN ('610','635','644','677','707','725','764' /* S  TREC 080390 */03490000
+ /*     ,'804','823','832','851','889')             /* E  TREC 080390 */03500000
+   WHEN ('610','677','707','725','764'                                  03510000
+        ,'804','823','832','851','889')                                 03520000
+                                             /* TEMEA-T080749 END */    03530000
+    DO;                                                                 03540000
+            IF PARM_RCBBKA0_C002.IAGRNOE = 'N' THEN /*   TREC 080390 */ 03550000
+               DO;                                                      03560000
+                  PARM_OU_CODE = '0100   ';                             03570000
+               END;                             /**** R09-0221 END ****/03580000
+            ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;              03590000
+      END ;                                                             03600000
+     WHEN ('642','729','808','865')                /* CHG0027C START */ 03610016
+        DO ;                                                            03620000
+             IF PARM_RCBBKA0_C002.IAGRNOE = 'N' THEN /*  TREC 080390 */ 03630000
+                DO;                                                     03640000
+                   PARM_OU_CODE = '9001   ';        /* SET OUCODE */    03650000
+                END;                                                    03660000
+             ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;             03670000
+       END ;                           /* CHG0027C END   */             03680000
+                                                                        03690000
+                             /* END  REGION GMEA = GROWING MARKETS*/    03700000
+                      /* PCEDSP-0547 - ADDED 631 AND 781 LA COUNTRYS */ 03701016
+     WHEN ('631')                                                       03702016
+        DO ;                                                            03703016
+             IF PARM_RCBBKA0_C002.IAGRNOE = 'N' THEN                    03704016
+                DO;                                                     03705016
+                   PARM_OU_CODE = '2      ';                            03706017
+                END;                                                    03707016
+             ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;             03708016
+       END ;                                                            03709016
+                                                                        03709116
+     WHEN ('781')                                                       03709416
+        DO ;                                                            03709516
+             IF PARM_RCBBKA0_C002.IAGRNOE = 'N' THEN                    03709616
+                DO;                                                     03709716
+                   PARM_OU_CODE = '1      ';                            03709817
+                END;                                                    03709916
+             ELSE PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;             03710016
+       END ;                                                            03710116
+                      /* PCEDSP-0547 - ADDED 631 AND 781 LA COUNTRYS */ 03710216
+                                                                        03711016
+    OTHERWISE                                                           03720000
+       DO ;                                                             03730000
+         PARM_OU_CODE = PARM_RCBBKA0_C002.CODPBUC;                      03740000
+       END ;                                                            03750000
+ END ;   /*   SELECT COUNTRY NUMBER   */                                03760000
+                                                                        03770000
+0/*******************************************************************/  03780000
+ /* END COUNTRY SPECIFIC CODE                                       */  03790000
+ /*******************************************************************/  03800000
+                                         /* END USER DEFINED PROCESS */ 03810000
+                                                                        03820000
+0                                        /* RESET LEVEL              */ 03830000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            03840000
+1/*******************************************************************/  03850000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  03860000
+ /*******************************************************************/  03870000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  03880000
+ $DAIMOD (RCBBK2U);                      /* MODULE TO BE COMPILED   */  03890000
+0/*******************************************************************/  03900000
+ /* END OF ABR BLOCK                                                */  03910000
+ /*******************************************************************/  03920000
+0END RCBBK2U;                                                           03930000

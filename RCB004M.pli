@@ -1,0 +1,2118 @@
+ /* RCB004M - DATE CALCULATION AND CONVERSION ROUTINE                */ 00019516
+ /********************************************************************/ 00020000
+ /**                                                                **/ 00030000
+ /** MODULE NAME        : RCB004M                                   **/ 00040000
+ /**                                                                **/ 00050000
+ /** FUNCTION           : DATE CALCULATION ROUTINE                  **/ 00060000
+ /**                                                                **/ 00070000
+ /** INPUT              :                                           **/ 00080000
+ /**                                                                **/ 00090000
+ /** OUTPUT             :                                           **/ 00100000
+ /**                                                                **/ 00110000
+ /** SEC TRANSACTIONS   : NONE                                      **/ 00120000
+ /**                                                                **/ 00130000
+ /** EXTERNAL MODULES   : NONE                                      **/ 00140000
+ /**                                                                **/ 00150000
+ /** SCREENS            : NONE                                      **/ 00160000
+ /**                                                                **/ 00170000
+ /** PROCESSING DETAILS :                                           **/ 00180000
+ /**                                                                **/ 00190000
+ /** MAINTENANCE LOG    :                                           **/ 00200000
+ /** ---------------                                                **/ 00210000
+ /**                                                                **/ 00220000
+ /** DATE     | WORK-ITEMNO. | DESCRIPTION                          **/ 00230000
+ /** 11081991 |              |                                      **/ 00240000
+ /** 14051996 | PTM0627      | CHECK ON INPUT-FORMAT ADDED          **/ 00250000
+ /** 06051997 | PTM1054      | USE DATETIME I.S.O. DATE (YEAR2000)  **/ 00260000
+ /** -------------------------------------------------------------- **/ 00270000
+ /**          |              |                                      **/ 00280000
+ /**                                                                **/ 00290000
+ /********************************************************************/ 00300000
+1RCB004M: PROC (RCBZ03S_PTR)                                            00310000
+          OPTIONS (REENTRANT)                                           00320000
+          REORDER;                                                      00330000
+0/*******************************************************************/  00340000
+ /*   DATE VALIDATION AND CONVERSION ROUTINE                        */  00350000
+ /*                                                                 */  00360000
+ /*   CALLING PROGRAMS PROVIDE A 'PICTURE' OF THE INPUT AND OUTPUT  */  00370000
+ /*   DATE FORMATS.                                                 */  00380000
+ /*   THIS PROGRAM WILL ENSURE THE INPUT DATE MATCHES THE INPUT     */  00390000
+ /*   FORMAT.  THE OUTPUT DATE WILL THEN BE GENERATED TO MATCH      */  00400000
+ /*   THE OUTPUT FORMAT.                                            */  00410000
+ /*   FULL DETAILS ARE GIVEN IN 'DATVALP'.  THIS IS INCLUDED        */  00420000
+ /*   WITHIN THIS PROGRAM AND ALL CALLING PROGRAMS AT COMPILE TIME. */  00430000
+ /*                                                                 */  00440000
+ /*   THIS VERSION CONTAINS NATIONAL LANGUAGE SUPPORT FOR           */  00450000
+ /*   DT    DUTCH                                                   */  00460000
+ /*   EN    ENGLISH                                                 */  00470000
+ /*   ES    SPANISH                                                 */  00480000
+ /*   FR    FRENCH                                                  */  00490000
+ /*   GE    GERMAN                                                  */  00500000
+ /*   PO    PORTUGUESE                                              */  00510000
+ /*                                                                 */  00520000
+ /*   NLS EXTENDS ONLY TO THE DATE.  ERROR MESSAGES ARE ENGLISH.    */  00530000
+ /*******************************************************************/  00540000
+1/*******************************************************************/  00550000
+ /*      DE-BUGGING VARIABLES                                       */  00560000
+ /*                                                                 */  00570000
+ /*      TO OBTAIN DEBUG TRACE, CHANGE TEST FROM 'N' TO 'Y'         */  00580000
+ /*      AND RE-COMPILE.                                            */  00590000
+ /*******************************************************************/  00600000
+0%DCL                                                                   00610000
+         TEST                 CHAR;                                     00620000
+0DCL                                                                    00630000
+         SYSPRINT             FILE PRINT      EXTERNAL;                 00640000
+0DCL                                                                    00650000
+         DATVERS              CHAR(32)        STATIC      INIT(         00660000
+         'DATVAL V01R08M00 10JUN1991');                                 00670000
+ %TEST                        = 'N';                                    00680000
+ %IF TEST = 'Y'                                                         00690000
+ %THEN                                                                  00700000
+     %DO;                                                               00710000
+     PUT SKIP LIST(DATVERS);                                            00720000
+     %END;                                                              00730000
+1/*******************************************************************/  00740000
+ /*      PARAMETER AREA                                             */  00750000
+ /*******************************************************************/  00760000
+ DCL RCBZ03S_PTR  PTR;                                                  00770000
+ DCL 1 RCBZ03S    BASED(RCBZ03S_PTR),                                   00780000
+      %INCLUDE RCBZ03S;;                                                00790000
+1/*******************************************************************/  00800000
+ /*      CUSTOMISATION AREA                                         */  00810000
+ /*******************************************************************/  00820000
+0/******************************************************** DATVALC **/  00830000
+ /*      DECLARE DATVAL USER CUSTOMISATION AREAS                    */  00840000
+ /*                                                                 */  00850000
+ /*      INFORMATION IN THESE AREAS CAN BE UPDATED BY               */  00860000
+ /*      EACH INSTALLATION AS REQUIRED.                             */  00870000
+ /*******************************************************************/  00880000
+0DCL                                                                    00890000
+   1     WC_CUSTOM            STATIC,                                   00900000
+0/*******************************************************************/  00910000
+ /*      SQL 'LOCAL' DEFINITION.                                    */  00920000
+ /*      THE INIT CLAUSE CAN BE CHANGED AS REQUIRED.                */  00930000
+ /*******************************************************************/  00940000
+    3    WC_SQL_LOCAL         CHAR(40)        INIT(''),                 00950000
+0/*******************************************************************/  00960000
+ /*      YEAR FOR CHANGE OF CENTURY.                                */  00970000
+ /*      E.G. IF A DDMMYY DATE IS INPUT, AND YEAR IS LESS THAN      */  00980000
+ /*      STATED VALUE, CENTURY 20 IS ASSUMED, OTHERWISE             */  00990000
+ /*      CENTURY 19 IS ASSUMED.                                     */  01000000
+ /*      THE INIT CLAUSE CAN BE CHANGED AS REQUIRED.                */  01010000
+ /*******************************************************************/  01020000
+    3    WC_CENT_YY           PIC'99'         INIT(50),                 01030000
+0/*******************************************************************/  01040000
+ /*      SYSTEM DATE LAYOUT.                                        */  01050000
+ /*      THE ORDER OF THE LEVEL 5 FIELDS CAN BE CHANGED AS REQUIRED.*/  01060000
+ /*******************************************************************/  01070000
+    3    WC_SYS_DATE,                                                   01080000
+     5   WC_SYS_CC            PIC'99',                   /* PTM1054 */  01090000
+     5   WC_SYS_YY            PIC'99',                                  01100000
+     5   WC_SYS_MM            PIC'99',                                  01110000
+     5   WC_SYS_DD            PIC'99',                                  01120000
+0/*******************************************************************/  01130000
+ /*      DEFAULT LANGUAGE CODE.                                     */  01140000
+ /*      THE INIT CLAUSE CAN BE CHANGED AS REQUIRED.                */  01150000
+ /*      SEE MAIN DATVAL DOCUMENTATION FOR VALID LANGUAGE CODES.    */  01160000
+ /*******************************************************************/  01170000
+    3    WC_DEFAULT_LANG      CHAR(02)        INIT('EN'),               01180000
+0   3    END                  CHAR(0);                                  01190000
+1/*******************************************************************/  01200000
+ /*      WORK FIELDS                                                */  01210000
+ /*******************************************************************/  01220000
+0DCL                                                                    01230000
+   1     WA_COUNTERS          CTL,                                      01240000
+    3    WA_CHECK_STRING      CHAR(40),                                 01250000
+    3    WA_CHECK_INDEX       FIXED BIN(31),                            01260000
+    3    WA_CHECK_ITEM        CHAR(1),                                  01270000
+    3    WA_DDDDD_WORK        FIXED BIN(31),                            01280000
+    3    WA_FLAGS,                                                      01290000
+     5   WA_CASE_FLAG         CHAR(1),                                  01300000
+    3    WA_IN_FORMAT         CHAR(40),                                 01310000
+    3    WA_MISC              FIXED BIN(31),                            01320000
+    3    WA_MISC_PIC          PIC'99999',                               01330000
+    3    WA_MMMMM_WORK        FIXED BIN(31),                            01340000
+    3    WA_MSG_INDEX         FIXED BIN(31),                            01350000
+    3    WA_OUT_FORMAT        CHAR(40),                                 01360000
+    3    WA_POINTER           FIXED BIN(31),                            01370000
+    3    WA_TEST_DATE         CHAR(40),                                 01380000
+    3    WA_TEST_STRING       CHAR(40),                                 01390000
+    3    WA_TEST_INDEX        FIXED BIN(31),                            01400000
+    3    WA_TEST_ITEM         CHAR(1),                                  01410000
+    3    WA_WEEK_ADJ          FIXED BIN(31),                            01420000
+    3    WA_WEEKDAY           PIC'9',                                   01430000
+    3    WA_WEEK              PIC'99',                                  01440000
+    3    WA_WORK_DAYS         FIXED BIN(31),                            01450000
+    3    WA_WORK_STRING       CHAR(40),                                 01460000
+    3    WZ_DATE_YYYY         FIXED BIN(31),                            01470000
+    3    WZ_DDDDD             FIXED BIN(31),                            01480000
+    3    WZ_DDD               FIXED BIN(31),                            01490000
+    3    END                  CHAR(0);                                  01500000
+0DCL                                                                    01510000
+   1     WA_POINTERS          CTL,                                      01520000
+    3    WA_LEAVE_POINTER     POINTER,                                  01530000
+    3    END                  CHAR(0);                                  01540000
+0DCL                                                                    01550000
+         WA_CHECK_CHAR (40)   BASED(ADDR(WA_CHECK_STRING))              01560000
+                              CHAR(1);                                  01570000
+0DCL                                                                    01580000
+         WA_TEST_CHAR (40)    BASED(ADDR(WA_TEST_STRING))               01590000
+                              CHAR(1);                                  01600000
+0DCL                                                                    01610000
+   1     WA_LEAVE_TABLE       BASED(WA_LEAVE_POINTER),                  01620000
+      7  WA_LEAVE_YEAR        FIXED BIN(31),                            01630000
+      7  WA_PRIOR_SHOP_DAY    FIXED BIN(31),                            01640000
+      7  WA_LEAVE_DATES_COUNT FIXED BIN(15),                            01650000
+      7  WA_LEAVE_DATES (20),                                           01660000
+       9 WA_LEAVE_TYPE        CHAR(1),                                  01670000
+       9 WA_LEAVE_START       FIXED BIN(15),                            01680000
+       9 WA_LEAVE_DURATION    FIXED BIN(15);                            01690000
+1DCL                                                                    01700000
+   1     WF_WORK_FIELDS       CTL,                                      01710000
+    3    WF_DATE_1            PIC'(8)9',                                01720000
+    3    WF_DATE_2            PIC'(8)9',                                01730000
+    3    WF_DATE,                                                       01740000
+     5   WF_DATE_DD_X,                                                  01750000
+      7  WF_DATE_DD           PIC'99',                                  01760000
+     5   WF_DATE_MM_X,                                                  01770000
+      7  WF_DATE_MM           PIC'99',                                  01780000
+     5   WF_DATE_YYYY_X,                                                01790000
+      7  WF_DATE_CC_X,                                                  01800000
+       9 WF_DATE_CC           PIC'99',                                  01810000
+      7  WF_DATE_YY_X,                                                  01820000
+       9 WF_DATE_YY           PIC'99',                                  01830000
+    3    WF_DDDDD_1           FIXED BIN(31),                            01840000
+    3    WF_DDDDD_2           FIXED BIN(31),                            01850000
+    3    WF_DDD_X,                                                      01860000
+     5   WF_DDD               PIC'999',                                 01870000
+    3    WF_DDDDD_X,                                                    01880000
+     5   WF_DDDDD             PIC'99999',                               01890000
+    3    WF_MMM               CHAR(3),                                  01900000
+    3    WF_MMMMM_1           FIXED BIN(31),                            01910000
+    3    WF_MMMMM_2           FIXED BIN(31),                            01920000
+    3    WF_SSS               FIXED BIN(31),                            01930000
+    3    END                  CHAR(0);                                  01940000
+-DCL                                                                    01950000
+         WF_DATE_NUM          BASED(ADDR(WF_DATE))                      01960000
+                              PIC'(8)9';                                01970000
+-DCL                                                                    01980000
+         WF_DATE_YYYY         BASED(ADDR(WF_DATE_YYYY_X))               01990000
+                              PIC'(4)9';                                02000000
+1/*******************************************************************/  02010000
+ /*      CONSTANT (STATIC) STORAGE                                  */  02020000
+ /*******************************************************************/  02030000
+0DCL                                                                    02040000
+   1     WG_CONSTANTS         STATIC,                                   02050000
+    3    WG_DAYS_IN_MONTH_STD_TABLE,                                    02060000
+     5   WG_MAX_DAY_S(12)     PIC'99'         INIT(                     02070000
+         /*JAN*/                                   31,                  02080000
+         /*FEB*/                                   28,                  02090000
+         /*MAR*/                                   31,                  02100000
+         /*APR*/                                   30,                  02110000
+         /*MAY*/                                   31,                  02120000
+         /*JUN*/                                   30,                  02130000
+         /*JUL*/                                   31,                  02140000
+         /*AUG*/                                   31,                  02150000
+         /*SEP*/                                   30,                  02160000
+         /*OCT*/                                   31,                  02170000
+         /*NOV*/                                   30,                  02180000
+         /*DEC*/                                   31),                 02190000
+    3    WG_DAYS_IN_MONTH_LEAP_TABLE,                                   02200000
+     5   WG_MAX_DAY_L(12)     PIC'99'         INIT(                     02210000
+         /*JAN*/                                   31,                  02220000
+         /*FEB*/                                   29,                  02230000
+         /*MAR*/                                   31,                  02240000
+         /*APR*/                                   30,                  02250000
+         /*MAY*/                                   31,                  02260000
+         /*JUN*/                                   30,                  02270000
+         /*JUL*/                                   31,                  02280000
+         /*AUG*/                                   31,                  02290000
+         /*SEP*/                                   30,                  02300000
+         /*OCT*/                                   31,                  02310000
+         /*NOV*/                                   30,                  02320000
+         /*DEC*/                                   31),                 02330000
+    3    WG_JULIAN_DAYS_STD_TABLE,                                      02340000
+     5   WG_JULIAN_DAY_S(13)  FIXED BIN(15)   INIT(                     02350000
+         /*NONE*/                                  0,                   02360000
+         /*JAN */                                  31,                  02370000
+         /*FEB */                                  59,                  02380000
+         /*MAR */                                  90,                  02390000
+         /*APR */                                  120,                 02400000
+         /*MAY */                                  151,                 02410000
+         /*JUN */                                  181,                 02420000
+         /*JUL */                                  212,                 02430000
+         /*AUG */                                  243,                 02440000
+         /*SEP */                                  273,                 02450000
+         /*OCT */                                  304,                 02460000
+         /*NOV */                                  334,                 02470000
+         /*DEC */                                  365),                02480000
+    3    WG_JULIAN_DAYS_LEAP_TABLE,                                     02490000
+     5   WG_JULIAN_DAY_L(13)  FIXED BIN(15)   INIT(                     02500000
+         /*NONE*/                                  0,                   02510000
+         /*JAN */                                  31,                  02520000
+         /*FEB */                                  60,                  02530000
+         /*MAR */                                  91,                  02540000
+         /*APR */                                  121,                 02550000
+         /*MAY */                                  152,                 02560000
+         /*JUN */                                  182,                 02570000
+         /*JUL */                                  213,                 02580000
+         /*AUG */                                  244,                 02590000
+         /*SEP */                                  274,                 02600000
+         /*OCT */                                  305,                 02610000
+         /*NOV */                                  335,                 02620000
+         /*DEC */                                  366),                02630000
+    3    WG_DAY_TABLE_DT,                     /* DUTCH              */  02640000
+     5   WG_DAY_DT(7)         CHAR(16)        INIT(                     02650000
+         /* MONDAY    */                           'MAANDAG',           02660000
+         /* TUESDAY   */                           'DINSDAG',           02670000
+         /* WEDNESDAY */                           'WOENSDAG',          02680000
+         /* THURSDAY  */                           'DONDERDAG',         02690000
+         /* FRIDAY    */                           'VRIJDAG',           02700000
+         /* SATURDAY  */                           'ZATERDAG',          02710000
+         /* SUNDAY    */                           'ZONDAG'),           02720000
+    3    WG_SUFFIX_TABLE_DT,                  /* DUTCH              */  02730000
+     5   WG_SUFFIX_DT(31)     CHAR(4)         INIT(                     02740000
+         /*  1        */                           '    ',              02750000
+         /*  2        */                           '    ',              02760000
+         /*  3        */                           '    ',              02770000
+         /*  4        */                           '    ',              02780000
+         /*  5        */                           '    ',              02790000
+         /*  6        */                           '    ',              02800000
+         /*  7        */                           '    ',              02810000
+         /*  8        */                           '    ',              02820000
+         /*  9        */                           '    ',              02830000
+         /* 10        */                           '    ',              02840000
+         /* 11        */                           '    ',              02850000
+         /* 12        */                           '    ',              02860000
+         /* 13        */                           '    ',              02870000
+         /* 14        */                           '    ',              02880000
+         /* 15        */                           '    ',              02890000
+         /* 16        */                           '    ',              02900000
+         /* 17        */                           '    ',              02910000
+         /* 18        */                           '    ',              02920000
+         /* 19        */                           '    ',              02930000
+         /* 20        */                           '    ',              02940000
+         /* 21        */                           '    ',              02950000
+         /* 22        */                           '    ',              02960000
+         /* 23        */                           '    ',              02970000
+         /* 24        */                           '    ',              02980000
+         /* 25        */                           '    ',              02990000
+         /* 26        */                           '    ',              03000000
+         /* 27        */                           '    ',              03010000
+         /* 28        */                           '    ',              03020000
+         /* 29        */                           '    ',              03030000
+         /* 30        */                           '    ',              03040000
+         /* 31        */                           '    '),             03050000
+    3    WG_MONTH_TABLE_DT,                   /* DUTCH              */  03060000
+     5   WG_MONTH_DT(12)      CHAR(16)        INIT(                     03070000
+         /* JANUARY   */                           'JANUARI',           03080000
+         /* FEBRUARY  */                           'FEBRUARI',          03090000
+         /* MARCH     */                           'MAART',             03100000
+         /* APRIL     */                           'APRIL',             03110000
+         /* MAY       */                           'MEI',               03120000
+         /* JUNE      */                           'JUNI',              03130000
+         /* JULY      */                           'JULI',              03140000
+         /* AUGUST    */                           'AUGUSTUS',          03150000
+         /* SEPTEMBER */                           'SEPTEMBER',         03160000
+         /* OCTOBER   */                           'OKTOBER',           03170000
+         /* NOVEMBER  */                           'NOVEMBER',          03180000
+         /* DECEMBER  */                           'DECEMBER'),         03190000
+    3    WG_DAY_TABLE_EN,                     /* ENGLISH            */  03200000
+     5   WG_DAY_EN(7)         CHAR(16)        INIT(                     03210000
+         /* MONDAY    */                           'MONDAY',            03220000
+         /* TUESDAY   */                           'TUESDAY',           03230000
+         /* WEDNESDAY */                           'WEDNESDAY',         03240000
+         /* THURSDAY  */                           'THURSDAY',          03250000
+         /* FRIDAY    */                           'FRIDAY',            03260000
+         /* SATURDAY  */                           'SATURDAY',          03270000
+         /* SUNDAY    */                           'SUNDAY'),           03280000
+    3    WG_SUFFIX_TABLE_EN,                  /* ENGLISH            */  03290000
+     5   WG_SUFFIX_EN(31)     CHAR(4)         INIT(                     03300000
+         /*  1        */                           'ST  ',              03310000
+         /*  2        */                           'ND  ',              03320000
+         /*  3        */                           'RD  ',              03330000
+         /*  4        */                           'TH  ',              03340000
+         /*  5        */                           'TH  ',              03350000
+         /*  6        */                           'TH  ',              03360000
+         /*  7        */                           'TH  ',              03370000
+         /*  8        */                           'TH  ',              03380000
+         /*  9        */                           'TH  ',              03390000
+         /* 10        */                           'TH  ',              03400000
+         /* 11        */                           'TH  ',              03410000
+         /* 12        */                           'TH  ',              03420000
+         /* 13        */                           'TH  ',              03430000
+         /* 14        */                           'TH  ',              03440000
+         /* 15        */                           'TH  ',              03450000
+         /* 16        */                           'TH  ',              03460000
+         /* 17        */                           'TH  ',              03470000
+         /* 18        */                           'TH  ',              03480000
+         /* 19        */                           'TH  ',              03490000
+         /* 20        */                           'TH  ',              03500000
+         /* 21        */                           'ST  ',              03510000
+         /* 22        */                           'ND  ',              03520000
+         /* 23        */                           'RD  ',              03530000
+         /* 24        */                           'TH  ',              03540000
+         /* 25        */                           'TH  ',              03550000
+         /* 26        */                           'TH  ',              03560000
+         /* 27        */                           'TH  ',              03570000
+         /* 28        */                           'TH  ',              03580000
+         /* 29        */                           'TH  ',              03590000
+         /* 30        */                           'TH  ',              03600000
+         /* 31        */                           'ST  '),             03610000
+    3    WG_MONTH_TABLE_EN,                   /* ENGLISH            */  03620000
+     5   WG_MONTH_EN(12)      CHAR(16)        INIT(                     03630000
+         /* JANUARY   */                           'JANUARY',           03640000
+         /* FEBRUARY  */                           'FEBRUARY',          03650000
+         /* MARCH     */                           'MARCH',             03660000
+         /* APRIL     */                           'APRIL',             03670000
+         /* MAY       */                           'MAY',               03680000
+         /* JUNE      */                           'JUNE',              03690000
+         /* JULY      */                           'JULY',              03700000
+         /* AUGUST    */                           'AUGUST',            03710000
+         /* SEPTEMBER */                           'SEPTEMBER',         03720000
+         /* OCTOBER   */                           'OCTOBER',           03730000
+         /* NOVEMBER  */                           'NOVEMBER',          03740000
+         /* DECEMBER  */                           'DECEMBER'),         03750000
+    3    WG_DAY_TABLE_ES,                     /* SPANISH            */  03760000
+     5   WG_DAY_ES(7)         CHAR(16)        INIT(                     03770000
+         /* MONDAY    */                           'LUNES',             03780000
+         /* TUESDAY   */                           'MARTES',            03790000
+         /* WEDNESDAY */                           'MIERCOLES',         03800000
+         /* THURSDAY  */                           'JUEVES',            03810000
+         /* FRIDAY    */                           'VIERNES',           03820000
+         /* SATURDAY  */                           'SABADO',            03830000
+         /* SUNDAY    */                           'DOMINGO'),          03840000
+    3    WG_SUFFIX_TABLE_ES,                  /* SPANISH            */  03850000
+     5   WG_SUFFIX_ES(31)     CHAR(4)         INIT(                     03860000
+         /*  1        */                           '    ',              03870000
+         /*  2        */                           '    ',              03880000
+         /*  3        */                           '    ',              03890000
+         /*  4        */                           '    ',              03900000
+         /*  5        */                           '    ',              03910000
+         /*  6        */                           '    ',              03920000
+         /*  7        */                           '    ',              03930000
+         /*  8        */                           '    ',              03940000
+         /*  9        */                           '    ',              03950000
+         /* 10        */                           '    ',              03960000
+         /* 11        */                           '    ',              03970000
+         /* 12        */                           '    ',              03980000
+         /* 13        */                           '    ',              03990000
+         /* 14        */                           '    ',              04000000
+         /* 15        */                           '    ',              04010000
+         /* 16        */                           '    ',              04020000
+         /* 17        */                           '    ',              04030000
+         /* 18        */                           '    ',              04040000
+         /* 19        */                           '    ',              04050000
+         /* 20        */                           '    ',              04060000
+         /* 21        */                           '    ',              04070000
+         /* 22        */                           '    ',              04080000
+         /* 23        */                           '    ',              04090000
+         /* 24        */                           '    ',              04100000
+         /* 25        */                           '    ',              04110000
+         /* 26        */                           '    ',              04120000
+         /* 27        */                           '    ',              04130000
+         /* 28        */                           '    ',              04140000
+         /* 29        */                           '    ',              04150000
+         /* 30        */                           '    ',              04160000
+         /* 31        */                           '    '),             04170000
+    3    WG_MONTH_TABLE_ES,                   /* SPANISH            */  04180000
+     5   WG_MONTH_ES(12)      CHAR(16)        INIT(                     04190000
+         /* JANUARY   */                           'ENERO',             04200000
+         /* FEBRUARY  */                           'FEBRERO',           04210000
+         /* MARCH     */                           'MARZO',             04220000
+         /* APRIL     */                           'ABRIL',             04230000
+         /* MAY       */                           'MAYO',              04240000
+         /* JUNE      */                           'JUNIO',             04250000
+         /* JULY      */                           'JULIO',             04260000
+         /* AUGUST    */                           'AGOSTO',            04270000
+         /* SEPTEMBER */                           'SEPTIEMBRE',        04280000
+         /* OCTOBER   */                           'OCTUBRE',           04290000
+         /* NOVEMBER  */                           'NOVIEMBRE',         04300000
+         /* DECEMBER  */                           'DICIEMBRE'),        04310000
+    3    WG_DAY_TABLE_FR,                     /* FRENCH             */  04320000
+     5   WG_DAY_FR(7)         CHAR(16)        INIT(                     04330000
+         /* MONDAY    */                           'LUNDI',             04340000
+         /* TUESDAY   */                           'MARDI',             04350000
+         /* WEDNESDAY */                           'MERCREDI',          04360000
+         /* THURSDAY  */                           'JEUDI',             04370000
+         /* FRIDAY    */                           'VENDREDI',          04380000
+         /* SATURDAY  */                           'SAMEDI',            04390000
+         /* SUNDAY    */                           'DIMANCHE'),         04400000
+    3    WG_SUFFIX_TABLE_FR,                  /* FRENCH             */  04410000
+     5   WG_SUFFIX_FR(31)     CHAR(4)         INIT(                     04420000
+         /*  1        */                           '    ',              04430000
+         /*  2        */                           '    ',              04440000
+         /*  3        */                           '    ',              04450000
+         /*  4        */                           '    ',              04460000
+         /*  5        */                           '    ',              04470000
+         /*  6        */                           '    ',              04480000
+         /*  7        */                           '    ',              04490000
+         /*  8        */                           '    ',              04500000
+         /*  9        */                           '    ',              04510000
+         /* 10        */                           '    ',              04520000
+         /* 11        */                           '    ',              04530000
+         /* 12        */                           '    ',              04540000
+         /* 13        */                           '    ',              04550000
+         /* 14        */                           '    ',              04560000
+         /* 15        */                           '    ',              04570000
+         /* 16        */                           '    ',              04580000
+         /* 17        */                           '    ',              04590000
+         /* 18        */                           '    ',              04600000
+         /* 19        */                           '    ',              04610000
+         /* 20        */                           '    ',              04620000
+         /* 21        */                           '    ',              04630000
+         /* 22        */                           '    ',              04640000
+         /* 23        */                           '    ',              04650000
+         /* 24        */                           '    ',              04660000
+         /* 25        */                           '    ',              04670000
+         /* 26        */                           '    ',              04680000
+         /* 27        */                           '    ',              04690000
+         /* 28        */                           '    ',              04700000
+         /* 29        */                           '    ',              04710000
+         /* 30        */                           '    ',              04720000
+         /* 31        */                           '    '),             04730000
+    3    WG_MONTH_TABLE_FR,                   /* FRENCH             */  04740000
+     5   WG_MONTH_FR(12)      CHAR(16)        INIT(                     04750000
+         /* JANUARY   */                           'JANVIER',           04760000
+         /* FEBRUARY  */                           'FEVRIER',           04770000
+         /* MARCH     */                           'MARS',              04780000
+         /* APRIL     */                           'AVRIL',             04790000
+         /* MAY       */                           'MAI',               04800000
+         /* JUNE      */                           'JUIN',              04810000
+         /* JULY      */                           'JUILLET',           04820000
+         /* AUGUST    */                           'AOUT',              04830000
+         /* SEPTEMBER */                           'SEPTEMBRE',         04840000
+         /* OCTOBER   */                           'OCTOBRE',           04850000
+         /* NOVEMBER  */                           'NOVEMBRE',          04860000
+         /* DECEMBER  */                           'DECEMBRE'),         04870000
+    3    WG_DAY_TABLE_GE,                     /* GERMAN             */  04880000
+     5   WG_DAY_GE(7)         CHAR(16)        INIT(                     04890000
+         /* MONDAY    */                           'MONTAG',            04900000
+         /* TUESDAY   */                           'DIENSTAG',          04910000
+         /* WEDNESDAY */                           'MITTWOCH',          04920000
+         /* THURSDAY  */                           'DONNERSTAG',        04930000
+         /* FRIDAY    */                           'FREITAG',           04940000
+         /* SATURDAY  */                           'SAMSTAG',           04950000
+         /* SUNDAY    */                           'SONNTAG'),          04960000
+    3    WG_SUFFIX_TABLE_GE,                  /* GERMAN             */  04970000
+     5   WG_SUFFIX_GE(31)     CHAR(4)         INIT(                     04980000
+         /*  1        */                           '    ',              04990000
+         /*  2        */                           '    ',              05000000
+         /*  3        */                           '    ',              05010000
+         /*  4        */                           '    ',              05020000
+         /*  5        */                           '    ',              05030000
+         /*  6        */                           '    ',              05040000
+         /*  7        */                           '    ',              05050000
+         /*  8        */                           '    ',              05060000
+         /*  9        */                           '    ',              05070000
+         /* 10        */                           '    ',              05080000
+         /* 11        */                           '    ',              05090000
+         /* 12        */                           '    ',              05100000
+         /* 13        */                           '    ',              05110000
+         /* 14        */                           '    ',              05120000
+         /* 15        */                           '    ',              05130000
+         /* 16        */                           '    ',              05140000
+         /* 17        */                           '    ',              05150000
+         /* 18        */                           '    ',              05160000
+         /* 19        */                           '    ',              05170000
+         /* 20        */                           '    ',              05180000
+         /* 21        */                           '    ',              05190000
+         /* 22        */                           '    ',              05200000
+         /* 23        */                           '    ',              05210000
+         /* 24        */                           '    ',              05220000
+         /* 25        */                           '    ',              05230000
+         /* 26        */                           '    ',              05240000
+         /* 27        */                           '    ',              05250000
+         /* 28        */                           '    ',              05260000
+         /* 29        */                           '    ',              05270000
+         /* 30        */                           '    ',              05280000
+         /* 31        */                           '    '),             05290000
+    3    WG_MONTH_TABLE_GE,                   /* GERMAN             */  05300000
+     5   WG_MONTH_GE(12)      CHAR(16)        INIT(                     05310000
+         /* JANUARY   */                           'JANUAR',            05320000
+         /* FEBRUARY  */                           'FEBRUAR',           05330000
+         /* MARCH     */                           'MARZ',              05340000
+         /* APRIL     */                           'APRIL',             05350000
+         /* MAY       */                           'MAI',               05360000
+         /* JUNE      */                           'JUNI',              05370000
+         /* JULY      */                           'JULI',              05380000
+         /* AUGUST    */                           'AUGUST',            05390000
+         /* SEPTEMBER */                           'SEPTEMBER',         05400000
+         /* OCTOBER   */                           'OCTOBER',           05410000
+         /* NOVEMBER  */                           'NOVEMBER',          05420000
+         /* DECEMBER  */                           'DEZEMBER'),         05430000
+    3    WG_DAY_TABLE_PO,                     /* PORTUGUESE         */  05440000
+     5   WG_DAY_PO(7)         CHAR(16)        INIT(                     05450000
+         /* MONDAY    */                           'SEGUNDA-FEIRA',     05460000
+         /* TUESDAY   */                           'TERCA-FEIRA',       05470000
+         /* WEDNESDAY */                           'QUARTA_FEIRA',      05480000
+         /* THURSDAY  */                           'QUINTA_FEIRA',      05490000
+         /* FRIDAY    */                           'SEXTA_FEIRA',       05500000
+         /* SATURDAY  */                           'SABADO',            05510000
+         /* SUNDAY    */                           'DOMINGO'),          05520000
+    3    WG_SUFFIX_TABLE_PO,                  /* PORTUGUESE         */  05530000
+     5   WG_SUFFIX_PO(31)     CHAR(4)         INIT(                     05540000
+         /*  1        */                           '    ',              05550000
+         /*  2        */                           '    ',              05560000
+         /*  3        */                           '    ',              05570000
+         /*  4        */                           '    ',              05580000
+         /*  5        */                           '    ',              05590000
+         /*  6        */                           '    ',              05600000
+         /*  7        */                           '    ',              05610000
+         /*  8        */                           '    ',              05620000
+         /*  9        */                           '    ',              05630000
+         /* 10        */                           '    ',              05640000
+         /* 11        */                           '    ',              05650000
+         /* 12        */                           '    ',              05660000
+         /* 13        */                           '    ',              05670000
+         /* 14        */                           '    ',              05680000
+         /* 15        */                           '    ',              05690000
+         /* 16        */                           '    ',              05700000
+         /* 17        */                           '    ',              05710000
+         /* 18        */                           '    ',              05720000
+         /* 19        */                           '    ',              05730000
+         /* 20        */                           '    ',              05740000
+         /* 21        */                           '    ',              05750000
+         /* 22        */                           '    ',              05760000
+         /* 23        */                           '    ',              05770000
+         /* 24        */                           '    ',              05780000
+         /* 25        */                           '    ',              05790000
+         /* 26        */                           '    ',              05800000
+         /* 27        */                           '    ',              05810000
+         /* 28        */                           '    ',              05820000
+         /* 29        */                           '    ',              05830000
+         /* 30        */                           '    ',              05840000
+         /* 31        */                           '    '),             05850000
+    3    WG_MONTH_TABLE_PO,                   /* PORTUGUESE         */  05860000
+     5   WG_MONTH_PO(12)      CHAR(16)        INIT(                     05870000
+         /* JANUARY   */                           'JANEIRO',           05880000
+         /* FEBRUARY  */                           'FEVEREIRO',         05890000
+         /* MARCH     */                           'MARCO',             05900000
+         /* APRIL     */                           'ABRIL',             05910000
+         /* MAY       */                           'MAIO',              05920000
+         /* JUNE      */                           'JUNHO',             05930000
+         /* JULY      */                           'JULHO',             05940000
+         /* AUGUST    */                           'AUGOSTO',           05950000
+         /* SEPTEMBER */                           'SETEMBRO',          05960000
+         /* OCTOBER   */                           'OUTUBRO',           05970000
+         /* NOVEMBER  */                           'NOVEMBRO',          05980000
+         /* DECEMBER  */                           'DEZEMBRO'),         05990000
+    3    END                  CHAR(0);                                  06000000
+ DCL                                                                    06010000
+   1     WG_DAY_TABLE,                                                  06020000
+    3    WG_DAY(7)            CHAR(16);                                 06030000
+ DCL                                                                    06040000
+   1     WG_SUFFIX_TABLE,                                               06050000
+    3    WG_SUFFIX(31)        CHAR(4);                                  06060000
+ DCL                                                                    06070000
+   1     WG_MONTH_TABLE,                                                06080000
+    3    WG_MONTH(12)         CHAR(16);                                 06090000
+ DCL                                                                    06100000
+   1     WG_DAYS_IN_MONTH_TABLE,                                        06110000
+    3    WG_MAX_DAY(12)       PIC'99';                                  06120000
+ DCL                                                                    06130000
+   1     WG_JULIAN_DAYS_TABLE,                                          06140000
+    3    WG_JULIAN_DAY(13)    FIXED BIN(15);                            06150000
+ DCL                                                                    06160000
+   1     WG_MESSAGES,                                                   06170000
+    3    WG_MSG001             CHAR(40)       INIT(                     06180000
+         'DATV001W INVALID INPUT FORMAT #'),                            06190000
+    3    WG_MSG002             CHAR(40)       INIT(                     06200000
+         'DATV002W MISSING INPUT FORMAT'),                              06210000
+    3    WG_MSG003             CHAR(40)       INIT(                     06220000
+         'DATV003W INVALID OUTPUT FORMAT #'),                           06230000
+    3    WG_MSG004             CHAR(40)       INIT(                     06240000
+         'DATV004W MISSING OUTPUT FORMAT'),                             06250000
+    3    WG_MSG005             CHAR(40)       INIT(                     06260000
+         'DATV005W INVALID FUNCTION #'),                                06270000
+    3    WG_MSG006             CHAR(40)       INIT(                     06280000
+         'DATV006W INVALID PERIOD #'),                                  06290000
+    3    WG_MSG007             CHAR(40)       INIT(                     06300000
+         'DATV007I UNKNOWN LANGUAGE #'),                                06310000
+    3    WG_MSG008             CHAR(40)       INIT(                     06320000
+         'DATV008W MISSING SQL LOCAL FORMAT'),                          06330000
+    3    WG_MSG010             CHAR(40)       INIT(                     06340000
+         'DATV010W INVALID DATE #'),                                    06350000
+    3    WG_MSG011             CHAR(40)       INIT(                     06360000
+         'DATV011E ERROR IN AFG_BUILD_OUTPUT'),                         06370000
+    3    WG_MSG012             CHAR(40)       INIT(                     06380000
+         'DATV012E INVALID LEAVE TYPE #'),                              06390000
+    3    WG_MSG013             CHAR(40)       INIT(                     06400000
+         'DATV013E INVALID ADJUSTMENT #'),                              06410000
+    3    WG_MSG014             CHAR(40)       INIT(                     06420000
+         'DATV014E CAN NOT GIVE SSSSS FOR #'),                          06430000
+    3    END                   CHAR(0);                                 06440000
+1/*******************************************************************/  06450000
+ /*      VALIDATION WORK FIELDS                                     */  06460000
+ /*******************************************************************/  06470000
+0DCL                                                                    06480000
+   1     WI_VALIDATION        CTL,                                      06490000
+    3    WI_DATE_FIELDS,                                                06500000
+     5   WI_SSS               PIC'999',                                 06510000
+     5   WI_SSSSS             PIC'99999',                               06520000
+     5   WI_DDD               PIC'999',                                 06530000
+     5   WI_DDDDD             PIC'99999',                               06540000
+    3    WI_DATE,                                                       06550000
+     5   WI_DATE_DD           PIC'99',                                  06560000
+     5   WI_DATE_MM           PIC'99',                                  06570000
+     5   WI_DATE_YYYY_X,                                                06580000
+      7  WI_DATE_CC           PIC'99',                                  06590000
+      7  WI_DATE_YY           PIC'99',                                  06600000
+    3    WI_LEAP_YEAR_DATA    ALIGNED,                                  06610000
+     5   WI_LEAP_YEAR         BIT(1),                                   06620000
+    3    END                  CHAR(0);                                  06630000
+-DCL                                                                    06640000
+         WI_DATE_NUM          BASED(ADDR(WI_DATE))                      06650000
+                              PIC'(8)9';                                06660000
+-DCL                                                                    06670000
+         WI_DATE_YYYY         BASED(ADDR(WI_DATE_YYYY_X))               06680000
+                              PIC'(4)9';                                06690000
+1DCL                                                                    06700000
+   1     WL_FORMATS           CTL,                                      06710000
+    3    WL_IN_FORMAT,                                                  06720000
+     5   WL_IN_COUNT          FIXED BIN(15),                            06730000
+     5   WL_IN_DD             FIXED BIN(15),                            06740000
+     5   WL_IN_DDD            FIXED BIN(15),                            06750000
+     5   WL_IN_DDDDD          FIXED BIN(15),                            06760000
+     5   WL_IN_DELIMITER(12),                                           06770000
+      7  WL_IN_DLM            FIXED BIN(15),                            06780000
+      7  WL_IN_DLM_CHAR       CHAR(1),                     /* PTM0627 */06790000
+     5   WL_IN_MM             FIXED BIN(15),                            06800000
+     5   WL_IN_MMM            FIXED BIN(15),                            06810000
+     5   WL_IN_CC             FIXED BIN(15),                            06820000
+     5   WL_IN_YY             FIXED BIN(15),                            06830000
+     5   WL_IN_YYYY           FIXED BIN(15),                            06840000
+     5   WL_IN_MACHINE        CHAR(2),                                  06850000
+     5   WL_IN_WEEK           FIXED BIN(15),                            06860000
+    3    WL_IN_SAVED,                                                   06870000
+     5   WL_IN_SAVED_DATA     CHAR(52),                                 06880000
+    3    WL_IN_DLM_INDEX      FIXED BIN(15),                            06890000
+    3    WL_OUT_FORMAT,                                                 06900000
+     5   WL_OUT_COUNT         FIXED BIN(15),                            06910000
+     5   WL_OUT_DD            FIXED BIN(15),                            06920000
+     5   WL_OUT_DDD           FIXED BIN(15),                            06930000
+     5   WL_OUT_DDDDD         FIXED BIN(15),                            06940000
+     5   WL_OUT_DELIMITER(12),                                          06950000
+      7  WL_OUT_DLM           FIXED BIN(15),                            06960000
+      7  WL_OUT_DLM_DATA      CHAR(1),                                  06970000
+     5   WL_OUT_MM            FIXED BIN(15),                            06980000
+     5   WL_OUT_MMM           FIXED BIN(15),                            06990000
+     5   WL_OUT_MMMMM         FIXED BIN(15),                            07000000
+     5   WL_OUT_MMMMMM        FIXED BIN(15),                            07010000
+     5   WL_OUT_NN            FIXED BIN(15),                            07020000
+     5   WL_OUT_W             FIXED BIN(15),                            07030000
+     5   WL_OUT_WW            FIXED BIN(15),                            07040000
+     5   WL_OUT_WWW           FIXED BIN(15),                            07050000
+     5   WL_OUT_WWWWW         FIXED BIN(15),                            07060000
+     5   WL_OUT_WWWWWW        FIXED BIN(15),                            07070000
+     5   WL_OUT_CC            FIXED BIN(15),                            07080000
+     5   WL_OUT_YY            FIXED BIN(15),                            07090000
+     5   WL_OUT_YYYY          FIXED BIN(15),                            07100000
+     5   WL_OUT_WEEK          FIXED BIN(15),                            07110000
+    3    WL_OUT_SAVED,                                                  07120000
+     5   WL_OUT_SAVED_DATA    CHAR(91),                                 07130000
+    3    WL_OUT_DLM_INDEX     FIXED BIN(15),                            07140000
+    3    END                  CHAR(0);                                  07150000
+ DCL                                                                    07160000
+         WL_IN_SAVE           BASED(ADDR(WL_IN_FORMAT))                 07170000
+                              LIKE WL_IN_SAVED;                         07180000
+ DCL                                                                    07190000
+         WL_OUT_SAVE          BASED(ADDR(WL_OUT_FORMAT))                07200000
+                              LIKE WL_OUT_SAVED;                        07210000
+0/*******************************************************************/  07220000
+ /*      WORK FILEDS                                                */  07230000
+ /*******************************************************************/  07240000
+0DCL WRK_WI_DATE_MM     FIXED DEC (5,2);                                07250000
+ DCL WRK_WD_PERIOD      FIXED DEC (5,2);                                07260000
+ DCL WRK_RESULT         FIXED DEC (5,2);                                07270000
+-/*******************************************************************/  07280000
+ /*      BUILTIN FUNCTIONS                                          */  07290000
+ /*******************************************************************/  07300000
+ DCL ABS          BUILTIN;                                              07310000
+ DCL ADDR         BUILTIN;                                              07320000
+ DCL ALLOC        BUILTIN;                                              07330000
+ DCL ALLOCN       BUILTIN;                                              07340000
+ DCL CEIL         BUILTIN;                                              07350000
+ DCL DATETIME     BUILTIN;                               /* PTM1054 */  07360000
+ DCL INDEX        BUILTIN;                                              07370000
+ DCL MAX          BUILTIN;                                              07380000
+ DCL MIN          BUILTIN;                                              07390000
+ DCL MOD          BUILTIN;                                              07400000
+ DCL STRING       BUILTIN;                                              07410000
+ DCL SUBSTR       BUILTIN;                                              07420000
+ DCL TRANSLATE    BUILTIN;                                              07430000
+ DCL UNSPEC       BUILTIN;                                              07440000
+ DCL VERIFY       BUILTIN;                                              07450000
+1/*******************************************************************/  07460000
+ /*      MAIN PROCESSING                                            */  07470000
+ /*******************************************************************/  07480000
+ WD_STATUS                    = '';                                     07490000
+ CALL AC_INITIALISE;                                                    07500000
+ IF WD_STATUS = ''                                                      07510000
+ THEN DO;                                                               07520000
+   CALL AE_PROCESS_IN_DATE;                                             07530000
+   IF WD_STATUS = ''                                                    07540000
+    & WD_FUNCTION ¬= 'V'                                                07550000
+   THEN DO;                                                             07560000
+     WA_CASE_FLAG             = '';                                     07570000
+     CALL AF_PROCESS_OUT_DATE;                                          07580000
+     END;                                                               07590000
+   END;                                                                 07600000
+1AC_INITIALISE:                                                         07610000
+   PROC;                                                                07620000
+0/*******************************************************************/  07630000
+ /*      INITIALISATION PROCESSING                                  */  07640000
+ /*******************************************************************/  07650000
+0%IF TEST = 'Y'                                                         07660000
+ %THEN                                                                  07670000
+    %DO;                                                                07680000
+    PUT SKIP LIST ('AC_INITIALISE');                                    07690000
+    %END;                                                               07700000
+0SUCCESS_POSIT:                                                         07710000
+   DO;                                                                  07720000
+0  /* ALLOCATE WORK FIELDS IF FIRST RUN OF ROUTINE                  */  07730000
+   IF ALLOCN(WA_COUNTERS) = 0                                           07740000
+   THEN                                                                 07750000
+      DO;                                                               07760000
+      ALLOC WA_COUNTERS;                                                07770000
+      ALLOC WA_POINTERS;                                                07780000
+      ALLOC WF_WORK_FIELDS;                                             07790000
+      ALLOC WI_VALIDATION;                                              07800000
+      ALLOC WL_FORMATS;                                                 07810000
+      WA_COUNTERS             = '';                                     07820000
+      WA_IN_FORMAT            = 'UNINITIALISED';                        07830000
+      WA_OUT_FORMAT           = 'UNINITIALISED';                        07840000
+      WF_WORK_FIELDS          = '';                                     07850000
+      WI_VALIDATION           = '';                                     07860000
+      WL_FORMATS              = '';                                     07870000
+      WA_MISC                 = 1;                                      07880000
+      END;                                                              07890000
+0  /* INITIALISE VARIABLES                                          */  07900000
+   WD_STATUS                  = '';                                     07910000
+   WD_MESSAGE                 = '';                                     07920000
+   WD_OUT_DATE                = '';                                     07930000
+0  /* VALIDATE PARAMETERS                                           */  07940000
+   IF (WD_FUNCTION ¬= '')                                               07950000
+    & (WD_FUNCTION ¬= 'C')                                              07960000
+    & (WD_FUNCTION ¬= 'D')                                              07970000
+    & (WD_FUNCTION ¬= 'S')                                              07980000
+    & (WD_FUNCTION ¬= 'V')                                              07990000
+   THEN                                                                 08000000
+      DO;                                                               08010000
+      WD_STATUS               = 'F';                                    08020000
+      WD_MESSAGE              = WG_MSG005;                              08030000
+      CALL G_MSG_VAR(WD_FUNCTION);                                      08040000
+      LEAVE SUCCESS_POSIT;                                              08050000
+      END;                                                              08060000
+   IF (WD_PERIOD_TYPE ¬= '')                                            08070000
+    & (WD_PERIOD_TYPE ¬= 'D')                                           08080000
+    & (WD_PERIOD_TYPE ¬= 'W')                                           08090000
+    & (WD_PERIOD_TYPE ¬= 'M')                                           08100000
+    & (WD_PERIOD_TYPE ¬= 'Y')                                           08110000
+   THEN                                                                 08120000
+      DO;                                                               08130000
+      WD_STATUS               = 'F';                                    08140000
+      WD_MESSAGE              = WG_MSG006;                              08150000
+      CALL G_MSG_VAR(WD_PERIOD_TYPE);                                   08160000
+      LEAVE SUCCESS_POSIT;                                              08170000
+      END;                                                              08180000
+0  /* SETUP NLS SUPPORT                                             */  08190000
+   CALL ACA_SETUP_NLS;                                                  08200000
+   IF WD_STATUS ¬= ''                                                   08210000
+   THEN                                                                 08220000
+      LEAVE SUCCESS_POSIT;                                              08230000
+0  /* PROCESS INPUT FORMAT                                          */  08240000
+   WA_CASE_FLAG               = 'U';                                    08250000
+   IF WD_IN_FORMAT = WA_IN_FORMAT                                       08260000
+    & WD_IN_FORMAT ¬= 'DATE'                                            08270000
+   THEN                                                                 08280000
+      WL_IN_SAVE              = WL_IN_SAVED;                            08290000
+   ELSE                                                                 08300000
+      DO;                                                               08310000
+      CALL ACC_VET_IN_FORMAT;                                           08320000
+      WL_IN_SAVED             = WL_IN_SAVE;                             08330000
+      IF WD_STATUS ¬= ''                                                08340000
+      THEN                                                              08350000
+         LEAVE SUCCESS_POSIT;                                           08360000
+      END;                                                              08370000
+0  /*    PROCESS OUTPUT FORMAT                                      */  08380000
+   IF WD_FUNCTION = 'V'       /* VALIDATE                           */  08390000
+   THEN                       /* OUTPUT FORMAT NOT USED             */  08400000
+      LEAVE SUCCESS_POSIT;                                              08410000
+   IF WD_OUT_FORMAT = WA_OUT_FORMAT                                     08420000
+   THEN                                                                 08430000
+      WL_OUT_SAVE             = WL_OUT_SAVED;                           08440000
+   ELSE                                                                 08450000
+      DO;                                                               08460000
+      CALL ACE_VET_OUT_FORMAT;                                          08470000
+      WL_OUT_SAVED            = WL_OUT_SAVE;                            08480000
+      IF WD_STATUS ¬= ''                                                08490000
+      THEN                                                              08500000
+         LEAVE SUCCESS_POSIT;                                           08510000
+      END;                                                              08520000
+0  END SUCCESS_POSIT;                                                   08530000
+0END AC_INITIALISE;                                                     08540000
+1ACA_SETUP_NLS:                                                         08550000
+   PROC;                                                                08560000
+0/*******************************************************************/  08570000
+ /*      SETUP NATIONAL LANGUAGE SUPPORT                            */  08580000
+ /*******************************************************************/  08590000
+0%IF TEST = 'Y'                                                         08600000
+ %THEN                                                                  08610000
+    %DO;                                                                08620000
+    PUT SKIP LIST ('ACA_SETUP_NLS');                                    08630000
+    %END;                                                               08640000
+0SUCCESS_POSIT:                                                         08650000
+0  DO;                                                                  08660000
+0  IF WD_LANGUAGE = ''                                                  08670000
+   THEN                                                                 08680000
+      WD_LANGUAGE = WC_DEFAULT_LANG;                                    08690000
+0  SELECT;                                                              08700000
+      WHEN (WD_LANGUAGE = 'EN')                                         08710000
+         DO;                                  /* ENGLISH            */  08720000
+         WG_DAY_TABLE         = WG_DAY_TABLE_EN;                        08730000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_EN;                     08740000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_EN;                      08750000
+         END;                                                           08760000
+      WHEN (WD_LANGUAGE = 'DT')                                         08770000
+         DO;                                  /* DUTCH              */  08780000
+         WG_DAY_TABLE         = WG_DAY_TABLE_DT;                        08790000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_DT;                     08800000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_DT;                      08810000
+         END;                                                           08820000
+      WHEN (WD_LANGUAGE = 'ES')                                         08830000
+         DO;                                  /* SPANISH            */  08840000
+         WG_DAY_TABLE         = WG_DAY_TABLE_ES;                        08850000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_ES;                     08860000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_ES;                      08870000
+         END;                                                           08880000
+      WHEN (WD_LANGUAGE = 'GE')                                         08890000
+         DO;                                  /* GERMAN             */  08900000
+         WG_DAY_TABLE         = WG_DAY_TABLE_GE;                        08910000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_GE;                     08920000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_GE;                      08930000
+         END;                                                           08940000
+      WHEN (WD_LANGUAGE = 'FR')                                         08950000
+         DO;                                  /* FRENCH             */  08960000
+         WG_DAY_TABLE         = WG_DAY_TABLE_FR;                        08970000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_FR;                     08980000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_FR;                      08990000
+         END;                                                           09000000
+      WHEN (WD_LANGUAGE = 'PO')                                         09010000
+         DO;                                  /* PORTUGUESE         */  09020000
+         WG_DAY_TABLE         = WG_DAY_TABLE_PO;                        09030000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_PO;                     09040000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_PO;                      09050000
+         END;                                                           09060000
+      OTHERWISE                                                         09070000
+         DO;                                                            09080000
+         WD_MESSAGE           = WG_MSG007;                              09090000
+         CALL G_MSG_VAR(WD_LANGUAGE);                                   09100000
+         WG_DAY_TABLE         = WG_DAY_TABLE_EN;                        09110000
+         WG_SUFFIX_TABLE      = WG_SUFFIX_TABLE_EN;                     09120000
+         WG_MONTH_TABLE       = WG_MONTH_TABLE_EN;                      09130000
+         END;                                                           09140000
+      END;                                                              09150000
+0  END SUCCESS_POSIT;                                                   09160000
+0END ACA_SETUP_NLS;                                                     09170000
+1ACC_VET_IN_FORMAT:                                                     09180000
+   PROC;                                                                09190000
+0/*******************************************************************/  09200000
+ /*      VALIDATE INPUT FORMAT                                      */  09210000
+ /*******************************************************************/  09220000
+0%IF TEST = 'Y'                                                         09230000
+ %THEN                                                                  09240000
+    %DO;                                                                09250000
+    PUT SKIP LIST ('ACC_VET_IN_FORMAT');                                09260000
+    %END;                                                               09270000
+                                 /* GET CURRENT DATE                */  09280000
+ STRING(WC_SYS_DATE)          = SUBSTR(DATETIME(),1,8);  /* PTM1054 */  09290000
+ /*******************************************************************/  09300000
+ /* THESE LINES DELETED                                 SOC PTM1054 */  09310000
+ /*                                                                 */  09320000
+ /*IF (WC_SYS_YY < WC_CENT_YY) & (WC_SYS_CC = '')                   */  09330000
+ /*THEN DO;                                                         */  09340000
+ /*  WC_SYS_CC                  = 20;                               */  09350000
+ /*  END;                                                           */  09360000
+ /*ELSE DO;                                                         */  09370000
+ /*  WC_SYS_CC                  = 19;                               */  09380000
+ /*  END;                                               EOC PTM1054 */  09390000
+ /*******************************************************************/  09400000
+ UNSPEC(WD_IN_FORMAT)         = UNSPEC(WD_IN_FORMAT) | UNSPEC((40)' '); 09410000
+ WA_IN_FORMAT                 = WD_IN_FORMAT;                           09420000
+ WA_TEST_STRING               = WD_IN_FORMAT;                           09430000
+ WL_IN_FORMAT                 = '';                                     09440000
+ WA_TEST_INDEX                = 1;                                      09450000
+ WL_IN_DLM_INDEX              = 1;                                      09460000
+ SELECT;                                                                09470000
+   WHEN (WA_TEST_STRING = '') DO;                                       09480000
+     WD_STATUS                = 'F';                                    09490000
+     WD_MESSAGE               = WG_MSG002;                              09500000
+     END;                                                               09510000
+   WHEN (WA_TEST_STRING = 'DATE') DO;                                   09520000
+     WA_TEST_STRING           = 'YYYY-MM-DD';                           09530000
+     WD_IN_DATE               = WC_SYS_CC                               09540000
+                             || WC_SYS_YY                               09550000
+                             || '-'                                     09560000
+                             || WC_SYS_MM                               09570000
+                             || '-'                                     09580000
+                             || WC_SYS_DD;                              09590000
+     END;                                                               09600000
+   WHEN (WA_TEST_STRING = 'EUR') DO;                                    09610000
+     WA_TEST_STRING           = 'DD.MM.YYYY';                           09620000
+     END;                                                               09630000
+   WHEN (WA_TEST_STRING = 'ISO') DO;                                    09640000
+     WA_TEST_STRING           = 'YYYY-MM-DD';                           09650000
+     END;                                                               09660000
+   WHEN (WA_TEST_STRING = 'USA') DO;                                    09670000
+     WA_TEST_STRING           = 'MM/DD/YYYY';                           09680000
+     END;                                                               09690000
+   WHEN (WA_TEST_STRING = 'JIS') DO;                                    09700000
+     WA_TEST_STRING           = 'YYYY-MM-DD';                           09710000
+     END;                                                               09720000
+   WHEN ((WA_TEST_STRING = 'LOCAL') & (WC_SQL_LOCAL = '')) DO;          09730000
+     WD_STATUS                = 'F';                                    09740000
+     WD_MESSAGE               = WG_MSG008;                              09750000
+     END;                                                               09760000
+   WHEN (WA_TEST_STRING = 'LOCAL') DO;                                  09770000
+     WA_TEST_STRING           = WC_SQL_LOCAL;                           09780000
+     END;                                                               09790000
+   OTHERWISE;                                                           09800000
+   END;                                                                 09810000
+0DO WHILE((WA_TEST_STRING ¬= '') & (WD_STATUS = ''));                   09820000
+   CALL ACCC_BREAKDOWN_IN_FORMAT;                                       09830000
+   IF WA_POINTER > WL_IN_COUNT                                          09840000
+   THEN DO;                                                             09850000
+     WL_IN_COUNT              = WA_POINTER;                             09860000
+     END;                                                               09870000
+   END;                                                                 09880000
+0END ACC_VET_IN_FORMAT;                                                 09890000
+1ACCC_BREAKDOWN_IN_FORMAT:                                              09900000
+   PROC;                                                                09910000
+0/*******************************************************************/  09920000
+ /*      DECOMPOSE INPUT FORMAT                                     */  09930000
+ /*******************************************************************/  09940000
+0%IF TEST = 'Y'                                                         09950000
+ %THEN                                                                  09960000
+    %DO;                                                                09970000
+    PUT SKIP LIST ('ACCC_BREAKDOWN_IN_FORMAT');                         09980000
+    %END;                                                               09990000
+0SUCCESS_POSIT:                                                         10000000
+   DO;                                                                  10010000
+0  WA_CHECK_STRING            = '';                                     10020000
+   WA_CHECK_INDEX             = 1;                                      10030000
+   WA_POINTER                 = WA_TEST_INDEX;                          10040000
+   WA_TEST_ITEM               = WA_TEST_CHAR(WA_TEST_INDEX);            10050000
+   UNSPEC(WA_TEST_ITEM)       = UNSPEC(WA_TEST_ITEM) | UNSPEC(' ');     10060000
+   WA_CHECK_ITEM              = WA_TEST_ITEM;                           10070000
+0  DO WHILE((WA_CHECK_ITEM = WA_TEST_ITEM) & (WA_TEST_STRING ¬= ''));   10080000
+      CALL F_TRANSFER;                                                  10090000
+      END;                                                              10100000
+0  %IF TEST = 'Y'                                                       10110000
+   %THEN                                                                10120000
+      %DO;                                                              10130000
+      PUT SKIP DATA (WA_POINTER, WA_CHECK_STRING);                      10140000
+      %END;                                                             10150000
+0  SELECT;                                                              10160000
+      WHEN (WA_CHECK_STRING = 'DD')                                     10170000
+         WL_IN_DD             = WA_POINTER;                             10180000
+      WHEN (WA_CHECK_STRING = 'DDD')                                    10190000
+         WL_IN_DDD            = WA_POINTER;                             10200000
+      WHEN (WA_CHECK_STRING = 'DDDDD')                                  10210000
+         WL_IN_DDDDD          = WA_POINTER;                             10220000
+      WHEN (WA_CHECK_STRING = 'MM')                                     10230000
+         WL_IN_MM             = WA_POINTER;                             10240000
+      WHEN (WA_CHECK_STRING = 'MMM')                                    10250000
+         WL_IN_MMM            = WA_POINTER;                             10260000
+      WHEN (WA_CHECK_STRING = 'YY')                                     10270000
+         WL_IN_YY             = WA_POINTER;                             10280000
+      WHEN (WA_CHECK_STRING = 'YYYY')                                   10290000
+         WL_IN_YYYY           = WA_POINTER;                             10300000
+      WHEN (WA_CHECK_STRING = WA_TEST_ITEM)                             10310000
+         DO;                                                            10320000
+         IF WL_IN_DLM_INDEX > 12                                        10330000
+         THEN                                                           10340000
+            DO;                                                         10350000
+            WD_STATUS         = 'F';                                    10360000
+            WD_MESSAGE        = WG_MSG001;                              10370000
+            CALL G_MSG_VAR(WD_IN_FORMAT);                               10380000
+            END;                                                        10390000
+         ELSE                                                           10400000
+            DO;                                                         10410000
+            WL_IN_DLM_CHAR (WL_IN_DLM_INDEX) = WA_TEST_ITEM; /*PTM0627*/10420000
+            WL_IN_DLM (WL_IN_DLM_INDEX) = WA_POINTER;                   10430000
+            WL_IN_DLM_INDEX   = WL_IN_DLM_INDEX + 1;                    10440000
+            END;                                                        10450000
+         END;                                                           10460000
+      WHEN (WA_TEST_STRING = '')                                        10470000
+         ;                                                              10480000
+      OTHERWISE                                                         10490000
+         DO;                                                            10500000
+         WD_STATUS            = 'F';                                    10510000
+         WD_MESSAGE           = WG_MSG001;                              10520000
+         CALL G_MSG_VAR(WD_IN_FORMAT);                                  10530000
+         END;                                                           10540000
+      END;                                                              10550000
+0  END SUCCESS_POSIT;                                                   10560000
+0END ACCC_BREAKDOWN_IN_FORMAT;                                          10570000
+1ACE_VET_OUT_FORMAT:                                                    10580000
+   PROC;                                                                10590000
+0/*******************************************************************/  10600000
+ /*      VALIDATE OUTPUT FORMAT                                     */  10610000
+ /*******************************************************************/  10620000
+ UNSPEC(WD_OUT_FORMAT)        = UNSPEC(WD_OUT_FORMAT) | UNSPEC((40)' ');10630000
+ WA_OUT_FORMAT                = WD_OUT_FORMAT;                          10640000
+ WA_TEST_STRING               = WD_OUT_FORMAT;                          10650000
+ WL_OUT_FORMAT                = '';                                     10660000
+ WA_TEST_INDEX                = 1;                                      10670000
+ WL_OUT_DLM_INDEX             = 1;                                      10680000
+ SELECT;                                                                10690000
+   WHEN(WA_TEST_STRING = '') DO;                                        10700000
+     WD_STATUS                = 'F';                                    10710000
+     WD_MESSAGE               = WG_MSG004;                              10720000
+     END;                                                               10730000
+   WHEN(WA_TEST_STRING = 'EUR') DO;                                     10740000
+     WA_TEST_STRING           = 'DD.MM.YYYY';                           10750000
+     END;                                                               10760000
+   WHEN(WA_TEST_STRING = 'ISO') DO;                                     10770000
+     WA_TEST_STRING           = 'YYYY-MM-DD';                           10780000
+     END;                                                               10790000
+   WHEN(WA_TEST_STRING = 'USA') DO;                                     10800000
+     WA_TEST_STRING           = 'MM/DD/YYYY';                           10810000
+     END;                                                               10820000
+   WHEN(WA_TEST_STRING = 'JIS') DO;                                     10830000
+     WA_TEST_STRING           = 'YYYY-MM-DD';                           10840000
+     END;                                                               10850000
+   WHEN((WA_TEST_STRING = 'LOCAL') & (WC_SQL_LOCAL = '')) DO;           10860000
+     WD_STATUS                = 'F';                                    10870000
+     WD_MESSAGE               = WG_MSG008;                              10880000
+     END;                                                               10890000
+   WHEN(WA_TEST_STRING = 'LOCAL') DO;                                   10900000
+     WA_TEST_STRING           = WC_SQL_LOCAL;                           10910000
+     END;                                                               10920000
+   OTHERWISE;                                                           10930000
+   END;                                                                 10940000
+ DO WHILE((WA_TEST_STRING ¬= '') & (WD_STATUS = ''));                   10950000
+   CALL ACEC_BREAKDOWN_OUT_FORMAT;                                      10960000
+   END;                                                                 10970000
+0END ACE_VET_OUT_FORMAT;                                                10980000
+1ACEC_BREAKDOWN_OUT_FORMAT:                                             10990000
+   PROC;                                                                11000000
+0/*******************************************************************/  11010000
+ /*      DECOMPOSE OUTPUT FORMAT                                    */  11020000
+ /*******************************************************************/  11030000
+0%IF TEST = 'Y'                                                         11040000
+ %THEN                                                                  11050000
+    %DO;                                                                11060000
+    PUT SKIP LIST ('ACEC_BREAKDOWN_OUT_FORMAT');                        11070000
+    %END;                                                               11080000
+0SUCCESS_POSIT:                                                         11090000
+   DO;                                                                  11100000
+0  WA_CHECK_STRING            = '';                                     11110000
+   WA_CHECK_INDEX             = 1;                                      11120000
+   WL_OUT_COUNT               = WL_OUT_COUNT + 1;                       11130000
+   WA_TEST_ITEM               = WA_TEST_CHAR(WA_TEST_INDEX);            11140000
+   UNSPEC(WA_TEST_ITEM)       = UNSPEC(WA_TEST_ITEM) | UNSPEC(' ');     11150000
+   WA_CHECK_ITEM              = WA_TEST_ITEM;                           11160000
+0  DO WHILE((WA_CHECK_ITEM = WA_TEST_ITEM) & (WA_TEST_STRING ¬= ''));   11170000
+      CALL F_TRANSFER;                                                  11180000
+      END;                                                              11190000
+0  %IF TEST = 'Y'                                                       11200000
+      %THEN                                                             11210000
+         %DO;                                                           11220000
+         PUT SKIP DATA (WL_OUT_COUNT, WA_CHECK_STRING);                 11230000
+         %END;                                                          11240000
+0  SELECT;                                                              11250000
+      WHEN (WA_CHECK_STRING = 'DD')                                     11260000
+         WL_OUT_DD            = WL_OUT_COUNT;                           11270000
+      WHEN (WA_CHECK_STRING = 'DDD')                                    11280000
+         WL_OUT_DDD           = WL_OUT_COUNT;                           11290000
+      WHEN (WA_CHECK_STRING = 'DDDDD')                                  11300000
+         WL_OUT_DDDDD         = WL_OUT_COUNT;                           11310000
+      WHEN (WA_CHECK_STRING = 'MM')                                     11320000
+         WL_OUT_MM            = WL_OUT_COUNT;                           11330000
+      WHEN (WA_CHECK_STRING = 'MMM')                                    11340000
+         DO;                                                            11350000
+         WL_OUT_MMM           = WL_OUT_COUNT;                           11360000
+         END;                                                           11370000
+      WHEN (WA_CHECK_STRING = 'MMMMM')                                  11380000
+         WL_OUT_MMMMM         = WL_OUT_COUNT;                           11390000
+      WHEN (WA_CHECK_STRING = 'MMMMMM')                                 11400000
+         DO;                                                            11410000
+         WL_OUT_MMMMMM        = WL_OUT_COUNT;                           11420000
+         END;                                                           11430000
+      WHEN (WA_CHECK_STRING = 'NN')                                     11440000
+         DO;                                                            11450000
+         WL_OUT_NN            = WL_OUT_COUNT;                           11460000
+         END;                                                           11470000
+      WHEN (WA_CHECK_STRING = 'W')                                      11480000
+         WL_OUT_W             = WL_OUT_COUNT;                           11490000
+      WHEN (WA_CHECK_STRING = 'WW')                                     11500000
+         WL_OUT_WW            = WL_OUT_COUNT;                           11510000
+      WHEN (WA_CHECK_STRING = 'WWW')                                    11520000
+         DO;                                                            11530000
+         WL_OUT_WWW           = WL_OUT_COUNT;                           11540000
+         END;                                                           11550000
+      WHEN (WA_CHECK_STRING = 'WWWWW')                                  11560000
+         WL_OUT_WWWWW         = WL_OUT_COUNT;                           11570000
+      WHEN (WA_CHECK_STRING = 'WWWWWW')                                 11580000
+         DO;                                                            11590000
+         WL_OUT_WWWWWW        = WL_OUT_COUNT;                           11600000
+         END;                                                           11610000
+      WHEN (WA_CHECK_STRING = 'YY')                                     11620000
+         WL_OUT_YY            = WL_OUT_COUNT;                           11630000
+      WHEN (WA_CHECK_STRING = 'YYYY')                                   11640000
+         WL_OUT_YYYY          = WL_OUT_COUNT;                           11650000
+      WHEN (WA_CHECK_STRING = 'CC')                                     11660000
+         WL_OUT_CC            = WL_OUT_COUNT;                           11670000
+      WHEN (WA_CHECK_STRING = WA_TEST_ITEM)                             11680000
+         DO;                                                            11690000
+         IF WL_OUT_DLM_INDEX > 12                                       11700000
+         THEN                                                           11710000
+            DO;                                                         11720000
+            WD_STATUS         = 'F';                                    11730000
+            WD_MESSAGE        = WG_MSG003;                              11740000
+            CALL G_MSG_VAR(WD_OUT_FORMAT);                              11750000
+            END;                                                        11760000
+         ELSE                                                           11770000
+            DO;                                                         11780000
+            WL_OUT_DLM (WL_OUT_DLM_INDEX)      = WL_OUT_COUNT;          11790000
+            WL_OUT_DLM_DATA (WL_OUT_DLM_INDEX) =                        11800000
+              SUBSTR(WA_CHECK_STRING, 1, 1);                            11810000
+            WL_OUT_DLM_INDEX  = WL_OUT_DLM_INDEX + 1;                   11820000
+            END;                                                        11830000
+         END;                                                           11840000
+      WHEN (WA_TEST_STRING = '')                                        11850000
+         ;                                                              11860000
+      OTHERWISE                                                         11870000
+         DO;                                                            11880000
+         WD_STATUS            = 'F';                                    11890000
+         WD_MESSAGE           = WG_MSG003;                              11900000
+         CALL G_MSG_VAR(WD_OUT_FORMAT);                                 11910000
+         END;                                                           11920000
+      END;                                                              11930000
+0  END SUCCESS_POSIT;                                                   11940000
+0END ACEC_BREAKDOWN_OUT_FORMAT;                                         11950000
+1AE_PROCESS_IN_DATE:                                                    11960000
+   PROC;                                                                11970000
+0/*******************************************************************/  11980000
+ /*      CONVERT DATE TO STANDARD FORMAT                            */  11990000
+ /*******************************************************************/  12000000
+0%IF TEST = 'Y'                                                         12010000
+ %THEN                                                                  12020000
+    %DO;                                                                12030000
+    PUT SKIP LIST ('AE_PROCESS_IN_DATE');                               12040000
+    %END;                                                               12050000
+0CALL AEC_CONVERT_IN_1 (WD_IN_DATE,                                     12060000
+                          WF_DDDDD_1,                                   12070000
+                          WF_MMMMM_1);                                  12080000
+ IF WD_STATUS = ''                                                      12090000
+ THEN DO;                                                               12100000
+   CALL AEE_DATE_VALIDATE;                                              12110000
+   END;                                                                 12120000
+ IF WD_STATUS = ''                                                      12130000
+ THEN DO;                                                               12140000
+   CALL AEE_DATE_VALIDATE;                                              12150000
+   IF (WD_FUNCTION = 'D')   /* DIFFERENCE                         */    12160000
+    | (WD_FUNCTION = 'S')   /* SUM                                */    12170000
+   THEN DO;                                                             12180000
+     CALL AEC_CONVERT_IN_1 (WD_IN_DATE_2,                               12190000
+                            WF_DDDDD_2,                                 12200000
+                            WF_MMMMM_2);                                12210000
+     IF WD_STATUS = ''                                                  12220000
+     THEN DO;                                                           12230000
+       CALL AEE_DATE_VALIDATE;                                          12240000
+       END;                                                             12250000
+     END;                                                               12260000
+   END;                                                                 12270000
+0END AE_PROCESS_IN_DATE;                                                12280000
+1AEC_CONVERT_IN_1:                                                      12290000
+   PROC (IN_DATE, DDDDD, MMMMM);                                        12300000
+0/*******************************************************************/  12310000
+ /*      CONVERT INPUT DATE TO STANDARD FORMAT                      */  12320000
+ /*******************************************************************/  12330000
+ DCL IN_DATE      CHAR(40);                                             12340000
+ DCL DDDDD        FIXED BIN(31);                                        12350000
+ DCL MMMMM        FIXED BIN(31);                                        12360000
+0%IF TEST = 'Y'                                                         12370000
+ %THEN                                                                  12380000
+    %DO;                                                                12390000
+    PUT SKIP LIST ('AEC_CONVERT_IN_1');                                 12400000
+    %END;                                                               12410000
+ WF_DATE_NUM                  = 0;                                      12420000
+ WA_TEST_INDEX                = 1;                                      12430000
+ WL_IN_DLM_INDEX              = 1;                                      12440000
+ WA_TEST_DATE                 = IN_DATE;                                12450000
+ WA_TEST_STRING               = IN_DATE;                                12460000
+ WF_DATE_MM                   = 1;                                      12470000
+ WF_DATE_DD                   = 0;                                      12480000
+ WF_DDD                       = 0;                                      12490000
+ DO WHILE ((WD_STATUS = '') & (WA_TEST_INDEX ¬> WL_IN_COUNT));          12500000
+   CALL AECC_BREAKDOWN_INPUT;                                           12510000
+   END;                                                                 12520000
+ IF WD_STATUS = ''                                                      12530000
+ THEN DO;                                                               12540000
+   IF WL_IN_DDDDD ¬= 0                                                  12550000
+   THEN DO;                                                             12560000
+     DDDDD                    = WF_DDDDD                                12570000
+                              + CALC_YYYY_DDDDD(1900);                  12580000
+     END;                                                               12590000
+   ELSE DO;                                                             12600000
+     IF WL_IN_YYYY = 0                                                  12610000
+     THEN DO;                                                           12620000
+       IF WL_IN_YY = 0                                                  12630000
+       THEN DO;                                                         12640000
+         WF_DATE_CC           = WC_SYS_CC;                              12650000
+         WF_DATE_YY           = WC_SYS_YY;                              12660000
+         END;                                                           12670000
+       ELSE DO;                                                         12680000
+         IF WF_DATE_YY < WC_CENT_YY                                     12690000
+         THEN DO;                                                       12700000
+           WF_DATE_CC         = 20;                                     12710000
+           END;                                                         12720000
+         ELSE DO;                                                       12730000
+           WF_DATE_CC         = 19;                                     12740000
+           END;                                                         12750000
+         END;                                                           12760000
+       END;                                                             12770000
+     IF WL_IN_DDD = 0                                                   12780000
+      & WL_IN_DD  = 0                                                   12790000
+     THEN DO;                                                           12800000
+       WF_DATE_DD             = 01;                                     12810000
+       END;                                                             12820000
+     CALL E_LEAP_YEAR (WF_DATE_YYYY);                                   12830000
+    %IF TEST = 'Y'                                                      12840000
+    %THEN                                                               12850000
+       %DO;                                                             12860000
+       PUT SKIP DATA (WF_DATE);                                         12870000
+       %END;                                                            12880000
+     DDDDD                    = CALC_YYYY_DDDDD(WF_DATE_YYYY)           12890000
+                              + WG_JULIAN_DAY(WF_DATE_MM)               12900000
+                              + WF_DDD                                  12910000
+                              + WF_DATE_DD;                             12920000
+     MMMMM                    = (WF_DATE_YYYY * 12) + WF_DATE_MM;       12930000
+     END;                                                               12940000
+   END;                                                                 12950000
+0  %IF TEST = 'Y'                                                       12960000
+   %THEN                                                                12970000
+      %DO;                                                              12980000
+      PUT SKIP DATA (DDDDD, MMMMM);                                     12990000
+      %END;                                                             13000000
+0END AEC_CONVERT_IN_1;                                                  13010000
+1AECC_BREAKDOWN_INPUT:                                                  13020000
+   PROC;                                                                13030000
+0/*******************************************************************/  13040000
+ /*      DECOMPOSE INPUT DATE                                       */  13050000
+ /*******************************************************************/  13060000
+0%IF TEST = 'Y'                                                         13070000
+ %THEN                                                                  13080000
+    %DO;                                                                13090000
+    PUT SKIP LIST ('AECC_BREAKDOWN_INPUT');                             13100000
+    PUT SKIP DATA (WA_TEST_INDEX, WA_TEST_STRING);                      13110000
+    %END;                                                               13120000
+0SUCCESS_POSIT:                                                         13130000
+   DO;                                                                  13140000
+   WA_CHECK_INDEX             = 1;                                      13150000
+0  SELECT;                                                              13160000
+      WHEN (WL_IN_DD = WA_TEST_INDEX)                                   13170000
+         CALL AECC01_BREAKDOWN_DD;                                      13180000
+      WHEN (WL_IN_DDD = WA_TEST_INDEX)                                  13190000
+         CALL AECC02_BREAKDOWN_DDD;                                     13200000
+      WHEN (WL_IN_DDDDD = WA_TEST_INDEX)                                13210000
+         CALL AECC03_BREAKDOWN_DDDDD;                                   13220000
+      WHEN (WL_IN_MM = WA_TEST_INDEX)                                   13230000
+         CALL AECC04_BREAKDOWN_MM;                                      13240000
+      WHEN (WL_IN_MMM = WA_TEST_INDEX)                                  13250000
+         CALL AECC05_BREAKDOWN_MMM;                                     13260000
+      WHEN (WL_IN_YY = WA_TEST_INDEX)                                   13270000
+         CALL AECC06_BREAKDOWN_YY;                                      13280000
+      WHEN (WL_IN_YYYY = WA_TEST_INDEX)                                 13290000
+         CALL AECC07_BREAKDOWN_YYYY;                                    13300000
+0     WHEN (WL_IN_DLM (WL_IN_DLM_INDEX) = WA_TEST_INDEX)                13310000
+         DO;                                                            13320000
+         CALL AECC08_CHECK_DLM;                          /* PTM0627 */  13330000
+         CALL F_TRANSFER;                                               13340000
+         WL_IN_DLM_INDEX      = WL_IN_DLM_INDEX + 1;                    13350000
+         END;                                                           13360000
+0     OTHERWISE                                                         13370000
+         DO;                                                            13380000
+         WD_STATUS            = 'F';                                    13390000
+         WD_MESSAGE           = WG_MSG001;                              13400000
+         CALL G_MSG_VAR(WD_IN_FORMAT);                                  13410000
+         END;                                                           13420000
+      END;                                                              13430000
+0  END SUCCESS_POSIT;                                                   13440000
+0END AECC_BREAKDOWN_INPUT;                                              13450000
+1AECC01_BREAKDOWN_DD:                                                   13460000
+   PROC;                                                                13470000
+0/*******************************************************************/  13480000
+ /*      DECOMPOSE INPUT DATE FORMAT DD                             */  13490000
+ /*******************************************************************/  13500000
+0%IF TEST = 'Y'                                                         13510000
+ %THEN                                                                  13520000
+    %DO;                                                                13530000
+    PUT SKIP LIST ('AECC01_BREAKDOWN_DD');                              13540000
+    %END;                                                               13550000
+ STRING(WF_DATE_DD)           = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,2); 13560000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 2;                      13570000
+ IF VERIFY(STRING(WF_DATE_DD), '1234567890') ¬= 0                       13580000
+ THEN DO;                                                               13590000
+   CALL AECCC_DATE_ERROR;                                               13600000
+   END;                                                                 13610000
+0END AECC01_BREAKDOWN_DD;                                               13620000
+1AECC02_BREAKDOWN_DDD:                                                  13630000
+   PROC;                                                                13640000
+0/*******************************************************************/  13650000
+ /*      DECOMPOSE INPUT DATE FORMAT DDD                            */  13660000
+ /*******************************************************************/  13670000
+0%IF TEST = 'Y'                                                         13680000
+ %THEN                                                                  13690000
+    %DO;                                                                13700000
+    PUT SKIP LIST ('AECC02_BREAKDOWN_DDD');                             13710000
+    %END;                                                               13720000
+ STRING(WF_DDD)               = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,3); 13730000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 3;                      13740000
+ IF VERIFY(STRING(WF_DDD), '1234567890') ¬= 0                           13750000
+  | WF_DDD < 1                                                          13760000
+  | WF_DDD > 366                                                        13770000
+ THEN DO;                                                               13780000
+   CALL AECCC_DATE_ERROR;                                               13790000
+   END;                                                                 13800000
+0END AECC02_BREAKDOWN_DDD;                                              13810000
+1AECC03_BREAKDOWN_DDDDD:                                                13820000
+   PROC;                                                                13830000
+0/*******************************************************************/  13840000
+ /*      DECOMPOSE INPUT DATE FORMAT DDDDD                          */  13850000
+ /*******************************************************************/  13860000
+0%IF TEST = 'Y'                                                         13870000
+ %THEN                                                                  13880000
+    %DO;                                                                13890000
+    PUT SKIP LIST ('AECC03_BREAKDOWN_DDDDD');                           13900000
+    %END;                                                               13910000
+ STRING(WF_DDDDD)             = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,5); 13920000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 5;                      13930000
+ IF VERIFY(STRING(WF_DDDDD), '1234567890') ¬= 0                         13940000
+ THEN DO;                                                               13950000
+   CALL AECCC_DATE_ERROR;                                               13960000
+   END;                                                                 13970000
+0END AECC03_BREAKDOWN_DDDDD;                                            13980000
+1AECC04_BREAKDOWN_MM:                                                   13990000
+   PROC;                                                                14000000
+0/*******************************************************************/  14010000
+ /*      DECOMPOSE INPUT DATE FORMAT MM                             */  14020000
+ /*******************************************************************/  14030000
+0%IF TEST = 'Y'                                                         14040000
+ %THEN                                                                  14050000
+    %DO;                                                                14060000
+    PUT SKIP LIST ('AECC04_BREAKDOWN_MM');                              14070000
+    %END;                                                               14080000
+ STRING(WF_DATE_MM)           = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,2); 14090000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 2;                      14100000
+ IF VERIFY(STRING(WF_DATE_MM), '1234567890') ¬= 0                       14110000
+  | WF_DATE_MM < 1                                                      14120000
+  | WF_DATE_MM > 12                                                     14130000
+ THEN DO;                                                               14140000
+   CALL AECCC_DATE_ERROR;                                               14150000
+   END;                                                                 14160000
+0END AECC04_BREAKDOWN_MM;                                               14170000
+1AECC05_BREAKDOWN_MMM:                                                  14180000
+   PROC;                                                                14190000
+0/*******************************************************************/  14200000
+ /*      DECOMPOSE INPUT DATE FORMAT MMM                            */  14210000
+ /*******************************************************************/  14220000
+0%IF TEST = 'Y'                                                         14230000
+ %THEN                                                                  14240000
+    %DO;                                                                14250000
+    PUT SKIP LIST ('AECC05_BREAKDOWN_MMM');                             14260000
+    %END;                                                               14270000
+ WF_MMM                       = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,3); 14280000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 3;                      14290000
+ UNSPEC(WF_MMM)               = UNSPEC(WF_MMM) | UNSPEC('   ');         14300000
+ DO WA_MISC = 1 TO 12 UNTIL(WA_WORK_STRING = WF_MMM);                   14310000
+   WA_WORK_STRING             = SUBSTR(WG_MONTH (WA_MISC), 1, 3);       14320000
+   UNSPEC(WA_WORK_STRING)     = UNSPEC(WA_WORK_STRING) | UNSPEC('   '); 14330000
+   END;                                                                 14340000
+ WF_DATE_MM                   = WA_MISC;                                14350000
+ IF WA_WORK_STRING ¬= WF_MMM                                            14360000
+ THEN DO;                                                               14370000
+   CALL AECCC_DATE_ERROR;                                               14380000
+   END;                                                                 14390000
+0END AECC05_BREAKDOWN_MMM;                                              14400000
+1AECC06_BREAKDOWN_YY:                                                   14410000
+   PROC;                                                                14420000
+0/*******************************************************************/  14430000
+ /*      DECOMPOSE INPUT DATE FORMAT YY                             */  14440000
+ /*******************************************************************/  14450000
+0%IF TEST = 'Y'                                                         14460000
+ %THEN                                                                  14470000
+    %DO;                                                                14480000
+    PUT SKIP LIST ('AECC06_BREAKDOWN_YY');                              14490000
+    %END;                                                               14500000
+ STRING(WF_DATE_YY)           = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,2); 14510000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 2;                      14520000
+ IF VERIFY(STRING(WF_DATE_YY), '1234567890') ¬= 0                       14530000
+ THEN DO;                                                               14540000
+   CALL AECCC_DATE_ERROR;                                               14550000
+   END;                                                                 14560000
+0END AECC06_BREAKDOWN_YY;                                               14570000
+1AECC07_BREAKDOWN_YYYY:                                                 14580000
+   PROC;                                                                14590000
+0/*******************************************************************/  14600000
+ /*      DECOMPOSE INPUT DATE FORMAT YYYY                           */  14610000
+ /*******************************************************************/  14620000
+0%IF TEST = 'Y'                                                         14630000
+ %THEN                                                                  14640000
+    %DO;                                                                14650000
+    PUT SKIP LIST ('AECC07_BREAKDOWN_YYYY');                            14660000
+    %END;                                                               14670000
+ STRING(WF_DATE_YYYY)         = SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,4); 14680000
+ WA_TEST_INDEX                = WA_TEST_INDEX + 4;                      14690000
+ IF VERIFY(STRING(WF_DATE_YYYY), '1234567890') ¬= 0                     14700000
+ THEN DO;                                                               14710000
+   CALL AECCC_DATE_ERROR;                                               14720000
+   END;                                                                 14730000
+0END AECC07_BREAKDOWN_YYYY;                                             14740000
+                                                     /* SOC PTM0627 */  14750000
+1AECC08_CHECK_DLM:                                                      14760000
+   PROC;                                                                14770000
+0/*******************************************************************/  14780000
+ /*      CHECK DELIMITER DEPENDING ON INPUT FORMAT                  */  14790000
+ /*******************************************************************/  14800000
+0%IF TEST = 'Y'                                                         14810000
+ %THEN                                                                  14820000
+    %DO;                                                                14830000
+    PUT SKIP LIST ('AECC08_CHECK_DLM');                                 14840000
+    %END;                                                               14850000
+ IF (SUBSTR(WA_TEST_STRING,WA_TEST_INDEX,1) ¬=                          14860000
+           WL_IN_DLM_CHAR(WL_IN_DLM_INDEX))                             14870000
+ THEN DO;                                                               14880000
+   CALL AECCC_DATE_ERROR;                                               14890000
+   END;                                                                 14900000
+0END AECC08_CHECK_DLM;                                                  14910000
+                                                     /* EOC PTM0627 */  14920000
+1AECCC_DATE_ERROR:                                                      14930000
+   PROC;                                                                14940000
+0/*******************************************************************/  14950000
+ /*      GIVE ERROR MESSAGE FOR INVALID DATE                        */  14960000
+ /*******************************************************************/  14970000
+0%IF TEST = 'Y'                                                         14980000
+ %THEN                                                                  14990000
+    %DO;                                                                15000000
+    PUT SKIP LIST ('AECCC_DATE_ERROR');                                 15010000
+    %END;                                                               15020000
+0SUCCESS_POSIT:                                                         15030000
+   DO;                                                                  15040000
+   WD_STATUS                  = 'D';                                    15050000
+   WD_MESSAGE                 = WG_MSG010;                              15060000
+   CALL G_MSG_VAR(WA_TEST_DATE);                                        15070000
+0  END SUCCESS_POSIT;                                                   15080000
+0END AECCC_DATE_ERROR;                                                  15090000
+1AEE_DATE_VALIDATE:                                                     15100000
+   PROC;                                                                15110000
+0/*******************************************************************/  15120000
+ /*      ELIMINATE BAD DATES                                        */  15130000
+ /*******************************************************************/  15140000
+0%IF TEST = 'Y'                                                         15150000
+ %THEN                                                                  15160000
+    %DO;                                                                15170000
+    PUT SKIP LIST ('AEE_DATE_VALIDATE');                                15180000
+    PUT SKIP DATA (WI_DATE);                                            15190000
+    %END;                                                               15200000
+0SUCCESS_POSIT:                                                         15210000
+   DO;                                                                  15220000
+0  /* DATE IS ALWAYS VALID IF IT IS LESS THAN MAX DAYS FOR MONTH    */  15230000
+   CALL E_LEAP_YEAR (WF_DATE_YYYY);                                     15240000
+   IF WF_DATE_DD > WG_MAX_DAY (WF_DATE_MM)                              15250000
+   THEN                                                                 15260000
+      DO;                                                               15270000
+      WD_STATUS               = 'D';                                    15280000
+      WD_MESSAGE              = WG_MSG010;                              15290000
+      CALL G_MSG_VAR(STRING(WF_DATE));                                  15300000
+      END;                                                              15310000
+   IF WF_DDD > WG_JULIAN_DAY (13)                                       15320000
+   THEN DO;                                                             15330000
+      WD_STATUS               = 'D';                                    15340000
+      WD_MESSAGE              = WG_MSG010;                              15350000
+      CALL G_MSG_VAR(STRING(WF_DDD));                                   15360000
+      END;                                                              15370000
+0  END SUCCESS_POSIT;                                                   15380000
+0END AEE_DATE_VALIDATE;                                                 15390000
+1AF_PROCESS_OUT_DATE:                                                   15400000
+   PROC;                                                                15410000
+0/*******************************************************************/  15420000
+ /*      BUILD OUTPUT DATE                                          */  15430000
+ /*******************************************************************/  15440000
+ WI_DATE_NUM                  = 0;                                      15450000
+ CALL AFC_ADD_PERIOD;                                                   15460000
+ IF WD_STATUS = ''                                                      15470000
+ THEN DO;                                                               15480000
+   CALL AFF_PREPARE_OUTPUT;                                             15490000
+   IF WD_STATUS = ''                                                    15500000
+   THEN DO;                                                             15510000
+0    /* BUILD OUTPUT DATE IN WA_CHECK_STRING                        */  15520000
+     WA_CHECK_STRING          = '';                                     15530000
+     WA_POINTER               = 0;                                      15540000
+     WA_CHECK_INDEX           = 1;                                      15550000
+     WL_OUT_DLM_INDEX         = 1;                                      15560000
+     DO WHILE (WA_POINTER < WL_OUT_COUNT);                              15570000
+        CALL AFG_BUILD_OUTPUT;                                          15580000
+        END;                                                            15590000
+     IF WD_STATUS = ''                                                  15600000
+     THEN DO;                                                           15610000
+       WD_OUT_DATE            = WA_CHECK_STRING;                        15620000
+       END;                                                             15630000
+     END;                                                               15640000
+   END;                                                                 15650000
+0END AF_PROCESS_OUT_DATE;                                               15660000
+1AFC_ADD_PERIOD:                                                        15670000
+   PROC;                                                                15680000
+0/*******************************************************************/  15690000
+ /*      APPLY PERIOD CHANGE TO OUTPUT DATE                         */  15700000
+ /*******************************************************************/  15710000
+ WA_DDDDD_WORK                = WF_DDDDD_1;                             15720000
+ IF WD_FUNCTION = 'D'                                                   15730000
+ THEN                                                                   15740000
+   WA_DDDDD_WORK              = ABS (WA_DDDDD_WORK - WF_DDDDD_2);       15750000
+ IF WD_FUNCTION = 'S'                                                   15760000
+ THEN                                                                   15770000
+   WA_DDDDD_WORK              = WA_DDDDD_WORK + WF_DDDDD_2;             15780000
+ SELECT;                                                                15790000
+   WHEN ((WD_PERIOD_TYPE = '')                /* PERIOD = DAYS      */  15800000
+       | (WD_PERIOD_TYPE = 'D')) DO;                                    15810000
+     WA_DDDDD_WORK            = WA_DDDDD_WORK + WD_PERIOD;              15820000
+     END;                                                               15830000
+   WHEN (WD_PERIOD_TYPE = 'W') DO;            /* PERIOD = WEEKS     */  15840000
+     WA_DDDDD_WORK            = WA_DDDDD_WORK + (WD_PERIOD * 7);        15850000
+     END;                                                               15860000
+   OTHERWISE;                                                           15870000
+   END;                                                                 15880000
+0  %IF TEST = 'Y'                                                       15890000
+   %THEN                                                                15900000
+      %DO;                                                              15910000
+      PUT SKIP DATA (WA_DDDDD_WORK);                                    15920000
+      %END;                                                             15930000
+ CALL AFCC_COMPUTE_DDMMCCYY;                                            15940000
+ SELECT;                                                                15950000
+   WHEN (WD_PERIOD_TYPE = 'M') DO;            /* PERIOD = MONTH     */  15960000
+                                                                        15970000
+   /* WRK FIELDS MUST BE USED TO AVOID TRUNCATION ERRORS            */  15980000
+                                                                        15990000
+     WRK_WI_DATE_MM = WI_DATE_MM;                                       16000000
+     WRK_WD_PERIOD  = WD_PERIOD;                                        16010000
+     WRK_RESULT     = (WRK_WI_DATE_MM + WRK_WD_PERIOD) / 12;            16020000
+                                                                        16030000
+     WA_MISC                  = WI_DATE_MM + WD_PERIOD;                 16040000
+     WI_DATE_MM               = MOD(WA_MISC - 1,12) + 1;                16050000
+     WI_DATE_YYYY             = WI_DATE_YYYY + CEIL (WRK_RESULT) - 1;   16060000
+     CALL E_LEAP_YEAR (WI_DATE_YYYY);                                   16070000
+     WI_DATE_DD               = MIN(WG_MAX_DAY (WI_DATE_MM),WI_DATE_DD);16080000
+     END;                                                               16090000
+   WHEN (WD_PERIOD_TYPE = 'Y') DO;            /* PERIOD = YEARS     */  16100000
+     WI_DATE_YYYY             = WI_DATE_YYYY + WD_PERIOD;               16110000
+     CALL E_LEAP_YEAR (WI_DATE_YYYY);                                   16120000
+     WI_DATE_DD               = MIN(WG_MAX_DAY (WI_DATE_MM),WI_DATE_DD);16130000
+     END;                                                               16140000
+   OTHERWISE;                                                           16150000
+   END;                                                                 16160000
+0END AFC_ADD_PERIOD;                                                    16170000
+1AFCC_COMPUTE_DDMMCCYY:                                                 16180000
+   PROC;                                                                16190000
+0/*******************************************************************/  16200000
+ /*      CALCULATE DDMMCCYY DATE                                    */  16210000
+ /*******************************************************************/  16220000
+0%IF TEST = 'Y'                                                         16230000
+ %THEN                                                                  16240000
+    %DO;                                                                16250000
+    PUT SKIP LIST ('AFCC_COMPUTE_DDMMCCYY');                            16260000
+    %END;                                                               16270000
+ WI_DATE_NUM                  = 00001900;                               16280000
+ WZ_DATE_YYYY                 = WA_DDDDD_WORK / 365;                    16290000
+ WI_DATE_YYYY                 = MAX(0, WZ_DATE_YYYY                     16300000
+                                       - (WZ_DATE_YYYY / 1461)          16310000
+                                       - 1);                            16320000
+ WZ_DDD                       = WA_DDDDD_WORK                           16330000
+                              - CALC_YYYY_DDDDD(WI_DATE_YYYY);          16340000
+ CALL E_LEAP_YEAR (WI_DATE_YYYY);                                       16350000
+ DO WHILE (WZ_DDD > WG_JULIAN_DAY(13));                                 16360000
+   WZ_DDD                     = WZ_DDD - WG_JULIAN_DAY(13);             16370000
+   WI_DATE_YYYY               = WI_DATE_YYYY + 1;                       16380000
+   CALL E_LEAP_YEAR (WI_DATE_YYYY);                                     16390000
+   END;                                                                 16400000
+ WI_DDD                       = WZ_DDD;                                 16410000
+0  %IF TEST = 'Y'                                                       16420000
+   %THEN                                                                16430000
+      %DO;                                                              16440000
+      PUT SKIP DATA (WI_DATE, WI_DDD, WZ_DDD, WA_DDDDD_WORK);           16450000
+      %END;                                                             16460000
+ WA_MISC                      = 1;                                      16470000
+ DO WHILE(WZ_DDD > WG_JULIAN_DAY(WA_MISC));                             16480000
+   WA_MISC                    = WA_MISC + 1;                            16490000
+   END;                                                                 16500000
+ WA_MISC                      = WA_MISC - 1;                            16510000
+ IF WA_MISC > 0                                                         16520000
+ THEN DO;                                                               16530000
+   WI_DATE_MM                 = WA_MISC;                                16540000
+   WI_DATE_DD                 = WI_DDD - WG_JULIAN_DAY(WA_MISC);        16550000
+   END;                                                                 16560000
+0  %IF TEST = 'Y'                                                       16570000
+   %THEN                                                                16580000
+      %DO;                                                              16590000
+      PUT SKIP DATA (WI_DATE, WI_DDD, WG_JULIAN_DAY(WA_MISC), WA_MISC); 16600000
+      %END;                                                             16610000
+0END AFCC_COMPUTE_DDMMCCYY;                                             16620000
+1AFF_PREPARE_OUTPUT:                                                    16630000
+   PROC;                                                                16640000
+0/*******************************************************************/  16650000
+ /*      PREPARE DATE SEGMENTS FOR OUTPUT                           */  16660000
+ /*******************************************************************/  16670000
+0%IF TEST = 'Y'                                                         16680000
+ %THEN                                                                  16690000
+    %DO;                                                                16700000
+    PUT SKIP LIST ('AFF_PREPARE_OUTPUT');                               16710000
+    %END;                                                               16720000
+ IF WI_DATE_NUM = 0                                                     16730000
+ THEN DO;                                                               16740000
+   WI_DDDDD                   = 0;                                      16750000
+   END;                                                                 16760000
+ ELSE DO;                                                               16770000
+   CALL AFFC_SETUP_DDDDD;                                               16780000
+   END;                                                                 16790000
+0END AFF_PREPARE_OUTPUT;                                                16800000
+1AFFC_SETUP_DDDDD:                                                      16810000
+   PROC;                                                                16820000
+0/*******************************************************************/  16830000
+ /*      SETUP DDDDD VALUE                                          */  16840000
+ /*******************************************************************/  16850000
+0%IF TEST = 'Y'                                                         16860000
+ %THEN                                                                  16870000
+    %DO;                                                                16880000
+    PUT SKIP LIST ('AFFC_SETUP_DDDDD');                                 16890000
+    %END;                                                               16900000
+0SUCCESS_POSIT:                                                         16910000
+   DO;                                                                  16920000
+   WZ_DDDDD                   = CALC_YYYY_DDDDD(WI_DATE_YYYY);          16930000
+0  CALL E_LEAP_YEAR (WI_DATE_YYYY);                                     16940000
+   WA_WEEK_ADJ                = MOD ((WZ_DDDDD + 6), 7) + 6;            16950000
+0  WI_DDD                     = WG_JULIAN_DAY (WI_DATE_MM);             16960000
+   WI_DDD                     = WI_DDD + WI_DATE_DD;                    16970000
+   WZ_DDDDD                   = WZ_DDDDD + WI_DDD;                      16980000
+0  WA_MISC                    = MOD ((WZ_DDDDD + 4), 7) + 1;            16990000
+   WA_WEEKDAY                 = WA_MISC;                                17000000
+0  WA_MISC                    = ((WI_DDD + WA_WEEK_ADJ) / 7);           17010000
+   WA_WEEK                    = WA_MISC;                                17020000
+   IF WI_DATE_YYYY >= 1900                                              17030000
+   THEN DO;                                                             17040000
+     WI_DDDDD           = WZ_DDDDD                                      17050000
+                        - CALC_YYYY_DDDDD(1900);                        17060000
+     END;                                                               17070000
+   ELSE DO;                                                             17080000
+     WI_DDDDD           = WZ_DDDDD;                                     17090000
+     END;                                                               17100000
+0  %IF TEST = 'Y'                                                       17110000
+   %THEN                                                                17120000
+      %DO;                                                              17130000
+      PUT SKIP DATA (WI_DDDDD, WI_DDD, WA_WEEKDAY, WA_WEEK);            17140000
+      %END;                                                             17150000
+0  END SUCCESS_POSIT;                                                   17160000
+0END AFFC_SETUP_DDDDD;                                                  17170000
+1AFG_BUILD_OUTPUT:                                                      17180000
+   PROC;                                                                17190000
+0/*******************************************************************/  17200000
+ /*      BUILD OUTPUT DATE                                          */  17210000
+ /*******************************************************************/  17220000
+0%IF TEST = 'Y'                                                         17230000
+ %THEN                                                                  17240000
+    %DO;                                                                17250000
+    PUT SKIP LIST ('AFG_BUILD_OUTPUT');                                 17260000
+    %END;                                                               17270000
+0SUCCESS_POSIT:                                                         17280000
+   DO;                                                                  17290000
+0  WA_TEST_INDEX              = 1;                                      17300000
+   WA_POINTER                 = WA_POINTER + 1;                         17310000
+0  SELECT;                                                              17320000
+      WHEN (WL_OUT_DD = WA_POINTER)                                     17330000
+         CALL AFG01_BUILD_DD;                                           17340000
+      WHEN (WL_OUT_DDD = WA_POINTER)                                    17350000
+         CALL AFG02_BUILD_DDD;                                          17360000
+      WHEN (WL_OUT_DDDDD = WA_POINTER)                                  17370000
+         CALL AFG03_BUILD_DDDDD;                                        17380000
+      WHEN (WL_OUT_MM = WA_POINTER)                                     17390000
+         CALL AFG04_BUILD_MM;                                           17400000
+      WHEN (WL_OUT_MMM = WA_POINTER)                                    17410000
+         CALL AFG05_BUILD_MMM;                                          17420000
+      WHEN (WL_OUT_MMMMM = WA_POINTER)                                  17430000
+         CALL AFG06_BUILD_MMMMM;                                        17440000
+      WHEN (WL_OUT_MMMMMM = WA_POINTER)                                 17450000
+         CALL AFG07_BUILD_MMMMMM;                                       17460000
+      WHEN (WL_OUT_NN = WA_POINTER)                                     17470000
+         CALL AFG08_BUILD_NN;                                           17480000
+      WHEN (WL_OUT_W = WA_POINTER)                                      17490000
+         CALL AFG10_BUILD_W;                                            17500000
+      WHEN (WL_OUT_WW = WA_POINTER)                                     17510000
+         CALL AFG11_BUILD_WW;                                           17520000
+      WHEN (WL_OUT_WWW = WA_POINTER)                                    17530000
+         CALL AFG12_BUILD_WWW;                                          17540000
+      WHEN (WL_OUT_WWWWW = WA_POINTER)                                  17550000
+         CALL AFG13_BUILD_WWWWW;                                        17560000
+      WHEN (WL_OUT_WWWWWW = WA_POINTER)                                 17570000
+         CALL AFG14_BUILD_WWWWWW;                                       17580000
+      WHEN (WL_OUT_YY = WA_POINTER)                                     17590000
+         CALL AFG15_BUILD_YY;                                           17600000
+      WHEN (WL_OUT_YYYY = WA_POINTER)                                   17610000
+         CALL AFG16_BUILD_YYYY;                                         17620000
+      WHEN (WL_OUT_CC = WA_POINTER)                                     17630000
+         CALL AFG17_BUILD_CC;                                           17640000
+0     WHEN (WL_OUT_DLM (WL_OUT_DLM_INDEX) = WA_POINTER)                 17650000
+         DO;                                                            17660000
+         WA_TEST_STRING       = WL_OUT_DLM_DATA (WL_OUT_DLM_INDEX);     17670000
+         CALL F_TRANSFER;                                               17680000
+         WL_OUT_DLM_INDEX     = WL_OUT_DLM_INDEX + 1;                   17690000
+         END;                                                           17700000
+      OTHERWISE                                                         17710000
+         DO;                                                            17720000
+         WD_STATUS            = 'I';                                    17730000
+         WD_MESSAGE           = WG_MSG011;                              17740000
+         LEAVE SUCCESS_POSIT;                                           17750000
+         END;                                                           17760000
+      END;                                                              17770000
+0  END SUCCESS_POSIT;                                                   17780000
+0END AFG_BUILD_OUTPUT;                                                  17790000
+1AFG01_BUILD_DD:                                                        17800000
+   PROC;                                                                17810000
+0/*******************************************************************/  17820000
+ /*      BUILD OUTPUT DATE FORMAT DD                                */  17830000
+ /*******************************************************************/  17840000
+0%IF TEST = 'Y'                                                         17850000
+ %THEN                                                                  17860000
+    %DO;                                                                17870000
+    PUT SKIP LIST ('AFG01_BUILD_DD');                                   17880000
+    %END;                                                               17890000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,2)                               17900000
+                              = STRING(WI_DATE_DD);                     17910000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 2;                     17920000
+0END AFG01_BUILD_DD;                                                    17930000
+1AFG02_BUILD_DDD:                                                       17940000
+   PROC;                                                                17950000
+0/*******************************************************************/  17960000
+ /*      BUILD OUTPUT DATE FORMAT DDD                               */  17970000
+ /*******************************************************************/  17980000
+0%IF TEST = 'Y'                                                         17990000
+ %THEN                                                                  18000000
+    %DO;                                                                18010000
+    PUT SKIP LIST ('AFG02_BUILD_DDD');                                  18020000
+    %END;                                                               18030000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,3)                               18040000
+                              = STRING(WI_DDD);                         18050000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 3;                     18060000
+0END AFG02_BUILD_DDD;                                                   18070000
+1AFG03_BUILD_DDDDD:                                                     18080000
+   PROC;                                                                18090000
+0/*******************************************************************/  18100000
+ /*      BUILD OUTPUT DATE FORMAT DDDDD                             */  18110000
+ /*******************************************************************/  18120000
+0%IF TEST = 'Y'                                                         18130000
+ %THEN                                                                  18140000
+    %DO;                                                                18150000
+    PUT SKIP LIST ('AFG03_BUILD_DDDDD');                                18160000
+    %END;                                                               18170000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,5)                               18180000
+                              = STRING(WI_DDDDD);                       18190000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 5;                     18200000
+0END AFG03_BUILD_DDDDD;                                                 18210000
+1AFG04_BUILD_MM:                                                        18220000
+   PROC;                                                                18230000
+0/*******************************************************************/  18240000
+ /*      BUILD OUTPUT DATE FORMAT MM                                */  18250000
+ /*******************************************************************/  18260000
+0%IF TEST = 'Y'                                                         18270000
+ %THEN                                                                  18280000
+    %DO;                                                                18290000
+    PUT SKIP LIST ('AFG04_BUILD_MM');                                   18300000
+    %END;                                                               18310000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,2)                               18320000
+                              = STRING(WI_DATE_MM);                     18330000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 2;                     18340000
+0END AFG04_BUILD_MM;                                                    18350000
+1AFG05_BUILD_MMM:                                                       18360000
+   PROC;                                                                18370000
+0/*******************************************************************/  18380000
+ /*      BUILD OUTPUT DATE FORMAT MMM                               */  18390000
+ /*******************************************************************/  18400000
+0%IF TEST = 'Y'                                                         18410000
+ %THEN                                                                  18420000
+    %DO;                                                                18430000
+    PUT SKIP LIST ('AFG05_BUILD_MMM');                                  18440000
+    %END;                                                               18450000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,3)                               18460000
+                              = SUBSTR(WG_MONTH (WI_DATE_MM), 1, 3);    18470000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 3;                     18480000
+0END AFG05_BUILD_MMM;                                                   18490000
+1AFG06_BUILD_MMMMM:                                                     18500000
+   PROC;                                                                18510000
+0/*******************************************************************/  18520000
+ /*      BUILD OUTPUT DATE FORMAT MMMMM                             */  18530000
+ /*******************************************************************/  18540000
+0%IF TEST = 'Y'                                                         18550000
+ %THEN                                                                  18560000
+    %DO;                                                                18570000
+    PUT SKIP LIST ('AFG06_BUILD_MMMMM');                                18580000
+    %END;                                                               18590000
+ IF WI_DATE_YYYY >= 1900                                                18600000
+ THEN                                                                   18610000
+    WA_MISC                   = (WI_DATE_YYYY - 1900) * 12;             18620000
+ ELSE                                                                   18630000
+    WA_MISC                   = WI_DATE_YYYY * 12;                      18640000
+ IF WI_DATE_DD = WG_MAX_DAY (WI_DATE_MM)                                18650000
+ THEN                                                                   18660000
+    DO;                                                                 18670000
+    WA_MISC                   = WA_MISC + WI_DATE_MM;                   18680000
+    WI_DATE_DD                = 0;                                      18690000
+    END;                                                                18700000
+ ELSE                                                                   18710000
+    WA_MISC                   = WA_MISC + (WI_DATE_MM - 1);             18720000
+ WA_MISC_PIC                  = WA_MISC;                                18730000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,5)                               18740000
+                              = STRING(WA_MISC_PIC);                    18750000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 5;                     18760000
+0END AFG06_BUILD_MMMMM;                                                 18770000
+1AFG07_BUILD_MMMMMM:                                                    18780000
+   PROC;                                                                18790000
+0/*******************************************************************/  18800000
+ /*      BUILD OUTPUT DATE FORMAT MMMMMM                            */  18810000
+ /*******************************************************************/  18820000
+0%IF TEST = 'Y'                                                         18830000
+ %THEN                                                                  18840000
+    %DO;                                                                18850000
+    PUT SKIP LIST ('AFG07_BUILD_MMMMMM');                               18860000
+    %END;                                                               18870000
+ WA_TEST_STRING               = WG_MONTH (WI_DATE_MM);                  18880000
+ WA_MISC                      = INDEX(WA_TEST_STRING,' ')               18890000
+                              - 1;                                      18900000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,WA_MISC)                         18910000
+                              = SUBSTR(WA_TEST_STRING,1,WA_MISC);       18920000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + WA_MISC;               18930000
+0END AFG07_BUILD_MMMMMM;                                                18940000
+1AFG08_BUILD_NN:                                                        18950000
+   PROC;                                                                18960000
+0/*******************************************************************/  18970000
+ /*      BUILD OUTPUT DATE FORMAT NN                                */  18980000
+ /*******************************************************************/  18990000
+0%IF TEST = 'Y'                                                         19000000
+ %THEN                                                                  19010000
+    %DO;                                                                19020000
+    PUT SKIP LIST ('AFG08_BUILD_NN');                                   19030000
+    %END;                                                               19040000
+ WA_TEST_STRING               = WG_SUFFIX (WI_DATE_DD);                 19050000
+ WA_MISC                      = INDEX(WA_TEST_STRING,' ') - 1;          19060000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,WA_MISC)                         19070000
+                              = SUBSTR(WA_TEST_STRING,1,WA_MISC);       19080000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + WA_MISC;               19090000
+0END AFG08_BUILD_NN;                                                    19100000
+1AFG10_BUILD_W:                                                         19110000
+   PROC;                                                                19120000
+0/*******************************************************************/  19130000
+ /*      BUILD OUTPUT DATE FORMAT W                                 */  19140000
+ /*******************************************************************/  19150000
+0%IF TEST = 'Y'                                                         19160000
+ %THEN                                                                  19170000
+    %DO;                                                                19180000
+    PUT SKIP LIST ('AFG10_BUILD_W');                                    19190000
+    %END;                                                               19200000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,1)                               19210000
+                              = STRING(WA_WEEKDAY);                     19220000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 1;                     19230000
+0END AFG10_BUILD_W;                                                     19240000
+1AFG11_BUILD_WW:                                                        19250000
+   PROC;                                                                19260000
+0/*******************************************************************/  19270000
+ /*      BUILD OUTPUT DATE FORMAT WW                                */  19280000
+ /*******************************************************************/  19290000
+0%IF TEST = 'Y'                                                         19300000
+ %THEN                                                                  19310000
+    %DO;                                                                19320000
+    PUT SKIP LIST ('AFG11_BUILD_WW');                                   19330000
+    %END;                                                               19340000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,2)                               19350000
+                              = STRING(WA_WEEK);                        19360000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 2;                     19370000
+0END AFG11_BUILD_WW;                                                    19380000
+1AFG12_BUILD_WWW:                                                       19390000
+   PROC;                                                                19400000
+0/*******************************************************************/  19410000
+ /*      BUILD OUTPUT DATE FORMAT WWW                               */  19420000
+ /*******************************************************************/  19430000
+0%IF TEST = 'Y'                                                         19440000
+ %THEN                                                                  19450000
+    %DO;                                                                19460000
+    PUT SKIP LIST ('AFG12_BUILD_WWW');                                  19470000
+    %END;                                                               19480000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,3)                               19490000
+                              = STRING(WA_WEEKDAY);                     19500000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 3;                     19510000
+0END AFG12_BUILD_WWW;                                                   19520000
+1AFG13_BUILD_WWWWW:                                                     19530000
+   PROC;                                                                19540000
+0/*******************************************************************/  19550000
+ /*      BUILD OUTPUT DATE FORMAT WWWWW                             */  19560000
+ /*******************************************************************/  19570000
+0%IF TEST = 'Y'                                                         19580000
+ %THEN                                                                  19590000
+    %DO;                                                                19600000
+    PUT SKIP LIST ('AFG13_BUILD_WWWWW');                                19610000
+    %END;                                                               19620000
+ WA_MISC_PIC                  = WI_DDDDD / 7;                           19630000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,5)                               19640000
+                              = STRING(WA_MISC_PIC);                    19650000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 5;                     19660000
+0END AFG13_BUILD_WWWWW;                                                 19670000
+1AFG14_BUILD_WWWWWW:                                                    19680000
+   PROC;                                                                19690000
+0/*******************************************************************/  19700000
+ /*      BUILD OUTPUT DATE FORMAT WWWWWW                            */  19710000
+ /*******************************************************************/  19720000
+0%IF TEST = 'Y'                                                         19730000
+ %THEN                                                                  19740000
+    %DO;                                                                19750000
+    PUT SKIP LIST ('AFG14_BUILD_WWWWWW');                               19760000
+    %END;                                                               19770000
+ WA_TEST_STRING               = WG_DAY (WA_WEEKDAY);                    19780000
+ WA_MISC                      = INDEX(WA_TEST_STRING,' ') - 1;          19790000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,WA_MISC)                         19800000
+                              = SUBSTR(WA_TEST_STRING,1,WA_MISC);       19810000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + WA_MISC;               19820000
+0END AFG14_BUILD_WWWWWW;                                                19830000
+1AFG15_BUILD_YY:                                                        19840000
+   PROC;                                                                19850000
+0/*******************************************************************/  19860000
+ /*      BUILD OUTPUT DATE FORMAT YY                                */  19870000
+ /*******************************************************************/  19880000
+0%IF TEST = 'Y'                                                         19890000
+ %THEN                                                                  19900000
+    %DO;                                                                19910000
+    PUT SKIP LIST ('AFG15_BUILD_YY');                                   19920000
+    %END;                                                               19930000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,2)                               19940000
+                              = STRING(WI_DATE_YY);                     19950000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 2;                     19960000
+0END AFG15_BUILD_YY;                                                    19970000
+1AFG16_BUILD_YYYY:                                                      19980000
+   PROC;                                                                19990000
+0/*******************************************************************/  20000000
+ /*      BUILD OUTPUT DATE FORMAT YYYY                              */  20010000
+ /*******************************************************************/  20020000
+0%IF TEST = 'Y'                                                         20030000
+ %THEN                                                                  20040000
+    %DO;                                                                20050000
+    PUT SKIP LIST ('AFG16_BUILD_YYYY');                                 20060000
+    %END;                                                               20070000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,4)                               20080000
+                              = STRING(WI_DATE_YYYY);                   20090000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 4;                     20100000
+0END AFG16_BUILD_YYYY;                                                  20110000
+1AFG17_BUILD_CC:                                                        20120000
+   PROC;                                                                20130000
+0/*******************************************************************/  20140000
+ /*      BUILD OUTPUT DATE FORMAT CC                                */  20150000
+ /*******************************************************************/  20160000
+0%IF TEST = 'Y'                                                         20170000
+ %THEN                                                                  20180000
+    %DO;                                                                20190000
+    PUT SKIP LIST ('AFG17_BUILD_CC');                                   20200000
+    %END;                                                               20210000
+ SUBSTR(WA_CHECK_STRING,WA_CHECK_INDEX,2)                               20220000
+                              = STRING(WI_DATE_CC);                     20230000
+ WA_CHECK_INDEX               = WA_CHECK_INDEX + 2;                     20240000
+0END AFG17_BUILD_CC;                                                    20250000
+1E_LEAP_YEAR:                                                           20260000
+   PROC (YYYY);                                                         20270000
+0/*******************************************************************/  20280000
+ /*      CALCULATE THE NUMBER OF LEAP DAYS                          */  20290000
+ /*                                                                 */  20300000
+ /* CODE TO CALCULATE LEAP YEAR OBTAINED FROM TOOLS DISK            */  20310000
+ /*******************************************************************/  20320000
+ DCL YYYY         PIC'9999';                                            20330000
+0%IF TEST = 'Y'                                                         20340000
+ %THEN                                                                  20350000
+    %DO;                                                                20360000
+    PUT SKIP LIST ('E_LEAP_YEAR');                                      20370000
+    %END;                                                               20380000
+0IF ((MOD(YYYY, 4) = 0) & (MOD(YYYY, 100) ¬= 0))                        20390000
+  |  (MOD(YYYY, 400) = 0)                                               20400000
+ THEN DO;                                                               20410000
+   WI_LEAP_YEAR               = '1'B;                                   20420000
+   WG_DAYS_IN_MONTH_TABLE     = WG_DAYS_IN_MONTH_LEAP_TABLE;            20430000
+   WG_JULIAN_DAYS_TABLE       = WG_JULIAN_DAYS_LEAP_TABLE;              20440000
+   END;                                                                 20450000
+ ELSE DO;                                                               20460000
+   WI_LEAP_YEAR               = '';                                     20470000
+   WG_DAYS_IN_MONTH_TABLE     = WG_DAYS_IN_MONTH_STD_TABLE;             20480000
+   WG_JULIAN_DAYS_TABLE       = WG_JULIAN_DAYS_STD_TABLE;               20490000
+   END;                                                                 20500000
+0END E_LEAP_YEAR;                                                       20510000
+1F_TRANSFER:                                                            20520000
+   PROC;                                                                20530000
+0/*******************************************************************/  20540000
+ /*      TOKEN PASSING ROUTINE                                      */  20550000
+ /*******************************************************************/  20560000
+0%IF TEST = 'Y'                                                         20570000
+ %THEN                                                                  20580000
+    %DO;                                                                20590000
+    PUT SKIP LIST ('F_TRANSFER');                                       20600000
+    %END;                                                               20610000
+0SUCCESS_POSIT:                                                         20620000
+   DO;                                                                  20630000
+0  WA_CHECK_ITEM              = WA_TEST_CHAR (WA_TEST_INDEX);           20640000
+   IF WA_CASE_FLAG = 'U'                                                20650000
+   THEN                                       /* CONVERT TO U/C     */  20660000
+      UNSPEC(WA_CHECK_ITEM)   = UNSPEC(WA_CHECK_ITEM) | UNSPEC(' ');    20670000
+0  WA_CHECK_CHAR (WA_CHECK_INDEX) = WA_CHECK_ITEM;                      20680000
+   WA_TEST_CHAR  (WA_TEST_INDEX)  = '';                                 20690000
+0  WA_TEST_INDEX              = WA_TEST_INDEX + 1;                      20700000
+   WA_CHECK_INDEX             = WA_CHECK_INDEX + 1;                     20710000
+   IF WA_CASE_FLAG = 'U'                                                20720000
+   THEN                                       /* CONVERT NEXT CHAR  */  20730000
+      DO;                                     /* TO UPPER CASE      */  20740000
+      WA_CHECK_ITEM           = WA_TEST_CHAR (WA_TEST_INDEX);           20750000
+      UNSPEC(WA_CHECK_ITEM)   = UNSPEC(WA_CHECK_ITEM) | UNSPEC(' ');    20760000
+      END;                                                              20770000
+0  END SUCCESS_POSIT;                                                   20780000
+0END F_TRANSFER;                                                        20790000
+1G_MSG_VAR:                                                             20800000
+   PROC(MSG_VAR);                                                       20810000
+0/*******************************************************************/  20820000
+ /*      ADD VARIABLE DATA TO MESSAGE                               */  20830000
+ /*******************************************************************/  20840000
+0%IF TEST = 'Y'                                                         20850000
+ %THEN                                                                  20860000
+    %DO;                                                                20870000
+    PUT SKIP LIST ('G_MSG_VAR');                                        20880000
+    %END;                                                               20890000
+0DCL                                                                    20900000
+         MSG_VAR               CHAR(*);                                 20910000
+0SUCCESS_POSIT:                                                         20920000
+   DO;                                                                  20930000
+   WA_MSG_INDEX               = INDEX(WD_MESSAGE, '#');                 20940000
+   IF WA_MSG_INDEX ¬= 0                                                 20950000
+   THEN                                                                 20960000
+      SUBSTR(WD_MESSAGE, WA_MSG_INDEX) = MSG_VAR;                       20970000
+0  END SUCCESS_POSIT;                                                   20980000
+0END G_MSG_VAR;                                                         20990000
+1/*******************************************************************/  21000000
+ /*      CALCULATE NUMBER OF DAYS UP TO GIVEN YEAR                  */  21010000
+ /*******************************************************************/  21020000
+ CALC_YYYY_DDDDD: PROC (YYYY) RETURNS(FIXED BIN(31));                   21030000
+ DCL YYYY         PIC'9999';                                            21040000
+ DCL DDDDD        FIXED BIN(31);                                        21050000
+ DCL CC           FIXED BIN(31);                                        21060000
+ DCL LEAP         FIXED BIN(31);                                        21070000
+ DCL CORR         FIXED BIN(31);                                        21080000
+ LEAP = (YYYY+3) / 4;                                                   21090000
+ CC   = (YYYY+99) / 100;                                                21100000
+ CORR = CC - ((CC+3)/4);                                                21110000
+ LEAP = LEAP - CORR;                                                    21120000
+ DDDDD = YYYY*365 + LEAP;                                               21130000
+ RETURN(DDDDD);                                                         21140000
+ END CALC_YYYY_DDDDD;                                                   21150000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 21160000
+ $DAIMOD (RCB004M);                    /* MODULE TO BE COMPILED      */ 21170000
+0END RCB004M;                                                           21180000

@@ -1,0 +1,1547 @@
+ /* RCBXC3M - XML PARSER: REFOFER UPDATE TRANSACTION                 */ 00010000
+ /*                                                                  */ 00020000
+ /********************************************************************/ 00030000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060000
+ /********************************************************************/ 00070000
+ /*                                                                  */ 00080000
+ /* MODULE NAME      : RCBXC3M                                       */ 00090000
+ /*                                                                  */ 00100000
+ /* PROGRAM NAME     : RCBXC3P                                       */ 00110000
+ /*                                                                  */ 00120000
+ /* LANGUAGE         : PLI                                           */ 00130000
+ /*                                                                  */ 00140000
+ /* TYPE             : BATCH                                         */ 00150000
+ /*                                                                  */ 00160000
+ /* DESCRIPTION      : WW LEVEL INFORMATION ON NON-IBM BRAND MACHINES*/ 00170000
+ /*                    RECEVIED FROM REFOFER_UPDATE TRANSACTION IS   */ 00180000
+ /*                    PARSED USING PLISAXC PARSER AND A SUB-MODULE  */ 00190000
+ /*                    IS CALLED TO INSERT/UPDATE TABLE T693/T696    */ 00200000
+ /*                                                                  */ 00210000
+ /* INPUT            : XML DOCUMENT(REFOFER_UPDATE TRANSACTION)      */ 00220000
+ /*                                                                  */ 00230000
+ /* OUTPUT           : -DB2 : RCBT0693_TYPE_MOD_WW_LVL               */ 00240000
+ /*                    -DB2 : RCBT0696_TYPE_MOD_DESC                 */ 00250000
+ /*                    -FILE: RCB0M10 MESSAGE FILE                   */ 00260000
+ /*                                                                  */ 00270000
+ /* EXTERNAL MODULES : RCB0T1M  RETRIEVE SYSTEM DATE                 */ 00280000
+ /*                    RCB0M1M  COMMON MESSAGE ROUTINE               */ 00290000
+ /*                    RCB004M  DATE VALIDATION ROUTINE              */ 00300000
+ /*                    RCBF89M  INSERT/UPDATE IN T693                */ 00310000
+ /*                    RCBF92M  INSERT/UPDATE IN T696                */ 00320000
+ /*                                                                  */ 00330000
+ /* MESSAGES         : 0292 / 0293 / 0294 / 0313 / 0012              */ 00340000
+ /*                                                                  */ 00350000
+ /* DEPENDENCIES     : NONE                                          */ 00360000
+ /*                                                                  */ 00370000
+ /*  MAINTENANCE LOG :                                               */ 00380000
+ /*  ---------------                                                 */ 00390000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00400000
+ /*  --------------------------------------------------------------  */ 00410000
+ /*  2011-08-10 | RB01315      | OIMS EACM REQUIREMENT-CEDS 3.3 A16  */ 00420000
+ /*             |              | RELEASE                             */ 00430000
+ /*  2012-04-12 | CEDS00000578 | ADDITION OF QMANAGER CCSID AS INPUT */ 00440000
+ /*             |              | TO 'C' PARSER                       */ 00450000
+ /*  2012-05-29 | RC01319      | PCRS ON CEDS 3.3 A16 RELEASE        */ 00460000
+ /*             |              | P10-0434,PCEDSP-0237,PCEDSP-0239    */ 00470000
+ /*  2012-05-30 | CEDS00000584 | BLANK RETAIN_FLAG CORRECTED TO      */ 00480000
+ /*             |              | DEFAULT VALUE                       */ 00490000
+ /*  2012-11-28 | RC01324      | PCR 10-501 RELATED TO TREC 10-1850  */ 00500000
+ /*  2014-03-03 | RC01337      | PCR 389: STORE ADDITIONAL PRODUCT   */ 00510000
+ /*             |              | INFORMATION LIKE MFRPRODTYPE AND    */ 00520000
+ /*             |              | MFRPRODDESC IN PROD_DESC FIELD OF   */ 00530000
+ /*             |              | T696.                               */ 00540000
+ /*             |              | COMMENTED MESSAGE 0315              */ 00550000
+ /*  2014-04-25 | CEDS00000679 | TREC 1826 - CHANGES TO PROCESS      */ 00560000
+ /*             |              | NON-ENGLISH MESSAGES SENT FROM OIMS */ 00570000
+ /*  2014-09-01 | CEDS00000692 | HANDLING VARCHAR FOR VENDOR NAME AND*/ 00571000
+ /*             |              | PRODUCT DESCRIPTION                 */ 00572000
+ /*  2014-09-01 | RB01342      | CEDS 3.3 A23 RELEASE - SEO_UPDATE   */ 00573000
+ /*             |              | XML(MELODY)                         */ 00574000
+ /*  2016-03-31 | RC01377      | PCR 633: PRODUCT DESCRIPTION FIELD  */ 00575029
+ /*             |              | IS MADE OPTIONAL                    */ 00576028
+ /*  2017-03-24 | CEDS00000812 | T10-2215 & T10-2216 CCSID SETTING   */ 00579036
+ /*             |              | NOT CONSISTENT WITH CEDS & JP TABLES*/ 00579136
+ /********************************************************************/ 00580000
+ RCBXC3M: PACKAGE EXPORTS(RCBXC3M);                                     00590000
+                                                                        00600000
+    DCL SYSPRINT    FILE STREAM OUTPUT;                                 00610000
+                                                                        00620000
+    DEFINE ALIAS EVENT                                                  00630000
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31) )                00640000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00650000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            00660000
+                                                                        00670000
+    DEFINE ALIAS EVENT_WITH_FLAG                                        00680000
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),                 00690000
+                       BIT(8) ALIGNED )                                 00700000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00710000
+        OPTIONS( NODESCRIPTOR BYVALUE LINKAGE(OPTLINK) );               00720000
+                                                                        00730000
+    DEFINE ALIAS EVENT_WITH_NAMESPACE                                   00740000
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),                 00750000
+                       POINTER, FIXED BIN(31),                          00760000
+                       POINTER, FIXED BIN(31) )                         00770000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00780000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            00790000
+                                                                        00800000
+    DEFINE ALIAS EVENT_WITHOUT_DATA                                     00810000
+        LIMITED ENTRY( POINTER )                                        00820000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00830000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            00840000
+                                                                        00850000
+    DEFINE ALIAS EVENT_PI                                               00860000
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),                 00870000
+                       POINTER, FIXED BIN(31) )                         00880000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00890000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            00900000
+                                                                        00910000
+    DEFINE ALIAS EVENT_NAMESPACE_DCL                                    00920000
+        LIMITED ENTRY( POINTER, POINTER, FIXED BIN(31),                 00930000
+                       POINTER, FIXED BIN(31) )                         00940000
+        RETURNS( BYVALUE FIXED BIN(31) )                                00950000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            00960000
+                                                                        00970000
+    DEFINE ALIAS EVENT_EXCEPTION                                        00980000
+        LIMITED ENTRY( POINTER, FIXED BIN(31),                          00990000
+                       FIXED BIN(31),                                   01000000
+                       FIXED BIN(31) )                                  01010000
+        RETURNS( BYVALUE FIXED BIN(31) )                                01020000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            01030000
+                                                                        01040000
+    DEFINE ALIAS EVENT_END_OF_INPUT                                     01050000
+        LIMITED ENTRY( POINTER,                                         01060000
+                       POINTER BYADDR,                                  01070000
+                       FIXED BIN(31) BYADDR )                           01080000
+        RETURNS( BYVALUE FIXED BIN(31) )                                01090000
+        OPTIONS( BYVALUE LINKAGE(OPTLINK) );                            01100000
+                                                                        01110000
+  RCBXC3M: PROC (PTR_PARSER_INPUT,                                      01120000
+                 PTR_MQDATA,                                            01130000
+                 PTR_PARSER_RETURN,                                     01140000
+                 PTR_ERROR_RETURN,                                      01150000
+                                                  /* SOC CEDS00000578 */01160000
+         /*      PTR_INT_AREA,  */                                      01170000
+                 PTR_INT_AREA,                                          01180000
+                 PTR_CCSID)                                             01190000
+                                                  /* EOC CEDS00000578 */01200000
+           OPTIONS (REENTRANT)                                          01210000
+           REORDER;                                                     01220000
+                                                                        01230000
+  DCL                                                                   01240000
+    1 EVENTHANDLER STATIC                                               01250000
+                                                                        01260000
+      ,2 E01 TYPE EVENT_WITHOUT_DATA                                    01270000
+             INIT( START_OF_DOCUMENT )                                  01280000
+                                                                        01290000
+      ,2 E02 TYPE EVENT                                                 01300000
+             INIT( VERSION_INFORMATION )                                01310000
+                                                                        01320000
+      ,2 E03 TYPE EVENT                                                 01330000
+             INIT( ENCODING_DECLARATION )                               01340000
+                                                                        01350000
+      ,2 E04 TYPE EVENT                                                 01360000
+             INIT( STANDALONE_DECLARATION )                             01370000
+                                                                        01380000
+      ,2 E05 TYPE EVENT                                                 01390000
+             INIT( DOCUMENT_TYPE_DECLARATION )                          01400000
+                                                                        01410000
+      ,2 E06 TYPE EVENT_WITHOUT_DATA                                    01420000
+             INIT( END_OF_DOCUMENT )                                    01430000
+                                                                        01440000
+      ,2 E07 TYPE EVENT_WITH_NAMESPACE                                  01450000
+             INIT( START_OF_ELEMENT )                                   01460000
+                                                                        01470000
+      ,2 E08 TYPE EVENT_WITH_NAMESPACE                                  01480000
+             INIT( ATTRIBUTE_NAME )                                     01490000
+                                                                        01500000
+      ,2 E09 TYPE EVENT                                                 01510000
+             INIT( ATTRIBUTE_CHARACTERS )                               01520000
+                                                                        01530000
+      ,2 E10 TYPE EVENT_WITH_NAMESPACE                                  01540000
+             INIT( END_OF_ELEMENT )                                     01550000
+                                                                        01560000
+      ,2 E11 TYPE EVENT_WITHOUT_DATA                                    01570000
+             INIT( START_OF_CDATA )                                     01580000
+                                                                        01590000
+      ,2 E12 TYPE EVENT_WITHOUT_DATA                                    01600000
+             INIT( END_OF_CDATA )                                       01610000
+                                                                        01620000
+      ,2 E13 TYPE EVENT_WITH_FLAG                                       01630000
+             INIT( CONTENT_CHARACTERS )                                 01640000
+                                                                        01650000
+      ,2 E14 TYPE EVENT_PI                                              01660000
+             INIT( PROCESSING_INSTRUCTION )                             01670000
+                                                                        01680000
+      ,2 E15 TYPE EVENT                                                 01690000
+             INIT( COMMENT )                                            01700000
+                                                                        01710000
+      ,2 E16 TYPE EVENT_NAMESPACE_DCL                                   01720000
+             INIT( NAMESPACE_DECLARE )                                  01730000
+                                                                        01740000
+      ,2 E17 TYPE EVENT_END_OF_INPUT                                    01750000
+             INIT( END_OF_INPUT )                                       01760000
+                                                                        01770000
+      ,2 E18 TYPE EVENT                                                 01780000
+             INIT( UNRESOLVED_REFERENCE )                               01790000
+                                                                        01800000
+      ,2 E19 TYPE EVENT_EXCEPTION                                       01810000
+             INIT( EXCEPTION )                                          01820000
+      ;                                                                 01830000
+1/********************************************************************/ 01840000
+ /*  BUILTIN FUNCTIONS                                               */ 01850000
+ /********************************************************************/ 01860000
+    DCL NULL BUILTIN;                                                   01870000
+ /********************************************************************/ 01880000
+ /*  PTR & TEMP VARIABLE DECLARATION                                */  01890000
+ /********************************************************************/ 01900000
+  DCL TOKEN                  CHAR(8);                                   01910000
+  DCL PTR_PARSER_INPUT       PTR;                                       01920000
+  DCL PTR_MQDATA             PTR;                                       01930000
+  DCL PTR_INT_AREA           PTR;                                       01940000
+  DCL PTR_RET_AREA_BB        PTR;                                       01950000
+  DCL PTR_PARSER_RETURN      PTR;                                       01960000
+  DCL PTR_ERROR_RETURN       PTR;                                       01970000
+  DCL PTR_DATE_AREA          PTR;                                       01980000
+  DCL RCB693S_PTR            PTR;                                       01990000
+  DCL RCB696S_PTR            PTR;                                       02010000
+  DCL RCB693S_PTR1           PTR;                 /* SOC CEDS00000679 */02011000
+  DCL RCB696S_PTR1           PTR;                                       02020000
+  DCL LEN_INSTALL            FIXED BIN(31) INIT(03);                    02040000
+  DCL LEN_PRODTYP            FIXED BIN(31) INIT(04);                    02050000
+  DCL LEN_MDLNUMBR           FIXED BIN(31) INIT(03);                    02060000
+  DCL LEN_PRODREV            FIXED BIN(31) INIT(02);                    02070000
+  DCL LEN_MACHCAT            FIXED BIN(31) INIT(01);                    02080000
+                                                 /* SOC CEDS00000692 */ 02081000
+ /*DCL LEN_VENDNAM            FIXED BIN(31) INIT(30);                */ 02090000
+  DCL LEN_VENDNAM            FIXED BIN(31) INIT(120);                   02091000
+                                                 /* EOC CEDS00000692 */ 02092000
+  DCL LEN_CEPRODK            FIXED BIN(31) INIT(01);                    02100000
+  DCL LEN_PRODSUP            FIXED BIN(31) INIT(03);                    02110000
+  DCL LEN_RETAIN             FIXED BIN(31) INIT(01);                    02120000
+  DCL LEN_LASTCD             FIXED BIN(31) INIT(10);                    02130000
+  DCL LEN_AVAILD             FIXED BIN(31) INIT(10);                    02140000
+  DCL LEN_EOSERD             FIXED BIN(31) INIT(10);                    02150000
+  DCL LEN_LPRODTYP           FIXED BIN(31) INIT(04);                    02160000
+  DCL LEN_LMDLNUMBR          FIXED BIN(31) INIT(03);                    02170000
+  DCL LEN_LLANGID            FIXED BIN(31) INIT(02);                    02180000
+                                                 /* SOC CEDS00000692 */ 02180100
+  DCL LEN_MFR                  FIXED BIN(31);                           02180200
+  DCL TEMP_LENGTH              FIXED BIN(31);                           02180300
+  /*DCL LEN_LPRODES            FIXED BIN(31) INIT(30);               */ 02190000
+  DCL LEN_LPRODES            FIXED BIN(31) INIT(32);                    02191000
+                                                 /* EOC CEDS00000692 */ 02192000
+  DCL LEN_LLASTCD            FIXED BIN(31) INIT(10);                    02200000
+                                                  /* EOC CEDS0000679 */ 02201000
+                                                                        02210000
+  DCL 1 PARSER_INPUT_AREA BASED(PTR_PARSER_INPUT),                      02220000
+       %INCLUDE RCBBE6S;;                                               02230000
+                                                                        02240000
+  DCL MQ_MESSAGE BASED(PTR_MQDATA) CHAR(MQ_MSG_LENGTH);                 02250000
+  DCL MQ_CCSID   BASED(PTR_CCSID)  FIXED BIN(31);     /* CEDS00000578 */02260000
+                                                                        02270000
+  DCL 1 PARSER_RETURN_AREA BASED(PTR_PARSER_RETURN),                    02280000
+    %INCLUDE RCBBE4S;;                                                  02290000
+                                                                        02300000
+  DCL 1 ERROR_CODE_DET BASED(PTR_ERROR_RETURN),                         02310000
+        5 PTR_ERROR                    PTR,                             02320000
+        5 ERR_TYPE                     CHAR(8),                         02330000
+        5 CALL_ID                      CHAR(4);                         02340000
+                                                                        02350000
+  DCL 1 PARM_INT_AREA BASED(PTR_INT_AREA),   /* INTERFACE AREA     */   02360000
+        %INCLUDE (RCBZ01S);;                                            02370000
+                                                                        02380000
+  DCL 1 PARM_RET_AREA_BB,                                               02390000
+        %INCLUDE (RCBZ02S);;                                            02400000
+                                                                        02410000
+  DCL 1 DATE_AREA,                              /* DATE AREA          */02420000
+        %INCLUDE (RCBZ03S);;                                            02430000
+                                                                        02440000
+  /*DCL REFOFER_TEMP      CHAR(78);                *//* CEDS00000692 */ 02450000
+  DCL LANG_LIST_TEMP    CHAR(49);                                       02470000
+                                                /* SOC CEDS00000692 */  02470100
+ /*DCL REFOFER_TEMP1     CHAR(78);            *//* SOC CEDS00000679 */  02471000
+                                                /* EOC CEDS00000692 */  02472000
+  DCL LANG_LIST_TEMP1   CHAR(49);               /* EOC CEDS00000679 */  02480000
+  DCL ALPHANUM      CHAR(36)                                            02490000
+      INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');/*ALPHANUM VALUES */ 02500000
+1/********************************************************************/ 02510000
+ /* EXTERNAL ENTRIES DECLARATION                                     */ 02520000
+ /********************************************************************/ 02530000
+ DCL RCB0T1M   ENTRY EXTERNAL;         /* RETRIEVE SYSTEM DATE       */ 02540000
+ DCL RCB0M1M   ENTRY EXTERNAL;         /* COMMON MESSAGE ROUTINE     */ 02550000
+ DCL RCB004M   ENTRY EXTERNAL;         /* DATE VALIDATION ROUTINE    */ 02560000
+ DCL RCBF89M   ENTRY EXTERNAL;         /* T693 INSERT/UPDATE         */ 02570000
+ DCL RCBF92M   ENTRY EXTERNAL;         /* T696 INSERT/UPDATE         */ 02580000
+                                                                        02590000
+1/********************************************************************/ 02600000
+ /*  COUNTS                                                          */ 02610000
+ /********************************************************************/ 02620000
+ DCL 1 COUNT,                                                           02630000
+        3 T693_CNT_TOTAL,                                               02640000
+          5 UPDATES       FIXED BIN(31) INIT(0),                        02650000
+          5 INSERTS       FIXED BIN(31) INIT(0),                        02660000
+        3 T696_CNT_TOTAL,                                               02670000
+          5 UPDATES       FIXED BIN(31) INIT(0),                        02680000
+          5 INSERTS       FIXED BIN(31) INIT(0);                        02690000
+ /*********************************************************************/02700000
+ /*                  S T A R T   P R O C E S S I N G                  */02710000
+ /*********************************************************************/02720000
+  CALL RCBXC3M_INIT_PROGRAM;                                            02730000
+                                                                        02740000
+  CNT_LANG_ELEMENT1 = REFOFER_UPD_UCOUNT_DET.CNT_LANG_ELEMENT;          02750020
+  CALL PLISAXC( EVENTHANDLER,                                           02770000
+                ADDR(TOKEN),                                            02780000
+                ADDRDATA(MQ_MESSAGE),                                   02790000
+                                                  /* SOC CEDS00000578 */02800000
+          /*    MQ_MSG_LENGTH, */                                       02810000
+                MQ_MSG_LENGTH,                                          02820000
+                MQ_CCSID);                                              02830000
+                                                  /* EOC CEDS00000578 */02840000
+  IF CNT_LANG_ELEMENT1 > 0 THEN                        /* SOC RC01377 */02841030
+     LANG_ELEMENT_FND = TRUE;                                           02842030
+  ELSE                                                                  02843030
+     LANG_ELEMENT_FND = FALSE;                         /* EOC RC01377 */02844030
+                                                                        02850000
+  REFOFER_TEMP = '';                                                    02860000
+  /*REFOFER_TEMP = STRING(REF_OFER);                *//* CEDS00000692 */02870000
+                                                                        02880014
+  CALL RCBXC3M_VALIDATION;                                              02891000
+                                                  /* SOC CEDS00000679 */02900000
+  /* EBCDIC BLANK IS CHANGED WITH UNICODE SPACE X'20'                 */02901000
+  REFOFER_TEMP1 = '';                                                   02910000
+  REF_OFER1.PRODUCT_TYPE = RCBXC3M_TSN(REF_OFER1.PRODUCT_TYPE,          02920000
+                                         LEN_PRODTYP);                  02930000
+  REF_OFER1.MODEL_NUMBER = RCBXC3M_TSN(REF_OFER1.MODEL_NUMBER,          02940000
+                                         LEN_MDLNUMBR);                 02950000
+  REF_OFER1.PROD_REVENUE_DIV = RCBXC3M_TSN(REF_OFER1.PROD_REVENUE_DIV,  02960000
+                                         LEN_PRODREV);                  02970000
+  REF_OFER1.MACHINE_CATEGORY = RCBXC3M_TSN(REF_OFER1.MACHINE_CATEGORY,  02980000
+                                         LEN_MACHCAT);                  02990000
+  REF_OFER1.VENDOR_NAME       = RCBXC3M_TSN(REF_OFER1.VENDOR_NAME,      03000000
+                                         LEN_VENDNAM);                  03010000
+  REF_OFER1.CE_PRODUCT_KEY   = RCBXC3M_TSN(REF_OFER1.CE_PRODUCT_KEY,    03020000
+                                         LEN_CEPRODK);                  03030000
+  REF_OFER1.PROD_SUP_COD     = RCBXC3M_TSN(REF_OFER1.PROD_SUP_COD,      03040000
+                                         LEN_PRODSUP);                  03050000
+  REF_OFER1.RETAIN_FLAG      = RCBXC3M_TSN(REF_OFER1.RETAIN_FLAG,       03060000
+                                         LEN_RETAIN);                   03070000
+  REF_OFER1.INSTALL      = RCBXC3M_TSN(REF_OFER1.INSTALL,LEN_INSTALL);  03080000
+  REF_OFER1.LAST_CHANGE_DATE = RCBXC3M_TSN(REF_OFER1.LAST_CHANGE_DATE,  03090000
+                                         LEN_LASTCD);                   03100000
+  REF_OFER1.AVAILABILITY_DATE = RCBXC3M_TSN(REF_OFER1.AVAILABILITY_DATE 03110000
+                                        ,LEN_AVAILD);                   03120000
+  REF_OFER1.END_OF_SERVICE_DATE =                                       03130000
+               RCBXC3M_TSN(REF_OFER1.END_OF_SERVICE_DATE,LEN_EOSERD);   03140000
+                                                                        03150000
+                                                  /* SOC CEDS00000692 */03151000
+  /*REFOFER_TEMP1 = STRING(REF_OFER1);          *//* EOC CEDS00000679 */03160000
+                                                  /* EOC CEDS00000692 */03161000
+  IF (VALID_FLAG) THEN                                                  03170000
+  DO;                                                                   03180000
+   CALL RCBXC3M_DATE_VALIDATION;                                        03190000
+   IF (VALID_DATE) THEN                                                 03200000
+   DO;                                                                  03210000
+   RCB693S_PTR        = ADDR(REF_OFER);           /* SOC CEDS00000692 */03220000
+   RCB693S_PTR1       = ADDR(REF_OFER1);          /* EOC CEDS00000692 */03230000
+   /*CALL RCBF89M (RCB693S_PTR, */                /* SOC CEDS00000679 */03252000
+   CALL RCBF89M (RCB693S_PTR,RCB693S_PTR1,        /* EOC CEDS00000679 */03252100
+                 PTR_RET_AREA_BB,PTR_INT_AREA);                         03253000
+                                                                        03260000
+   SELECT (PARM_RET_AREA_BB.RETURN_CODE);                               03270000
+   WHEN (0)                                                             03280000
+     DO;                                                                03290000
+      COUNT.T693_CNT_TOTAL.INSERTS = COUNT.T693_CNT_TOTAL.INSERTS + 1;  03300000
+      REG_IN_T693 = TRUE;                     /* RC01319-PCEDSP-0239 */ 03310000
+     END;                                                               03320000
+   WHEN (4)                                                             03330000
+     DO;                                                                03340000
+      COUNT.T693_CNT_TOTAL.UPDATES = COUNT.T693_CNT_TOTAL.UPDATES + 1;  03350000
+      REG_IN_T693 = TRUE;                     /* RC01319-PCEDSP-0239 */ 03360000
+     END;                                                               03370000
+   WHEN (6)                                 /*SOC RC01319-PCEDSP-0237*/ 03380000
+     DO;                                                                03390000
+      REG_IN_T693 = FALSE;                           /* CEDS00000812 */ 03391036
+      CALL RCBXC3M_MSG('0294');                                         03400000
+     END;                                   /*EOC RC01319-PCEDSP-0237*/ 03410000
+   OTHERWISE                                                            03420000
+     DO;                                                                03430000
+      ERROR_CODE_DET.PTR_ERROR     = ADDR(PARM_RET_AREA_BB.RETURN_SQL); 03440000
+      ERROR_CODE_DET.ERR_TYPE      ='DB2';                              03450000
+      ERROR_CODE_DET.CALL_ID       ='#001';                             03460000
+      SIGNAL ERROR;                                                     03470000
+     END;                                                               03480000
+   END;                                                                 03490000
+   END;                                                                 03500000
+                                                                        03510000
+   IF (REG_IN_T693) THEN DO;                   /* RC01319-PCEDSP-0239 */03520121
+   IF LANG_ELEMENT_FND  = TRUE THEN DO;                    /* RC01377 */03521029
+   DO J = 1 TO REFOFER_UPD_UCOUNT_DET.CNT_LANG_ELEMENT;                 03530000
+    LANG_LIST_TEMP = '';                                                03540000
+    /*LANG_LIST_TEMP = STRING(LANGUAGE_LIST(J));    *//* CEDS00000692 */03550000
+                                                                        03560000
+    IF (LANGUAGE_LIST(J).PRODUCT_TYPE ¬= ' ') &                         03570000
+       (LANGUAGE_LIST(J).MODEL_NUMBER ¬= ' ') &                         03580000
+       (LANGUAGE_LIST(J).LANG_ID       = '1') THEN                      03590000
+    DO;                                                                 03600000
+                                                      /* SOC RC01337  */03610000
+   /*IF LANGUAGE_LIST(J).PROD_DESC = ' ' THEN  SOC RC01319-PCEDSP-0237*/03620000
+   /*  CALL RCBXC3M_MSG('0315');                                        03630000
+     ELSE                                                               03640000
+     DO;  */                                 /*EOC RC01319-PCEDSP-0237*/03650000
+                                                      /* EOC RC01337  */03660000
+                                                  /* SOC CEDS00000679 */03660100
+        LANGUAGE_LISTL(J).PRODUCT_TYPE =                                03661000
+         RCBXC3M_TSN(LANGUAGE_LISTL(J).PRODUCT_TYPE,LEN_LPRODTYP);      03662000
+        LANGUAGE_LISTL(J).MODEL_NUMBER =                                03663000
+         RCBXC3M_TSN(LANGUAGE_LISTL(J).MODEL_NUMBER,LEN_LMDLNUMBR);     03664000
+        LANGUAGE_LISTL(J).LANG_ID =                                     03665000
+         RCBXC3M_TSN(LANGUAGE_LISTL(J).LANG_ID,LEN_LLANGID);            03666000
+        LANGUAGE_LISTL(J).LAST_CHANGE_DATE =                            03667000
+               RCBXC3M_TSN(LANGUAGE_LISTL(J).LAST_CHANGE_DATE,          03668000
+                                         LEN_LLASTCD);                  03669000
+        LANG_LIST_TEMP1 = '';                                           03669100
+                                                 /* SOC CEDS00000692 */ 03669200
+   /*   LANG_LIST_TEMP1 = STRING(LANGUAGE_LISTL(J));                 */ 03669300
+    RCB696S_PTR         = ADDR(LANGUAGE_LIST(J));                       03669400
+    RCB696S_PTR1        = ADDR(LANGUAGE_LISTL(J));                      03669500
+                                                 /* EOC CEDS00000692 */ 03669600
+                                                                        03670000
+   /*CALL RCBF92M (RCB696S_PTR,*/                                       03673000
+                                                                        03673301
+     CALL RCBF92M (RCB696S_PTR,RCB696S_PTR1,     /* EOC CEDS00000679 */ 03674000
+                   PTR_RET_AREA_BB,PTR_INT_AREA);                       03869700
+                                                                        03870000
+     SELECT (PARM_RET_AREA_BB.RETURN_CODE);                             03880000
+     WHEN (0)                                                           03890000
+      DO;                                                               03900000
+       COUNT.T696_CNT_TOTAL.INSERTS = COUNT.T696_CNT_TOTAL.INSERTS + 1; 03910000
+      END;                                                              03920000
+     WHEN (4)                                                           03930000
+      DO;                                                               03940000
+       COUNT.T696_CNT_TOTAL.UPDATES = COUNT.T696_CNT_TOTAL.UPDATES + 1; 03950000
+      END;                                                              03960000
+     OTHERWISE                                                          03970000
+      DO;                                                               03980000
+       ERROR_CODE_DET.PTR_ERROR     = ADDR(PARM_RET_AREA_BB.RETURN_SQL);03990000
+       ERROR_CODE_DET.ERR_TYPE      ='DB2';                             04000000
+       ERROR_CODE_DET.CALL_ID       ='#002';                            04010020
+       SIGNAL ERROR;                                                    04020000
+      END;                                                              04030000
+     END;                                                               04040000
+                                                     /* SOC RC01337  */ 04050000
+   /*END; */                                  /* RC01319-PCEDSP-0237 */ 04060000
+                                                     /* EOC RC01337  */ 04070000
+    END;                                                                04080000
+   END;                                                                 04090000
+   END;                                     /*SOC RC01319-PCEDSP-0239*/ 04100000
+   END;                                                   /* RC01377 */ 04101029
+   ELSE                                                                 04110000
+     CALL RCBXC3M_MSG('0313');              /*EOC RC01319-PCEDSP-0239*/ 04120000
+   CALL RCBXC3M_END_PROGRAM;                                            04130000
+  END;                                                                  04140000
+  ELSE                                                                  04150000
+  DO;                                                                   04160000
+    CALL RCBXC3M_END_PROGRAM;                                           04170000
+  END;                                                                  04180000
+1/********************************************************************/ 04190000
+ /*                                                                  */ 04200000
+ /* MODULE NAME      : RCBXC3M_END_PROGRAM                           */ 04210000
+ /*                                                                  */ 04220000
+ /* DESCRIPTION      : CLOSING RCBXC3M PROGRAM                       */ 04230000
+ /*                                                                  */ 04240000
+ /********************************************************************/ 04250000
+ RCBXC3M_END_PROGRAM: PROC;                                             04260000
+                                                                        04270000
+ PARSER_RETURN_AREA.MSG_REJ_DATA_VIOLATION = 'N';                       04280000
+                                                                        04290000
+ IF ((COUNT.T693_CNT_TOTAL.INSERTS = 0) &                               04300000
+     (COUNT.T693_CNT_TOTAL.UPDATES = 0) &                               04310000
+     (COUNT.T696_CNT_TOTAL.INSERTS = 0) &                               04320000
+     (COUNT.T696_CNT_TOTAL.UPDATES = 0)) THEN                           04330000
+    PARSER_RETURN_AREA.MSG_REJ_DATA_VIOLATION = 'Y';                    04340000
+                                                                        04350000
+ PARSER_RETURN_AREA.T693_DETAILS.T693_INSERTS =                         04360000
+                                        COUNT.T693_CNT_TOTAL.INSERTS;   04370000
+                                                                        04380000
+ PARSER_RETURN_AREA.T693_DETAILS.T693_UPDATES =                         04390000
+                                        COUNT.T693_CNT_TOTAL.UPDATES;   04400000
+                                                                        04410000
+ PARSER_RETURN_AREA.T696_DETAILS.T696_INSERTS =                         04420000
+                                        COUNT.T696_CNT_TOTAL.INSERTS;   04430000
+                                                                        04440000
+ PARSER_RETURN_AREA.T696_DETAILS.T696_UPDATES =                         04450000
+                                        COUNT.T696_CNT_TOTAL.UPDATES;   04460000
+                                                                        04470000
+ FREE LANGUAGE_LIST;                                      /* RC01324 */ 04480000
+ FREE LANGUAGE_LISTL;                              /* CEDS00000679 */   04490000
+                                                                        04500000
+ END RCBXC3M_END_PROGRAM;                                               04510000
+1/********************************************************************/ 04520000
+ /*                                                                  */ 04530000
+ /* MODULE NAME      : RCBXC3M_VALIDATION                            */ 04540000
+ /*                                                                  */ 04550000
+ /* DESCRIPTION      : VALIDATION OF DATA                            */ 04560000
+ /*                                                                  */ 04570000
+ /********************************************************************/ 04580000
+ RCBXC3M_VALIDATION: PROC;                                              04590000
+                                                                        04600000
+  VALID_FLAG = TRUE;                                                    04610000
+  IF ((REF_OFER.PRODUCT_TYPE =' ') | (REF_OFER.MODEL_NUMBER =' '))THEN  04620000
+  DO;                                                                   04630000
+  VALID_FLAG = FALSE;                                                   04640000
+  CALL RCBXC3M_MSG('0292');                                             04650000
+  END;                                                                  04660000
+                                                                        04670000
+  IF (VALID_FLAG) THEN DO;                                              04680000
+  IF (VERIFY(REF_OFER.PRODUCT_TYPE,ALPHANUM) ¬= 0) |                    04690000
+     (VERIFY(REF_OFER.MODEL_NUMBER,ALPHANUM) ¬= 0) THEN DO;             04700000
+  VALID_FLAG = FALSE;                                                   04710000
+  CALL RCBXC3M_MSG('0293');                                             04720000
+  END;                                                                  04730000
+  END;                                                                  04740000
+                                                     /* SOC RC01337  */ 04750000
+  IF LANG_ELEMENT_FND  = TRUE THEN                    /* SOC RC01377 */ 04760029
+  DO;                                                 /* EOC RC01377 */ 04761029
+  IF (WRK_MFRPRODTYPE = ' ') THEN DO;                                   04762017
+     IF (WRK_MFRPRODDESC = ' ')THEN DO;                                 04770000
+      LANGUAGE_LIST(I).PROD_DESC =' ';                                  04780000
+      END;                                                              04790000
+     ELSE DO;                                                           04800000
+      LANGUAGE_LIST(I).PROD_DESC = WRK_MFRPRODDESC;                     04810000
+      END;                                                              04820027
+     END;                                                               04830027
+  ELSE DO;                                                              04840000
+         IF (WRK_MFRPRODDESC = ' ') THEN DO;                            04850000
+         LANGUAGE_LIST(I).PROD_DESC = WRK_MFRPRODTYPE;                  04860000
+         END;                                                           04870000
+      ELSE DO;                                                          04880000
+      IF (LEN_MFRPRODTYPE >= 30)THEN DO;                                04890000
+                                                 /* SOC CEDS00000692 */ 04891000
+  /*  CEDS ACCEPTS MAX OF 30 CHAR IN PRODUCT DESCRIPTION FIELD       */ 04892000
+  /*  LANGUAGE_LIST(I).PROD_DESC    = WRK_MFRPRODTYPE;               */ 04900000
+      LANGUAGE_LIST(I).PROD_DESC    = SUBSTR(WRK_MFRPRODTYPE,1,30);     04901000
+                                                 /* EOC CEDS00000692 */ 04902000
+      END;                                                              04910000
+      ELSE DO;                                                          04920000
+                                                                        04921000
+      LANGUAGE_LIST(I).PROD_DESC = SUBSTR(WRK_MFRPRODTYPE,1,            04930000
+                               LEN_MFRPRODTYPE) ||' '||                 04940000
+                                  WRK_MFRPRODDESC;                      04950000
+                                                 /* SOC CEDS00000692 */ 04950900
+      LEN_MFR =  LEN_MFRPRODTYPE + LEN_MFRPRODDESC + 1;                 04951100
+      LANGUAGE_LIST(I).PROD_DESC =                                      04951200
+               SUBSTR(LANGUAGE_LIST(I).PROD_DESC,1,30);                 04951300
+                                                 /* EOC CEDS00000692 */ 04955000
+      END;                                                              04960000
+      END;                                                              04970000
+      END;                                    /* EOC RC01337  */        04980000
+                                                 /* SOC CEDS00000679 */ 04980200
+    LANGUAGE_LISTL(I).PROD_DESC = ' ';                                  04981000
+                                                 /* SOC CEDS00000692 */ 04981100
+    LANGUAGE_LISTL(I).PROD_DESC   = (120)'20'X;                         04982000
+    IF (LEN_MFR < 30) THEN                                              04982100
+      TEMP_LENGTH = LEN_MFR + 2;                                        04983000
+    ELSE                                                                04984200
+      TEMP_LENGTH =  LEN_LPRODES;                                       04984400
+                                                 /* EOC CEDS00000692 */ 04984700
+    ELE_CONVERT            = 0;                                         04984900
+    PTR_REF                = ADDR(LANGUAGE_LIST(I).PROD_DESC);          04985000
+    PTR_REF_1              = ADDR(LANGUAGE_LISTL(I).PROD_DESC);         04986000
+    ELE_CONVERT1           = MEMCONVERT (PTR_REF_1,                     04987000
+                               122,                                     04988000
+                               1208,                                    04989000
+                               PTR_REF,                                 04989100
+                          /*   LEN_LPRODES, */   /* CEDS00000692 */     04989200
+                               TEMP_LENGTH,                             04989300
+                                   500);                                04989400
+                                                 /* EOC CEDS00000679 */ 04989900
+  END;                                                    /* RC01377 */ 04990029
+ END RCBXC3M_VALIDATION;                                                04991000
+1/********************************************************************/ 05000000
+ /*                                                                  */ 05010000
+ /* MODULE NAME      : RCBXC3M_DATE_VALIDATION                       */ 05020000
+ /*                                                                  */ 05030000
+ /* DESCRIPTION      : CALLS THE DATE VALIDATION ROUTINE             */ 05040000
+ /*                                                                  */ 05050000
+ /********************************************************************/ 05060000
+ RCBXC3M_DATE_VALIDATION: PROC;                                         05070000
+                                                                        05080000
+ DCL AWRK_DATE CHAR(10);                                                05090000
+ DCL EWRK_DATE CHAR(10);                                                05100000
+                                                                        05110000
+ DATE_AREA = '';                                                        05120000
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';                                      05130000
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';                                      05140000
+ DATE_AREA.WD_FUNCTION    = 'V';                                        05150000
+ DATE_AREA.WD_PERIOD_TYPE = 'D';                                        05160000
+ DATE_AREA.WD_PERIOD      = 0;                                          05170000
+                                                                        05180000
+ AWRK_DATE = REF_OFER.AVAILABILITY_DATE;                                05190000
+ DATE_AREA.WD_IN_DATE     = AWRK_DATE;                                  05200000
+                                                                        05210000
+ PTR_DATE_AREA      = ADDR(DATE_AREA);                                  05220000
+                                                                        05230000
+ CALL RCB004M (PTR_DATE_AREA);                                          05240000
+                                                                        05250000
+ IF DATE_AREA.WD_STATUS ¬= ' ' THEN                                     05260000
+ DO;                                                                    05270000
+   VALID_DATE = FALSE;                                                  05280000
+   PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/           05290000
+   PARM_INT_AREA.MSG_VAR_CODE_7   = 'D1';                               05300000
+   PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.AVAILABILITY_DATE;         05310000
+   CALL RCBXC3M_MSG('0012');                                            05320000
+ END;                                                                   05330000
+ ELSE DO;                                                               05340000
+   REF_OFER.AVAILABILITY_DATE = WD_IN_DATE;                             05350000
+   VALID_DATE = TRUE;                                                   05360000
+ END;                                                                   05370000
+                                                                        05380000
+ IF VALID_DATE THEN                             /* SOC CEDS00000679 */  05381000
+ DO;                                            /* EOC CEDS00000679 */  05382000
+ EWRK_DATE = REF_OFER.END_OF_SERVICE_DATE;                              05390000
+ DATE_AREA.WD_IN_DATE     = EWRK_DATE;                                  05400000
+                                                                        05410000
+ PTR_DATE_AREA      = ADDR(DATE_AREA);                                  05420000
+                                                                        05430000
+ CALL RCB004M (PTR_DATE_AREA);                                          05440000
+                                                                        05450000
+ IF DATE_AREA.WD_STATUS ¬= ' ' THEN                                     05460000
+ DO;                                                                    05470000
+   VALID_DATE = FALSE;                                                  05480000
+   PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/           05490000
+   PARM_INT_AREA.MSG_VAR_CODE_7   = 'D2';                               05500000
+   PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.END_OF_SERVICE_DATE;       05510000
+   CALL RCBXC3M_MSG('0012');                                            05520000
+ END;                                                                   05530000
+ ELSE DO;                                                               05540000
+   REF_OFER.END_OF_SERVICE_DATE = WD_IN_DATE;                           05550000
+   VALID_DATE = TRUE;                                                   05560000
+ END;                                                                   05570000
+ END;                                             /* CEDS00000679 */    05571000
+                                                                        05580000
+ END RCBXC3M_DATE_VALIDATION;                                           05590000
+1/********************************************************************/ 05600000
+ /*                                                                  */ 05610000
+ /* MODULE NAME      : RCBXC3M_MSG                                   */ 05620000
+ /*                                                                  */ 05630000
+ /* DESCRIPTION      : CALLS THE MESSAGE ROUTINE AFTER FILLING       */ 05640000
+ /*                    THE INPUT VARIABLES                           */ 05650000
+ /*                                                                  */ 05660000
+ /********************************************************************/ 05670000
+ RCBXC3M_MSG: PROC (A_MSG_NR);                                          05680000
+                                                                        05690000
+ DCL A_MSG_NR          CHAR(04);                                        05700000
+                                                                        05710000
+ SELECT (A_MSG_NR);                                                     05720000
+    WHEN ('0292') DO;                                                   05730000
+     PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/         05740000
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             05750000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         05760000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             05770000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        05780000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'PT';                             05790000
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.PRODUCT_TYPE;            05800000
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'MN';                             05810000
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = REF_OFER.MODEL_NUMBER;            05820000
+    END;                                                                05830000
+    WHEN ('0293') DO;                                                   05840000
+     PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/         05850000
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             05860000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         05870000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             05880000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        05890000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'PT';                             05900000
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.PRODUCT_TYPE;            05910000
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'MN';                             05920000
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = REF_OFER.MODEL_NUMBER;            05930000
+    END;                                                                05940000
+    WHEN ('0294') DO;                       /*SOC RC01319-PCEDSP-0237*/ 05950000
+     PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/         05960000
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             05970000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         05980000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             05990000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        06000000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'DI';                             06010000
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.PROD_REVENUE_DIV;        06020000
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'MC';                             06030000
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = REF_OFER.MACHINE_CATEGORY;        06040000
+    END;                                                                06050000
+ /* WHEN ('0315') DO;*/                       /* SOC RC01337  */        06060000
+ /*  PARM_INT_AREA.MSG_VAR_CODES = ' ';*/ /*RESET COMMON FIELDS*/       06070000
+ /*  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             06080000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         06090000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             06100000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        06110000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'PT';                             06120000
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = LANGUAGE_LIST(I).PRODUCT_TYPE;    06130000
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'MN';                             06140000
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = LANGUAGE_LIST(I).MODEL_NUMBER;    06150000
+     PARM_INT_AREA.MSG_VAR_CODE_9   = 'PD';                             06160000
+     PARM_INT_AREA.MSG_VAR_VALUE_9  = LANGUAGE_LIST(J).PROD_DESC;       06170000
+    END; */                                 /*EOC RC01319-PCEDSP-0237*/ 06180000
+                                                     /* EOC RC01337  */ 06190000
+    WHEN ('0313') DO;                       /*SOC RC01319-PCEDSP-0239*/ 06200000
+     PARM_INT_AREA.MSG_VAR_CODES = ' '; /*RESET COMMON FIELDS*/         06210000
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             06220000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         06230000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             06240000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        06250000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'PT';                             06260000
+                                                      /* SOC RC01377 */ 06261029
+  /* PARM_INT_AREA.MSG_VAR_VALUE_7  = LANGUAGE_LIST(I).PRODUCT_TYPE;*/  06262023
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = REF_OFER.PRODUCT_TYPE;            06263023
+                                                      /* EOC RC01377 */ 06264029
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'MN';                             06265023
+                                                      /* SOC RC01377 */ 06266029
+  /* PARM_INT_AREA.MSG_VAR_VALUE_8  = LANGUAGE_LIST(I).MODEL_NUMBER;*/  06267023
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = REF_OFER.MODEL_NUMBER;            06268023
+                                                      /* EOC RC01377 */ 06269029
+     PARM_INT_AREA.MSG_VAR_CODE_9   = 'PD';                             06300000
+     PARM_INT_AREA.MSG_VAR_VALUE_9  = LANGUAGE_LIST(J).PROD_DESC;       06310000
+    END;                                    /*SOC RC01319-PCEDSP-0239*/ 06320000
+    WHEN ('0012') DO;                                                   06330000
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                             06340000
+     PARM_INT_AREA.MESSAGE_NUMBER   = A_MSG_NR;                         06350000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'EI';                             06360000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = ENTITY_ID;                        06370000
+    END;                                                                06380000
+    OTHERWISE;                                                          06390000
+   END;                                                                 06400000
+   CALL RCB0M1M(PTR_INT_AREA);                                          06410000
+  END RCBXC3M_MSG;                                                      06420000
+                                                 /* SOC CEDS00000679 */ 06430000
+1/********************************************************************/ 06440000
+ /*                                                                  */ 06450000
+ /* MODULE NAME      : RCBXC3M_TRANSLATE                             */ 06460000
+ /*                                                                  */ 06470000
+ /* DESCRIPTION      : REPLACE BLANKS WITH UNICODE SPACE X'20'       */ 06480000
+ /********************************************************************/ 06490000
+                                                 /* SOC CEDS00000692 */ 06500000
+ /*RCBXC3M_TSN: PROC (REFOVAR,LENGTHA) RETURNS (CHAR(30) VARYING);   */ 06500100
+  RCBXC3M_TSN: PROC (REFOVAR,LENGTHA) RETURNS (CHAR(120) VARYING);      06501000
+                                                 /* EOC CEDS00000692 */ 06502000
+                                                                        06510000
+     DCL INDEX2      FIXED BIN(31);                                     06520000
+     DCL INDEX3      FIXED BIN(31);                                     06530000
+     DCL LENGTHA     FIXED BIN(31);                                     06540000
+                                                 /* SOC CEDS00000692 */ 06541000
+ /*  DCL REFOVAR     CHAR(30) VARYING;                               */ 06550000
+     DCL REFOVAR     CHAR(120) VARYING;                                 06551000
+ /*  DCL REFOVAR1    CHAR(30) VARYING;                               */ 06560000
+     DCL REFOVAR1    CHAR(120) VARYING;                                 06561000
+                                                 /* EOC CEDS00000692 */ 06562000
+     DCL TRANSLATE   BUILTIN;                                           06570000
+                                                                        06580000
+    INDEX2     = 0;                                                     06590000
+    REFOVAR1   = '';                                                    06600000
+    INDEX3     = 0;                                                     06610000
+    REFOVAR    = SUBSTR(REFOVAR,1,LENGTHA);                             06611000
+    INDEX2     = INDEX(REFOVAR,' ');                                    06620000
+     DO UNTIL (INDEX3 <= LENGTHA & INDEX2 ¬= 0)                         06640000
+    INDEX3     = INDEX(REFOVAR,' ',INDEX2);                             06650000
+      REFOVAR1 = TRANSLATE(REFOVAR,'20'X,' ');                          06660000
+    INDEX3     = INDEX3 + 1;                                            06670000
+    INDEX2     = INDEX2 + 1;                                            06680000
+    END;                                                                06690000
+    RETURN(REFOVAR1);                                                   06700000
+                                                                        06710000
+  END RCBXC3M_TSN;                                                      06720000
+                                                  /* EOC CEDS00000679 */06730000
+1/********************************************************************/ 06740000
+ /*                                                                  */ 06750000
+ /* MODULE NAME      : RCBXC3M_INIT_PROGRAM                          */ 06760000
+ /*                                                                  */ 06770000
+ /* DESCRIPTION      : PROGRAM INITIALISATIONS                       */ 06780000
+ /********************************************************************/ 06790000
+ RCBXC3M_INIT_PROGRAM: PROC;                                            06800000
+                                             /* INITIALISE POINTERS  */ 06810000
+ PARSER_RETURN_AREA = '';                                               06820000
+ PARM_RET_AREA_BB   = '';                                               06830000
+ PTR_RET_AREA_BB    = ADDR(PARM_RET_AREA_BB);                           06840000
+                                                  /* SOC CEDS00000692 */06841000
+ /*RCB693S_PTR        = ADDR(REFOFER_TEMP);                           */06850000
+ /*RCB696S_PTR        = ADDR(LANG_LIST_TEMP);                         */06860000
+ /*RCB693S_PTR1       = ADDR(REFOFER_TEMP1);    *//* SOC CEDS00000679 */06860300
+ /*RCB696S_PTR1       = ADDR(LANG_LIST_TEMP1);  *//* EOC CEDS00000679 */06861000
+                                                  /* SOC CEDS00000692 */06862000
+                                             /* INITIALISE VARIABLES */ 06870000
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;                                      06880000
+                                                      /* SOC RC01324 */ 06890000
+ /*                                                                     06900000
+ PARM_INT_AREA.ID_MOD_PATH(1) = 'REFOFER'; */                           06910000
+ PARM_INT_AREA.ID_MOD_PATH(1) = 'RCBXC3M';            /* EOC RC01324 */ 06920000
+                                             /* RETRIEVE SYSTEM DATE */ 06930000
+ PARM_INT_AREA.MSG_REQUEST = 'P';                                       06940000
+ CALL RCB0T1M(PTR_INT_AREA);                                            06950000
+                                                                        06960000
+ END RCBXC3M_INIT_PROGRAM;                                              06970000
+ END;                                         /* END OF MAIN PROGRAM */ 06980000
+1/********************************************************************/ 06990000
+ /********************************************************************/ 07000000
+ /*  USED TEMPORARY FIELDS DECLARATION                               */ 07010000
+ /********************************************************************/ 07020000
+  DCL CHARS CHAR(32000) BASED;                                          07030000
+  DCL ST_OF_ELEMENT CHAR(20) VAR;                                       07040000
+  DCL ED_OF_ELEMENT CHAR(20) VAR;                                       07050000
+  DCL I FIXED BIN(31) INIT(0);                                          07060000
+  DCL J FIXED BIN(31) INIT(0);                                          07070000
+  DCL 1 REF_OFER,                                                       07080000
+        3  PRODUCT_TYPE         CHAR(4),                                07090000
+        3  MODEL_NUMBER         CHAR(3),                                07100000
+        3  PROD_REVENUE_DIV     CHAR(2),                                07110000
+        3  MACHINE_CATEGORY     CHAR(1),                                07120000
+  /*    3  VENDOR_NAME          CHAR(30),       *//* SOC CEDS00000692 */07130000
+        3  VENDOR_NAME          CHAR(120) VAR,    /* EOC CEDS00000692 */07131000
+        3  CE_PRODUCT_KEY       CHAR(1),                                07140000
+        3  PROD_SUP_COD         CHAR(3),                                07150000
+  /*    3  RETAIN_FLAG          CHAR(1) INIT('N'),   SOC CEDS00000584 */07160000
+        3  RETAIN_FLAG          CHAR(1),          /* EOC CEDS00000584 */07170000
+  /*    3  INSTALL              CHAR(3) INIT(''),         SOC RC01319 */07180000
+        3  INSTALL              CHAR(3),               /* EOC RC01319 */07190000
+        3  LAST_CHANGE_DATE     CHAR(10),                               07200000
+        3  AVAILABILITY_DATE    CHAR(10),                               07210000
+  /*    3  END_OF_SERVICE_DATE  CHAR(10);            *//* SOC RB01342 */07220000
+        3  END_OF_SERVICE_DATE  CHAR(10),                               07230000
+        3  PARENT_PRODTYPE      CHAR(04),                               07231000
+        3  PARENT_MODEL         CHAR(03);              /* EOC RB01342 */07232000
+  DCL 1 REF_OFER1               LIKE REF_OFER;        /* CEDS00000679 */07240000
+  DCL 1 LANGUAGE_LIST(*) CTL,                                           07380000
+        3 PRODUCT_TYPE          CHAR(4),                                07390000
+        3 MODEL_NUMBER          CHAR(3),                                07400000
+        3 LANG_ID               CHAR(2),                                07410000
+   /*   3 PROD_DESC             CHAR(30),       *//* SOC CEDS00000692 */07411000
+        3 PROD_DESC             CHAR(120) VARYING,/* EOC CEDS00000692 */07420000
+        3 LAST_CHANGE_DATE      CHAR(10);                               07430000
+  DCL 1 LANGUAGE_LISTL(*) CTL LIKE LANGUAGE_LIST;     /* CEDS00000679 */07450000
+  DCL ENTITY_ID                CHAR(7);                                 07530000
+  DCL WRK_MFRPRODTYPE          CHAR(30);              /* SOC RC01337 */ 07540001
+                                                 /* SOC CEDS00000692 */ 07541000
+  /*DCL WRK_MFRPRODDESC          CHAR(30);                           */ 07550000
+  /*DCL WRK_MFRPRODDESC          CHAR(120) VARYING;   /* SOC RC01377 */ 07551030
+  DCL WRK_MFRPRODDESC          CHAR(120) VARYING INIT('');              07551130
+                                                      /* EOC RC01377 */ 07551230
+  DCL LEN_MFRPRODDESC          FIXED BIN(31) INIT(0);                   07552000
+  DCL LEN_MFR                  FIXED BIN(31) INIT(0);                   07553000
+                                                 /* EOC CEDS00000692 */ 07554000
+  DCL LEN_MFRPRODTYPE          FIXED BIN(31) INIT(0); /* EOC RC01337 */ 07560000
+  DCL 1 CNT_LANG_ELEMENT1      FIXED BIN(31);                           07570000
+                                                 /* SOC CEDS00000679 */ 07580000
+  DCL ENTITY_ID1               CHAR(7);                                 07600000
+  DCL MFRPRODTYPE              CHAR(30);                                07610000
+  /*DCL MFRPRODDESC              CHAR(30); */    /* SOC CEDS00000692 */ 07630000
+  DCL MFRPRODDESC              CHAR(120) VARYING;/* EOC CEDS00000692 */ 07631000
+  DCL PTR_REF                  POINTER;                                 07640000
+  DCL PTR_REF_1                POINTER;                                 07641000
+  DCL ELE_CONVERT1             FIXED BIN(31);                           07642000
+  DCL MEMCONVERT               BUILTIN;                                 07643000
+                                                 /* EOC CEDS00000679 */ 07650000
+                                                                        07660000
+  /********************************************************************/07670000
+  /*  BIT SWITCHES                                                    */07680000
+  /********************************************************************/07690000
+  DCL REFOFER_FLAG      BIT(1) INIT('0'B);                              07700000
+  DCL LANG_LIST_FLAG    BIT(1) INIT('0'B);                              07710000
+  DCL LANG_ELEMENT_FLAG BIT(1) INIT('0'B);                              07720000
+  DCL LANG_ELEMENT_FND  BIT(1) INIT('0'B);                /* RC01377 */ 07721029
+  DCL VALID_FLAG        BIT(1);                                         07730000
+  DCL VALID_DATE        BIT(1);                                         07740000
+  DCL REG_IN_T693       BIT(1) INIT('0'B);    /* RC01319-PCEDSP-0239 */ 07750000
+  DCL 1 SWITCHES,                                                       07760000
+      3 TRUE                          BIT (1)           INIT ('1'B),    07770000
+      3 FALSE                         BIT (1)           INIT ('0'B);    07780000
+1/********************************************************************/ 07790000
+ /* MODULE NAME      : START_OF_DOCUMENT                             */ 07800000
+ /*                                                                  */ 07810000
+ /********************************************************************/ 07820000
+  START_OF_DOCUMENT:                                                    07830000
+    PROC( USERTOKEN )                                                   07840000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    07850000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                07860000
+                                                                        07870000
+    DCL USERTOKEN      POINTER;                                         07880000
+    DCL XMLTOKEN       POINTER;                                         07890000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   07900000
+                                                                        07910000
+    ALLOCATE LANGUAGE_LIST(CNT_LANG_ELEMENT1);                          07920000
+    ALLOCATE LANGUAGE_LISTL(CNT_LANG_ELEMENT1);      /* CEDS00000679 */ 07930000
+    REF_OFER      = '';                                                 07940000
+                                                 /* SOC CEDS00000692 */ 07941001
+    /*REF_OFER1     = '';                          *//* CEDS00000679 */ 07950001
+    REF_OFER1     = (120)'20'X;                  /* EOC CEDS00000692 */ 07951001
+    LANGUAGE_LIST = '';                                                 07960000
+    LANGUAGE_LISTL = '';                             /* CEDS00000679 */ 07970000
+    I=0;                                                                07982019
+    J=0;                                                                07990000
+    RETURN(0);                                                          08000000
+  END;                                                                  08010000
+1/********************************************************************/ 08020000
+ /* MODULE NAME      : VERSION_INFORMATION                           */ 08030000
+ /*                                                                  */ 08040000
+ /********************************************************************/ 08050000
+  VERSION_INFORMATION:                                                  08060000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            08070000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    08080000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08090000
+                                                                        08100000
+    DCL USERTOKEN      POINTER;                                         08110000
+    DCL XMLTOKEN       POINTER;                                         08120000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   08130000
+                                                                        08140000
+    RETURN(0);                                                          08150000
+  END;                                                                  08160000
+1/********************************************************************/ 08170000
+ /* MODULE NAME      : ENCODING_DECLARATION                          */ 08180000
+ /*                                                                  */ 08190000
+ /********************************************************************/ 08200000
+  ENCODING_DECLARATION:                                                 08210000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            08220000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    08230000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08240000
+                                                                        08250000
+    DCL USERTOKEN      POINTER;                                         08260000
+    DCL XMLTOKEN       POINTER;                                         08270000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   08280000
+    RETURN(0);                                                          08290000
+  END;                                                                  08300000
+1/********************************************************************/ 08310000
+ /* MODULE NAME      : STANDALONE_DECLARATION                        */ 08320000
+ /*                                                                  */ 08330000
+ /********************************************************************/ 08340000
+  STANDALONE_DECLARATION:                                               08350000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            08360000
+    RETURNS( BYVALUE FIXED BIN(31))                                     08370000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08380000
+                                                                        08390000
+    DCL USERTOKEN      POINTER;                                         08400000
+    DCL XMLTOKEN       POINTER;                                         08410000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   08420000
+                                                                        08430000
+    RETURN(0);                                                          08440000
+  END;                                                                  08450000
+1/********************************************************************/ 08460000
+ /* MODULE NAME      : DOCUMENT_TYPE_DECLARATION                     */ 08470000
+ /*                                                                  */ 08480000
+ /********************************************************************/ 08490000
+  DOCUMENT_TYPE_DECLARATION:                                            08500000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            08510000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    08520000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08530000
+                                                                        08540000
+    DCL USERTOKEN      POINTER;                                         08550000
+    DCL XMLTOKEN       POINTER;                                         08560000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   08570000
+                                                                        08580000
+    RETURN(0);                                                          08590000
+  END;                                                                  08600000
+1/********************************************************************/ 08610000
+ /* MODULE NAME      : NAMESPACE_DECLARE                             */ 08620000
+ /*                                                                  */ 08630000
+ /********************************************************************/ 08640000
+  NAMESPACE_DECLARE:                                                    08650000
+    PROC( USERTOKEN, NSPREFIX, NSPREFIXLENGTH,                          08660000
+                     NSURI, NSURILENGTH )                               08670000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    08680000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08690000
+                                                                        08700000
+    DCL USERTOKEN      POINTER;                                         08710000
+    DCL NSPREFIX       POINTER;                                         08720000
+    DCL NSPREFIXLENGTH FIXED BIN(31);                                   08730000
+    DCL NSURI          POINTER;                                         08740000
+    DCL NSURILENGTH    FIXED BIN(31);                                   08750000
+                                                                        08760000
+    RETURN(0);                                                          08770000
+  END;                                                                  08780000
+1/********************************************************************/ 08790000
+ /* MODULE NAME      : END_OF_DOCUMENT                               */ 08800000
+ /*                                                                  */ 08810000
+ /********************************************************************/ 08820000
+  END_OF_DOCUMENT:                                                      08830000
+    PROC( USERTOKEN )                                                   08840000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    08850000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                08860000
+                                                                        08870000
+    DCL USERTOKEN      POINTER;                                         08880000
+                                                                        08890000
+    RETURN(0);                                                          08900000
+  END;                                                                  08910000
+1/********************************************************************/ 08920000
+ /* MODULE NAME      : START_OF_ELEMENT                              */ 08930000
+ /*                                                                  */ 08940000
+ /********************************************************************/ 08950000
+  START_OF_ELEMENT:                                                     08960000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,                             08970000
+          NSPREFIX, NSPREFIXLENGTH,                                     08980000
+          NSURI, NSURILENGTH )                                          08990000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    09000000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                09010000
+                                                                        09020000
+    DCL USERTOKEN      POINTER;                                         09030000
+    DCL XMLTOKEN       POINTER;                                         09040000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   09050000
+    DCL NSPREFIX       POINTER;                                         09060000
+    DCL NSPREFIXLENGTH FIXED BIN(31);                                   09070000
+    DCL NSURI          POINTER;                                         09080000
+    DCL NSURILENGTH    FIXED BIN(31);                                   09090000
+                                                /* SOC CEDS00000679 */  09100000
+    DCL ST_ELEMENT_PTR               POINTER;                           09110000
+    DCL TEMP_ST_ELEMENT              CHAR(50) VARYING;                  09120000
+    DCL ST_ELEMENT_PTR_1             POINTER;                           09130000
+    DCL TEMP_ST_ELEMENT_1            CHAR(50) VARYING;                  09140000
+    DCL TEMP_CONVERT                 FIXED BIN(31) INIT(0);             09150000
+    DCL TEMP_LENGTH                  FIXED BIN(31) INIT(0);             09160000
+                                                /* EOC CEDS00000679 */  09161000
+                                                                        09170000
+                                                /* SOC CEDS00000679 */  09170100
+  /*ST_OF_ELEMENT = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH ); */          09171000
+    TEMP_ST_ELEMENT            = '';                                    09180000
+    TEMP_ST_ELEMENT_1          = '';                                    09190000
+    /***************** CONVERTING TO EBCDIC ********************/       09200000
+                                                                        09210000
+    TEMP_ST_ELEMENT_1          = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH );09220000
+    ST_ELEMENT_PTR_1           = ADDR(TEMP_ST_ELEMENT_1);               09230000
+    ST_ELEMENT_PTR             = ADDR(TEMP_ST_ELEMENT);                 09240000
+    TEMP_LENGTH                = TOKENLENGTH + 2;                       09250000
+                                                                        09260000
+    TEMP_CONVERT  = MEMCONVERT (ST_ELEMENT_PTR,TEMP_LENGTH,500,         09270000
+                               ST_ELEMENT_PTR_1,TEMP_LENGTH,1208);      09280000
+                                                                        09310000
+    ST_OF_ELEMENT = SUBSTR(TEMP_ST_ELEMENT,1,TOKENLENGTH);              09330000
+                                               /* EOC CEDS00000679 */   09340000
+    IF ST_OF_ELEMENT='REFOFER_UPDATE' THEN DO;                          09350000
+    REFOFER_FLAG = TRUE;                                                09360000
+    END;                                                                09370000
+                                                                        09380000
+    IF ST_OF_ELEMENT='LANGUAGELIST' THEN DO;                            09390000
+    LANG_LIST_FLAG = TRUE;                                              09400000
+    END;                                                                09410000
+                                                                        09420000
+    IF ST_OF_ELEMENT='LANGUAGEELEMENT' THEN DO;                         09430000
+    I = I + 1;                                                          09440000
+    LANG_ELEMENT_FLAG = TRUE;                                           09450000
+    END;                                                                09460000
+                                                     /* SOC RC01337  */ 09470000
+    IF ST_OF_ELEMENT='MFRPRODTYPE' THEN DO;                             09480000
+    WRK_MFRPRODTYPE = ' ';                                              09490000
+    END;                                                                09500000
+                                                                        09510000
+    IF ST_OF_ELEMENT='MFRPRODDESC' THEN DO;                             09520000
+    WRK_MFRPRODDESC = ' ';                                              09530000
+    END;                                                                09540000
+                                                     /* EOC RC01337  */ 09550000
+    RETURN(0);                                                          09560000
+  END;                                                                  09570000
+1/********************************************************************/ 09580000
+ /* MODULE NAME      : ATTRIBUTE_NAME                                */ 09590000
+ /*                                                                  */ 09600000
+ /********************************************************************/ 09610000
+  ATTRIBUTE_NAME:                                                       09620000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,                             09630000
+          NSPREFIX, NSPREFIXLENGTH,                                     09640000
+          NSURI, NSURILENGTH )                                          09650000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    09660000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                09670000
+                                                                        09680000
+    DCL USERTOKEN      POINTER;                                         09690000
+    DCL XMLTOKEN       POINTER;                                         09700000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   09710000
+    DCL NSPREFIX       POINTER;                                         09720000
+    DCL NSPREFIXLENGTH FIXED BIN(31);                                   09730000
+    DCL NSURI          POINTER;                                         09740000
+    DCL NSURILENGTH    FIXED BIN(31);                                   09750000
+                                                                        09760000
+    RETURN(0);                                                          09770000
+  END;                                                                  09780000
+1/********************************************************************/ 09790000
+ /* MODULE NAME      : END_OF_ELEMENT                                */ 09800000
+ /*                                                                  */ 09810000
+ /********************************************************************/ 09820000
+  END_OF_ELEMENT:                                                       09830000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH,                             09840000
+          NSPREFIX, NSPREFIXLENGTH,                                     09850000
+          NSURI, NSURILENGTH )                                          09860000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    09870000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                09880000
+                                                                        09890000
+    DCL USERTOKEN      POINTER;                                         09900000
+    DCL XMLTOKEN       POINTER;                                         09910000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   09920000
+    DCL NSPREFIX       POINTER;                                         09930000
+    DCL NSPREFIXLENGTH FIXED BIN(31);                                   09940000
+    DCL NSURI          POINTER;                                         09950000
+    DCL NSURILENGTH    FIXED BIN(31);                                   09960000
+                                                 /* SOC CEDS00000679 */ 09960100
+    DCL ED_ELEMENT_PTR               POINTER;                           09961000
+    DCL TEMP_ED_ELEMENT              CHAR(50) VARYING;                  09962000
+    DCL ED_ELEMENT_PTR_1             POINTER;                           09963000
+    DCL TEMP_ED_ELEMENT_1            CHAR(50) VARYING;                  09964000
+    DCL TEMP_CONVERT1                FIXED BIN(31) INIT(0);             09965000
+    DCL TEMP_LENGTH1                 FIXED BIN(31) INIT(0);             09966000
+                                                 /* EOC CEDS00000679 */ 09967000
+                                                                        09970000
+                                                 /* SOC CEDS00000679 */ 09980000
+ /*ED_OF_ELEMENT = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH ); */           09981000
+                                                                        10050000
+   TEMP_ED_ELEMENT            = '';                                     10060000
+   TEMP_ED_ELEMENT_1          = '';                                     10070000
+  /***************** CONVERTING TO EBCDIC ********************/         10080000
+                                                                        10090000
+   TEMP_ED_ELEMENT_1          = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH ); 10100000
+   ED_ELEMENT_PTR_1           = ADDR(TEMP_ED_ELEMENT_1);                10110000
+   ED_ELEMENT_PTR             = ADDR(TEMP_ED_ELEMENT);                  10120000
+   TEMP_LENGTH1               = TOKENLENGTH + 2;                        10130000
+                                                                        10140000
+   TEMP_CONVERT1 = MEMCONVERT (ED_ELEMENT_PTR,TEMP_LENGTH1,500,         10150000
+                              ED_ELEMENT_PTR_1,TEMP_LENGTH1,1208);      10160000
+   ED_OF_ELEMENT = SUBSTR(TEMP_ED_ELEMENT,1,TOKENLENGTH);               10180000
+                                                 /* EOC CEDS00000679 */ 10190000
+   IF ED_OF_ELEMENT='REFOFER_UPDATE' THEN                               10200000
+   REFOFER_FLAG      = FALSE;                                           10210000
+   IF ED_OF_ELEMENT='LANGUAGELIST' THEN                                 10220015
+   LANG_LIST_FLAG    = FALSE;                                           10230015
+   IF ED_OF_ELEMENT='LANGUAGEELEMENT' THEN                              10240006
+   LANG_ELEMENT_FLAG = FALSE;                                           10250006
+                                                                        10260000
+    RETURN(0);                                                          10270000
+  END;                                                                  10280000
+1/********************************************************************/ 10290000
+ /* MODULE NAME      : CONTENT_CHARACTERS                            */ 10300000
+ /*                                                                  */ 10310000
+ /********************************************************************/ 10320000
+  CONTENT_CHARACTERS:                                                   10330000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH, FLAGS )                     10340000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    10350000
+    OPTIONS( NODESCRIPTOR, BYVALUE LINKAGE(OPTLINK) );                  10360000
+                                                                        10370000
+    DCL USERTOKEN      POINTER;                                         10380000
+    DCL XMLTOKEN       POINTER;                                         10390000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   10400000
+    DCL FLAGS          BIT(8) ALIGNED;                                  10410000
+    DCL ELE_CONVERT    FIXED BIN(31);             /* SOC CEDS00000679 */10420000
+    DCL TEMP_LENGTH    FIXED BIN(31) INIT(0);                           10430000
+    DCL PTR_REFO      POINTER;                                          10431000
+    DCL PTR_REFO_1    POINTER;                    /* EOC CEDS00000679 */10432000
+                                                                        10440000
+                                                                        10443002
+  IF (ST_OF_ELEMENT = 'ENTITYID' & REFOFER_FLAG = TRUE)                 10450000
+  THEN DO;                                                              10460000
+                                                 /* SOC CEDS00000679 */ 10470000
+  /*ENTITY_ID = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH); */               10480000
+    ENTITY_ID              = '';                                        10490000
+    ENTITY_ID1             = '';                                        10491000
+    ENTITY_ID1             = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);     10500000
+                                                                        10530000
+    ELE_CONVERT           = 0;                                          10540000
+    PTR_REFO              = ADDR(ENTITY_ID);                            10550000
+    PTR_REFO_1            = ADDR(ENTITY_ID1);                           10560000
+    ELE_CONVERT           = MEMCONVERT (PTR_REFO,                       10570000
+                               TOKENLENGTH,                             10580000
+                               500,                                     10590000
+                               PTR_REFO_1,                              10600000
+                               TOKENLENGTH,                             10610000
+                               1208);                                   10620000
+                                                 /* EOC CEDS00000679 */ 10630000
+  END;                                                                  10640000
+                                                                        10650000
+  IF (ST_OF_ELEMENT = 'PRODUCTID' & REFOFER_FLAG = TRUE)                10660000
+  THEN DO;                                                              10670000
+                                                /* SOC CEDS00000679 */  10671000
+  /*REF_OFER.PRODUCT_TYPE = SUBSTR(XMLTOKEN->CHARS,1,4); */             10680000
+  /*REF_OFER.MODEL_NUMBER = SUBSTR(XMLTOKEN->CHARS,5,TOKENLENGTH); */   10690000
+    REF_OFER1.PRODUCT_TYPE = SUBSTR(XMLTOKEN->CHARS,1,4);               10720000
+                                                                        10750000
+    ELE_CONVERT            = 0;                                         10760000
+    TEMP_LENGTH            = 4;                                         10770000
+    PTR_REFO               = ADDR(REF_OFER.PRODUCT_TYPE);               10780000
+    PTR_REFO_1             = ADDR(REF_OFER1.PRODUCT_TYPE);              10790000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      10800000
+                               TEMP_LENGTH,                             10810000
+                               500,                                     10820000
+                               PTR_REFO_1,                              10830000
+                               TEMP_LENGTH,                             10840000
+                               1208);                                   10850000
+                                                                        10860000
+    REF_OFER1.MODEL_NUMBER = SUBSTR(XMLTOKEN->CHARS,5,TOKENLENGTH);     10880000
+                                                                        10910000
+    ELE_CONVERT            = 0;                                         10920000
+    PTR_REFO               = ADDR(REF_OFER.MODEL_NUMBER);               10930000
+    PTR_REFO_1             = ADDR(REF_OFER1.MODEL_NUMBER);              10940000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      10950000
+                               TOKENLENGTH,                             10960000
+                               500,                                     10970000
+                               PTR_REFO_1,                              10980000
+                               TOKENLENGTH,                             10990000
+                               1208);                                   11000000
+                                                  /* EOC CEDS00000679 */11010000
+  END;                                                                  11020000
+                                                     /* SOC RC01337  */ 11030000
+  IF (ST_OF_ELEMENT = 'MFRPRODTYPE' & REFOFER_FLAG = TRUE)              11040000
+  THEN DO;                                                              11050000
+                                                  /* SOC CEDS00000679 */11051000
+  /*WRK_MFRPRODTYPE            = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH); 11060000
+    LEN_MFRPRODTYPE            = TOKENLENGTH;                           11070000
+  END; */                                           /* EOC RC01337  */  11240000
+                                                                        11244100
+                                                                        11244200
+    WRK_MFRPRODTYPE       = '';                                         11245000
+    MFRPRODTYPE           = '';                                         11246000
+    LEN_MFRPRODTYPE       = TOKENLENGTH;                                11247000
+                                                 /* SOC CEDS00000692 */ 11247101
+  /*MFRPRODTYPE           = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/    11247201
+    IF LEN_MFRPRODTYPE >= 30 THEN                                       11247401
+       LEN_MFRPRODTYPE = 30;                                            11247501
+    MFRPRODTYPE           = SUBSTR(XMLTOKEN->CHARS,1,LEN_MFRPRODTYPE);  11247601
+                                                 /* EOC CEDS00000692 */ 11248101
+                                                                        11249000
+    ELE_CONVERT            = 0;                                         11249100
+    PTR_REFO               = ADDR(WRK_MFRPRODTYPE);                     11249200
+    PTR_REFO_1             = ADDR(MFRPRODTYPE);                         11249300
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      11249400
+                           /*  TOKENLENGTH, */   /* SOC CEDS00000692 */ 11249501
+                               LEN_MFRPRODTYPE,  /* EOC CEDS00000692 */ 11249601
+                               500,                                     11249701
+                               PTR_REFO_1,                              11249801
+                          /*   TOKENLENGTH, */   /* SOC CEDS00000692 */ 11249901
+                               LEN_MFRPRODTYPE,  /* EOC CEDS00000692 */ 11250001
+                               1208);                                   11250101
+  END;                                            /* EOC CEDS00000679 */11250401
+                                                                        11251000
+  IF (ST_OF_ELEMENT = 'MKTGDIV' & REFOFER_FLAG = TRUE)                  11260000
+  THEN DO;                                                              11270000
+                                                  /* SOC CEDS00000679 */11280000
+  /*REF_OFER.PROD_REVENUE_DIV=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/  11290000
+    REF_OFER1.PROD_REVENUE_DIV = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH); 11310000
+                                                                        11340000
+    ELE_CONVERT            = 0;                                         11350000
+    PTR_REFO               = ADDR(REF_OFER.PROD_REVENUE_DIV);           11360000
+    PTR_REFO_1             = ADDR(REF_OFER1.PROD_REVENUE_DIV);          11370000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      11380000
+                               TOKENLENGTH,                             11390000
+                               500,                                     11400000
+                               PTR_REFO_1,                              11410000
+                               TOKENLENGTH,                             11420000
+                               1208);                                   11430000
+                                                  /* EOC CEDS00000679 */11440000
+  END;                                                                  11450000
+                                                                        11460000
+  IF (ST_OF_ELEMENT = 'MACHRATECATG' & REFOFER_FLAG = TRUE)             11470000
+  THEN DO;                                                              11480000
+                                                  /* SOC CEDS00000679 */11490000
+ /*REF_OFER.MACHINE_CATEGORY=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/   11500000
+    REF_OFER1.MACHINE_CATEGORY = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH); 11520000
+                                                                        11550000
+    ELE_CONVERT            = 0;                                         11560000
+    PTR_REFO               = ADDR(REF_OFER.MACHINE_CATEGORY);           11570000
+    PTR_REFO_1             = ADDR(REF_OFER1.MACHINE_CATEGORY);          11580000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      11590000
+                               TOKENLENGTH,                             11600000
+                               500,                                     11610000
+                               PTR_REFO_1,                              11620000
+                               TOKENLENGTH,                             11630000
+                               1208);                                   11640000
+                                                  /* EOC CEDS00000679 */11650000
+  END;                                                                  11660000
+                                                                        11670000
+  IF (ST_OF_ELEMENT = 'VENDNAM' & REFOFER_FLAG = TRUE)                  11680000
+  THEN DO;                                                              11690000
+                                                 /* SOC CEDS00000679 */ 11700000
+    REF_OFER1.VENDOR_NAME = (120)'20'X;              /* CEDS00000692 */ 11700100
+                                                                        11700200
+ /*REF_OFER.VENDOR_NAME=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/        11710000
+    REF_OFER1.VENDOR_NAME = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);      11730000
+                                                                        11760000
+    ELE_CONVERT            = 0;                                         11770000
+    PTR_REFO               = ADDR(REF_OFER.VENDOR_NAME);                11780000
+    PTR_REFO_1             = ADDR(REF_OFER1.VENDOR_NAME);               11790000
+    TEMP_LENGTH            = TOKENLENGTH + 2;        /* CEDS00000692 */ 11791000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      11800000
+                           /*  TOKENLENGTH,    *//* SOC CEDS00000692 */ 11810000
+                               TEMP_LENGTH,      /* EOC CEDS00000692 */ 11811000
+                               500,                                     11820000
+                               PTR_REFO_1,                              11830000
+                           /*  TOKENLENGTH,    *//* SOC CEDS00000692 */ 11840000
+                               TEMP_LENGTH,      /* EOC CEDS00000692 */ 11841000
+                               1208);                                   11850000
+                                                  /* EOC CEDS00000679 */11860000
+  END;                                                                  11870000
+                                                                        11880000
+  IF (ST_OF_ELEMENT = 'CECSPRODKEY' & REFOFER_FLAG = TRUE)              11890000
+  THEN DO;                                                              11900000
+                                                  /* SOC CEDS00000679 */11910000
+ /*REF_OFER.CE_PRODUCT_KEY=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/     11920000
+    REF_OFER1.CE_PRODUCT_KEY = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);   11940000
+                                                                        11970000
+    ELE_CONVERT            = 0;                                         11980000
+    PTR_REFO               = ADDR(REF_OFER.CE_PRODUCT_KEY);             11990000
+    PTR_REFO_1             = ADDR(REF_OFER1.CE_PRODUCT_KEY);            12000000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      12010000
+                               TOKENLENGTH,                             12020000
+                               500,                                     12030000
+                               PTR_REFO_1,                              12040000
+                               TOKENLENGTH,                             12050000
+                               1208);                                   12060000
+                                                 /* EOC CEDS00000679 */ 12070000
+  END;                                                                  12080000
+                                                                        12090000
+  IF (ST_OF_ELEMENT = 'PRODSUPRTCD' & REFOFER_FLAG = TRUE)              12100000
+  THEN DO;                                                              12110000
+                                                 /* SOC CEDS00000679 */ 12120000
+  /*REF_OFER.PROD_SUP_COD=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/      12130000
+    REF_OFER1.PROD_SUP_COD  = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);    12150000
+                                                                        12180000
+    ELE_CONVERT            = 0;                                         12190000
+    PTR_REFO               = ADDR(REF_OFER.PROD_SUP_COD);               12200000
+    PTR_REFO_1             = ADDR(REF_OFER1.PROD_SUP_COD);              12210000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      12220000
+                               TOKENLENGTH,                             12230000
+                               500,                                     12240000
+                               PTR_REFO_1,                              12250000
+                               TOKENLENGTH,                             12260000
+                               1208);                                   12270000
+                                                  /* EOC CEDS00000679 */12280000
+  END;                                                                  12290000
+                                              /* SOC RC01319 P10-434    12300000
+  IF (ST_OF_ELEMENT = 'STRTOSVC' & REFOFER_FLAG = TRUE)               */12310000
+  IF (ST_OF_ELEMENT = 'STRTOFSVC' & REFOFER_FLAG = TRUE)                12320000
+                                              /* EOC RC01319 P10-434  */12330000
+  THEN DO;                                                              12340000
+                                                 /* SOC CEDS00000679 */ 12350000
+ /*REF_OFER.AVAILABILITY_DATE=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/  12360000
+    REF_OFER1.AVAILABILITY_DATE = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);12380000
+                                                                        12410000
+    ELE_CONVERT            = 0;                                         12420000
+    PTR_REFO               = ADDR(REF_OFER.AVAILABILITY_DATE);          12430000
+    PTR_REFO_1             = ADDR(REF_OFER1.AVAILABILITY_DATE);         12440000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      12450000
+                               TOKENLENGTH,                             12460000
+                               500,                                     12470000
+                               PTR_REFO_1,                              12480000
+                               TOKENLENGTH,                             12490000
+                               1208);                                   12500000
+                                                 /* EOC CEDS00000679 */ 12510000
+  END;                                                                  12520000
+                                                                        12530000
+  IF (ST_OF_ELEMENT = 'ENDOFSVC' & REFOFER_FLAG = TRUE)                 12540000
+  THEN DO;                                                              12550000
+                                                 /* SOC CEDS00000679 */ 12560000
+ /*REF_OFER.END_OF_SERVICE_DATE=SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/12570000
+  REF_OFER1.END_OF_SERVICE_DATE = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);12590000
+                                                                        12620000
+    ELE_CONVERT            = 0;                                         12630000
+    PTR_REFO               = ADDR(REF_OFER.END_OF_SERVICE_DATE);        12640000
+    PTR_REFO_1             = ADDR(REF_OFER1.END_OF_SERVICE_DATE);       12650000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      12660000
+                               TOKENLENGTH,                             12670000
+                               500,                                     12680000
+                               PTR_REFO_1,                              12690000
+                               TOKENLENGTH,                             12700000
+                               1208);                                   12710000
+                                                 /* EOC CEDS00000679 */ 12720000
+  END;                                                                  12730000
+                                                                        12740000
+  REF_OFER.RETAIN_FLAG = 'N';                         /* CEDS00000584 */12750000
+  REF_OFER.INSTALL = '0';                                  /* RC01319 */12760000
+                                                 /* SOC CEDS0000679 */  12760100
+  ELE_CONVERT             = 0;                                          12761000
+  PTR_REFO                = ADDR(REF_OFER.RETAIN_FLAG);                 12762000
+  PTR_REFO_1              = ADDR(REF_OFER1.RETAIN_FLAG);                12763000
+  ELE_CONVERT             = MEMCONVERT (PTR_REFO_1,                     12764000
+                               1,                                       12765000
+                               1208,                                    12766000
+                               PTR_REFO,                                12767000
+                               1,                                       12768000
+                               500);                                    12769000
+                                                                        12769300
+  ELE_CONVERT             = 0;                                          12769400
+  PTR_REFO                = ADDR(REF_OFER.INSTALL);                     12769500
+  PTR_REFO_1              = ADDR(REF_OFER1.INSTALL);                    12769600
+  ELE_CONVERT             = MEMCONVERT (PTR_REFO_1,                     12769700
+                               3,                                       12769800
+                               1208,                                    12769900
+                               PTR_REFO,                                12770000
+                               3,                                       12770100
+                               500);                                    12770200
+                                                 /* EOC CEDS0000679 */  12770400
+                                                                        12771000
+                                                                        12772015
+  IF (LANG_LIST_FLAG = TRUE) & (LANG_ELEMENT_FLAG = TRUE) THEN          12780015
+  DO;                                                                   12790000
+  LANGUAGE_LIST(I).PRODUCT_TYPE = REF_OFER.PRODUCT_TYPE;                12800000
+  LANGUAGE_LIST(I).MODEL_NUMBER = REF_OFER.MODEL_NUMBER;                12810000
+                                                  /* SOC CEDS00000679 */12820000
+  LANGUAGE_LISTL(I).PRODUCT_TYPE = REF_OFER1.PRODUCT_TYPE;              12830000
+  LANGUAGE_LISTL(I).MODEL_NUMBER = REF_OFER1.MODEL_NUMBER;              12840000
+                                                  /* EOC CEDS00000679 */12850000
+                                                                        12860000
+  IF (ST_OF_ELEMENT = 'NLSID') THEN DO;                                 12870000
+                                                 /* SOC CEDS00000679 */ 12880000
+  /*                                                                    12890000
+  LANGUAGE_LIST(I).LANG_ID      = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);12900000
+  */                                                                    12910000
+    LANGUAGE_LISTL(I).LANG_ID = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);  12930000
+                                                                        12960000
+    ELE_CONVERT             = 0;                                        12970000
+    PTR_REFO                = ADDR(LANGUAGE_LIST(I).LANG_ID);           12980000
+    PTR_REFO_1              = ADDR(LANGUAGE_LISTL(I).LANG_ID);          12990000
+    ELE_CONVERT             = MEMCONVERT (PTR_REFO,                     13000000
+                               TOKENLENGTH,                             13010000
+                               500,                                     13020000
+                               PTR_REFO_1,                              13030000
+                               TOKENLENGTH,                             13040000
+                               1208);                                   13050000
+                                                  /* EOC CEDS00000679 */13060000
+  END;                                                                  13070000
+  IF (ST_OF_ELEMENT = 'MFRPRODDESC') THEN DO;                           13080000
+                                                     /* SOC RC01337  */ 13090000
+  /*LANGUAGE_LIST(I).PROD_DESC =SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);*/13100000
+                                                /* SOC CEDS00000679 */  13101000
+  /*WRK_MFRPRODDESC            = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH); 13110000
+   */                                                                   13120000
+                                                     /* EOC RC01337  */ 13130000
+    WRK_MFRPRODDESC        = '';                                        13150000
+    MFRPRODDESC            = '';                                        13151000
+    LEN_MFRPRODDESC        = TOKENLENGTH;            /* CEDS00000692 */ 13152000
+    MFRPRODDESC            = SUBSTR(XMLTOKEN->CHARS,1,TOKENLENGTH);     13160000
+    TEMP_LENGTH            = TOKENLENGTH + 2;        /* CEDS00000692 */ 13170000
+                                                                        13190000
+    ELE_CONVERT            = 0;                                         13200000
+    PTR_REFO               = ADDR(WRK_MFRPRODDESC);                     13210000
+    PTR_REFO_1             = ADDR(MFRPRODDESC);                         13220000
+    ELE_CONVERT            = MEMCONVERT (PTR_REFO,                      13230000
+ /*                            TOKENLENGTH,    *//* SOC CEDS00000692 */ 13231000
+                               TEMP_LENGTH,     /* EOC CEDS00000692 */  13240000
+                               500,                                     13250000
+                               PTR_REFO_1,                              13260000
+ /*                            TOKENLENGTH,    *//* SOC CEDS00000692 */ 13261000
+                               TEMP_LENGTH,     /* EOC CEDS00000692 */  13270000
+                               1208);                                   13280000
+                                                 /* EOC CEDS00000679 */ 13290000
+  END;                                                                  13300000
+  END;                                                                  13310000
+                                                                        13320000
+    RETURN(0);                                                          13330000
+  END;                                                                  13340000
+1/********************************************************************/ 13350000
+ /* MODULE NAME      : ATTRIBUTE_CHARACTERS                          */ 13360000
+ /*                                                                  */ 13370000
+ /********************************************************************/ 13380000
+  ATTRIBUTE_CHARACTERS:                                                 13390000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            13400000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    13410000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                13420000
+                                                                        13430000
+    DCL USERTOKEN      POINTER;                                         13440000
+    DCL XMLTOKEN       POINTER;                                         13450000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   13460000
+                                                                        13470000
+    RETURN(0);                                                          13480000
+  END;                                                                  13490000
+1/********************************************************************/ 13500000
+ /* MODULE NAME      : START_OF_CDATA                                */ 13510000
+ /*                                                                  */ 13520000
+ /********************************************************************/ 13530000
+  START_OF_CDATA:                                                       13540000
+    PROC( USERTOKEN )                                                   13550000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    13560000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                13570000
+                                                                        13580000
+    DCL USERTOKEN      POINTER;                                         13590000
+                                                                        13600000
+    RETURN(0);                                                          13610000
+  END;                                                                  13620000
+1/********************************************************************/ 13630000
+ /* MODULE NAME      : END_OF_CDATA                                  */ 13640000
+ /*                                                                  */ 13650000
+ /********************************************************************/ 13660000
+  END_OF_CDATA:                                                         13670000
+    PROC( USERTOKEN )                                                   13680000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    13690000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                13700000
+                                                                        13710000
+    DCL USERTOKEN      POINTER;                                         13720000
+                                                                        13730000
+    RETURN(0);                                                          13740000
+  END;                                                                  13750000
+1/********************************************************************/ 13760000
+ /* MODULE NAME      : PROCESSING_INSTRUCTION                        */ 13770000
+ /*                                                                  */ 13780000
+ /********************************************************************/ 13790000
+  PROCESSING_INSTRUCTION:                                               13800000
+    PROC( USERTOKEN,                                                    13810000
+          PITARGET, PITARGETLENGTH,                                     13820000
+          PIDATA, PIDATALENGTH )                                        13830000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    13840000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                13850000
+                                                                        13860000
+    DCL USERTOKEN      POINTER;                                         13870000
+    DCL PITARGET       POINTER;                                         13880000
+    DCL PITARGETLENGTH FIXED BIN(31);                                   13890000
+    DCL PIDATA         POINTER;                                         13900000
+    DCL PIDATALENGTH   FIXED BIN(31);                                   13910000
+                                                                        13920000
+    RETURN(0);                                                          13930000
+  END;                                                                  13940000
+1/********************************************************************/ 13950000
+ /* MODULE NAME      : COMMENT                                       */ 13960000
+ /*                                                                  */ 13970000
+ /********************************************************************/ 13980000
+  COMMENT:                                                              13990000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            14000000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    14010000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                14020000
+                                                                        14030000
+    DCL USERTOKEN      POINTER;                                         14040000
+    DCL XMLTOKEN       POINTER;                                         14050000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   14060000
+                                                                        14070000
+    RETURN(0);                                                          14080000
+  END;                                                                  14090000
+1/********************************************************************/ 14100000
+ /* MODULE NAME      : UNRESOLVED_REFERENCE                          */ 14110000
+ /*                                                                  */ 14120000
+ /********************************************************************/ 14130000
+  UNRESOLVED_REFERENCE:                                                 14140000
+    PROC( USERTOKEN, XMLTOKEN, TOKENLENGTH )                            14150000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    14160000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                14170000
+                                                                        14180000
+    DCL USERTOKEN      POINTER;                                         14190000
+    DCL XMLTOKEN       POINTER;                                         14200000
+    DCL TOKENLENGTH    FIXED BIN(31);                                   14210000
+                                                                        14220000
+    RETURN(0);                                                          14230000
+  END;                                                                  14240000
+1/********************************************************************/ 14250000
+ /* MODULE NAME      : EXCEPTION                                     */ 14260000
+ /*                                                                  */ 14270000
+ /********************************************************************/ 14280000
+  EXCEPTION:                                                            14290000
+    PROC( USERTOKEN, CURRENTOFFSET, RETURN_CODE, REASON_CODE )          14300000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    14310000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                14320000
+                                                                        14330000
+    DCL USERTOKEN      POINTER;                                         14340000
+    DCL CURRENTOFFSET  FIXED BIN(31);                                   14350000
+    DCL RETURN_CODE    FIXED BIN(31);                                   14360000
+    DCL REASON_CODE    FIXED BIN(31);                                   14370000
+                                                                        14380000
+    RETURN(0);                                                          14390000
+  END;                                                                  14400000
+1/********************************************************************/ 14410000
+ /* MODULE NAME      : END_OF_INPUT                                  */ 14420000
+ /*                                                                  */ 14430000
+ /********************************************************************/ 14440000
+  END_OF_INPUT:                                                         14450000
+    PROC( USERTOKEN, ADDR_XML, LENGTH_XML )                             14460000
+    RETURNS( BYVALUE FIXED BIN(31) )                                    14470000
+    OPTIONS( BYVALUE LINKAGE(OPTLINK) );                                14480000
+                                                                        14490000
+    DCL USERTOKEN      POINTER;                                         14500000
+    DCL ADDR_XML       BYADDR POINTER;                                  14510000
+    DCL LENGTH_XML     BYADDR FIXED BIN(31);                            14520000
+                                                                        14530000
+    RETURN(1);                                                          14540000
+  END;                                                                  14550000
+                                                                        14560000
+ END;                                                                   14570000

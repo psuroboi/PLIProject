@@ -1,0 +1,237 @@
+1/* RCBDP1U - CPP/S OU - MABO AND ZIP CODE USER EXIT                 */ 00019112
+ /********************************************************************/ 00020000
+ /*                                                                  */ 00030000
+ /* MODULE NAME      : RCBDP1U                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* LANGUAGE         : PLISQL                                        */ 00060000
+ /*                                                                  */ 00070000
+ /* TYPE             : LINKABLE MODULE                               */ 00080000
+ /*                                                                  */ 00090000
+ /* DESCRIPTION      : USER EXIT TO FILL MABO CODE FROM THE SUPPLIED */ 00100000
+ /*                    OU CODE AND/OR MAKE ZIP CODE CHANGES.         */ 00110000
+ /*                                                                  */ 00120000
+ /* NOTE             : IF YOU WANT TO USE THIS EXIT BE SURE TO SET   */ 00130000
+ /*                    SWITCH_USER_EXIT TO TRUE                      */ 00140000
+ /*                                                                  */ 00150000
+ /* PARAMETERS       : - SWITCH_USER_EXIT                            */ 00160000
+ /*                    - OU CODE                                     */ 00170000
+ /*                    - CPP/S EXTRACT RECORD (COPY)                 */ 00180000
+ /*                    - PARAMETER INTERFACE (FROM CALLING MODULE)   */ 00190000
+ /*                                                                  */ 00200000
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00210000
+ /*                                                                  */ 00220000
+ /* MESSAGES         : ----                                          */ 00230000
+ /*                                                                  */ 00240000
+ /* DEPENDENCIES     : NONE                                          */ 00250000
+ /*                                                                  */ 00260000
+ /* FREQUENCY        : ----                                          */ 00270000
+ /*                                                                  */ 00280000
+ /*  MAINTENANCE LOG :                                               */ 00290000
+ /*  ---------------                                                 */ 00300000
+ /*                                                                  */ 00310000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00320000
+ /*  --------------------------------------------------------------  */ 00330000
+ /*  1993-12-09 | CED0014      | CEDS INITIAL DEVELOPMENT            */ 00340000
+ /*  1997-04-11 | PTM1036      | CORRECTED PROLOG                    */ 00350000
+ /*  1997-04-29 | PTM0892      | REMOVE DECLARES UNUSED EXT.ENTRIES  */ 00360000
+ /*                                                                  */ 00370000
+ /*  AENDERUNG:   15.12.93                                           */ 00380000
+ /*  DURCH:       B. MUELLER                                         */ 00390000
+ /*  GRUND:       FUELLEN MABO MIT OU_CODE STELLE 1 -4               */ 00400000
+ /*  AENDERUNG:   25.01.95                                           */ 00410000
+ /*  DURCH:       B. MUELLER                                         */ 00420000
+ /*  GRUND:       CEDS 2.1: LOKALE LOGIK IN 2.1 VERSION EINGEBAUT.   */ 00430000
+ /*  AENDERUNG:   29.08.96                                           */ 00440000
+ /*  DURCH:       A. FISCHER                                         */ 00450000
+ /*  GRUND:       AIM 391: CEDS 2.3                                  */ 00460000
+ /*               RECOMPILE WEGEN INCLUDEAENDERUNG (RCBDPBS)         */ 00470000
+ /*                                                                  */ 00480000
+ /*  AENDERUNG:   18.06.98                                           */ 00490000
+ /*  DURCH:       W. BECHTEL                                         */ 00500000
+ /*  GRUND:       CEDS REL. 3.0 ANPASSUNG                            */ 00510000
+ /*                                                                  */ 00520000
+ /*  AENDERUNG:   16.07.99                                           */ 00530000
+ /*  DURCH:       KLAUS PUHL                                         */ 00540000
+ /*  GRUND:       MULTI-COUNTRY-FUNKTION EINGEBAUT:                  */ 00550000
+ /*               - ABFRAGE AUF LAENDERCODE: LOGIK FUER DEUTSCHLAND  */ 00560000
+ /*                 (724) BEIBEHALTEN.                               */ 00570000
+ /*               - FUER SCHWEIZ (848):                              */ 00580000
+ /*                 FUELLEN MABO MIT OU_CODE STELLE 2 -4             */ 00590000
+ /*               - FUER AUSTRIA (618):                              */ 00600000
+ /*                 FUELLEN MABO MIT OU_CODE STELLE 1 -4             */ 00610000
+ /*               - FUER CER-LAENDER (644,668,693, ...):             */ 00620000
+ /*                 FUELLEN MABO MIT OU_CODE STELLE 1 -4             */ 00630000
+ /*               - ANDERE LAENDER IM "OTHERWISE".                   */ 00640000
+ /*                                                                  */ 00650000
+ /*  AENDERUNG:   21.09.99                                           */ 00660000
+ /*  DURCH:       KLAUS PUHL                                         */ 00670000
+ /*  GRUND:       AENDERUNG FUER SCHWEIZ: STELLEN 3-6 (STATT 2-5).   */ 00680000
+ /*                                                                  */ 00690000
+ /********************************************************************/ 00700000
+1RCBDP1U: PROC    (PTR_SWITCH_USER_EXIT,                                00710000
+                   PTR_USER_INFO,                                       00720000
+                   PTR_FILE_COPY,                                       00730000
+                   PTR_INT_AREA)                                        00740000
+          REORDER;                                                      00750000
+0              @I$E628: ENTRY;     DCL @SCHFIRST BIT(1)                 00760000
+               STATIC INIT('1'B); IF @SCHFIRST THEN DO;                 00770000
+               @SCHFIRST='0'B;        ON  UNDEFINEDFILE                 00780000
+               (SYSPRINT) GOTO @END; PUT FILE(SYSPRINT)                 00790000
+               EDIT    ('RCBDP1U  VERSION 1999.07.16' ,                 00800000
+               ' 16H53.10      MIT DEM VERSIONS-ENTRY',                 00810000
+               ' @I$E628',' ')     (SKIP,A,A,A,SKIP,A);                 00820000
+               @END: ON UNDEFINEDFILE(SYSPRINT) SYSTEM;                 00830000
+               END;     /* ENDE DER VERSIONS-GRUPPE  */                 00840000
+ DEFAULT RANGE (*)        STATIC;                                       00850000
+1/********************************************************************/ 00860000
+ /*  PARAMETERS                                                      */ 00870000
+ /********************************************************************/ 00880000
+ DCL PTR_SWITCH_USER_EXIT    PTR;                                       00890000
+ DCL PTR_USER_INFO           PTR;                                       00900000
+ DCL PTR_FILE_COPY           PTR;                                       00910000
+ DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00920000
+1/********************************************************************/ 00930000
+ /*  EXTERNAL ENTRIES                                                */ 00940000
+ /********************************************************************/ 00950000
+ DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 00960000
+ /********************************************************************/ 00970000
+ /* ON ERROR CONDITIONS                                              */ 00980000
+ /********************************************************************/ 00990000
+ %INCLUDE (RCB0E0M);                                                    01000000
+  END;                                                                  01010000
+ /********************************************************************/ 01020000
+ /*                                                                  */ 01030000
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 01040000
+ /* AND CALL THE ERROR ROUTINE:                                      */ 01050000
+ /*                                                                  */ 01060000
+ /*                                                                  */ 01070000
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 01080000
+ /*                                                                  */ 01090000
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 01100000
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 01110000
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 01120000
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 01130000
+ /*                                                                  */ 01140000
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 01150000
+ /*                                                                  */ 01160000
+ /********************************************************************/ 01170000
+1/********************************************************************/ 01180000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 01190000
+ /********************************************************************/ 01200000
+ DCL SWITCH_USER_EXIT BIT (1) BASED (PTR_SWITCH_USER_EXIT);             01210000
+                                                                        01220000
+ DCL 1 PARM_USER_INFO         BASED (PTR_USER_INFO),                    01230000
+      %INCLUDE (RCBDP1S);;                                              01240000
+                                                                        01250000
+ DCL 1 PARM_FILE_COPY         BASED (PTR_FILE_COPY),                    01260000
+      3 PRODUCT_TYPE           CHAR(04),                                01270000
+      3 ORIGIN                 CHAR(02),                                01280000
+      3 SEQUENCE_NUMBER        CHAR(05),                                01290000
+     2 RECORD_INFO,                                                     01300000
+      %INCLUDE (RCBDPBS);;                                              01310000
+                                                                        01320000
+ DCL 1 PARM_INT_AREA          BASED (PTR_INT_AREA),                     01330000
+      %INCLUDE (RCBZ01S);;                                              01340000
+1/********************************************************************/ 01350000
+ /* DB2 TABLE STRUCTURES                                             */ 01360000
+ /********************************************************************/ 01370000
+1/********************************************************************/ 01380000
+ /*  BIT SWITCHES                                                    */ 01390000
+ /********************************************************************/ 01400000
+0DCL TRUE     BIT (1) INIT ('1'B);                                      01410000
+ DCL FALSE    BIT (1) INIT ('0'B);                                      01420000
+0/********************************************************************/ 01430000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01440000
+ /********************************************************************/ 01450000
+0DCL 1 WORK_FIELDS,                                                     01460000
+       3 WRK_LEVEL                FIXED BIN (15),                       01470000
+       3 WRK_INDNULL              FIXED BIN (15);                       01480000
+1/********************************************************************/ 01490000
+ /*  BUILTIN FUNCTIONS                                               */ 01500000
+ /********************************************************************/ 01510000
+0DCL (ADDR,                                                             01520000
+      NULL)   BUILTIN;                                                  01530000
+1/********************************************************************/ 01540000
+ /* DB2/SQL SQLCA                                                    */ 01550000
+ /********************************************************************/ 01560000
+0 EXEC SQL                                                              01570000
+    INCLUDE SQLCA                                                       01580000
+    ;                                                                   01590000
+1/********************************************************************/ 01600000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01610000
+ /********************************************************************/ 01620000
+0                                        /* SET LEVEL AND MOD NAME   */ 01630000
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01640000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01650000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCBDP1U';                     01660000
+0                                        /* USER DEFINED PROCESS     */ 01670000
+                                                                        01680000
+ /*********************************************************************/01690000
+ /***       LOKALE AENDERUNG         BEGINN                         ***/01700000
+ /***       LOKALE AENDERUNG         BEGINN                         ***/01710000
+ /***       LOKALE AENDERUNG         BEGINN                         ***/01720000
+ /*********************************************************************/01730000
+ DCL  SUBSTR      BUILTIN;                                              01740000
+ DCL  SYSPRINT    FILE EXTERNAL PRINT;                                  01750000
+                                                                        01760000
+ SWITCH_USER_EXIT = TRUE;                                               01770000
+                             /**** SELECT THE COUNTRY TO BE PROCESSED */01780000
+ SELECT (PARM_INT_AREA.COUNTRY_NUMBER);                                 01790000
+                                                                        01800000
+ /*********************************************************************/01810000
+   WHEN ('724') DO;          /**** START COUNTRY 724 = DEUTSCHLAND ****/01820000
+                                                                        01830000
+        PARM_FILE_COPY.RECORD_INFO.MABO =                               01840000
+                         SUBSTR(PARM_USER_INFO.OU_CODE,1,4);            01850000
+                                                                        01860000
+   END;                      /**** END   COUNTRY 724 = DEUTSCHLAND ****/01870000
+ /*********************************************************************/01880000
+   WHEN ('848') DO;          /**** START COUNTRY 848 = SCHWEIZ     ****/01890000
+                                                                        01900000
+        PARM_FILE_COPY.RECORD_INFO.MABO =                               01910000
+                         SUBSTR(PARM_USER_INFO.OU_CODE,3,4);            01920000
+                                                                        01930000
+   END;                      /**** END   COUNTRY 848 = SCHWEIZ     ****/01940000
+ /*********************************************************************/01950000
+   WHEN ('618') DO;          /**** START COUNTRY 618 = AUSTRIA     ****/01960000
+                                                                        01970000
+        PARM_FILE_COPY.RECORD_INFO.MABO =                               01980000
+                         SUBSTR(PARM_USER_INFO.OU_CODE,1,4);            01990000
+                                                                        02000000
+   END;                      /**** END   COUNTRY 618 = AUSTRIA     ****/02010000
+ /*********************************************************************/02020000
+                             /**** START CER COUNTRIES             ****/02030000
+   WHEN ('644','668','693','694','699','704','705','707','708',         02040000
+         '740','741','820','821','826','889') DO;                       02050000
+                                                                        02060000
+        PARM_FILE_COPY.RECORD_INFO.MABO =                               02070000
+                         SUBSTR(PARM_USER_INFO.OU_CODE,1,4);            02080000
+                                                                        02090000
+   END;                      /**** END   CER COUNTRIES             ****/02100000
+ /*********************************************************************/02110000
+                                                                        02120000
+   OTHERWISE                 /**** FOR OTHER COUNTRIES             ****/02130000
+      DO;                    /****   NO ACTIONS                    ****/02140000
+                                                                        02150000
+      END;                                                              02160000
+                                                                        02170000
+ END;              /**** SELECT (PARM_INT_AREA.COUNTRY_NUMBER);    ****/02180000
+                                                                        02190000
+ /*********************************************************************/02200000
+ /***       LOKALE AENDERUNG         ENDE                           ***/02210000
+ /***       LOKALE AENDERUNG         ENDE                           ***/02220000
+ /***       LOKALE AENDERUNG         ENDE                           ***/02230000
+ /*********************************************************************/02240000
+                                                                        02250000
+                                         /* END USER DEFINED PROCESS */ 02260000
+0                                        /* RESET LEVEL              */ 02270000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            02280000
+1/*******************************************************************/  02290000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  02300000
+ /*******************************************************************/  02310000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  02320000
+ $DAIMOD (RCBDP1U);                      /* MODULE TO BE COMPILED   */  02330000
+0/*******************************************************************/  02340000
+ /* END OF ABR BLOCK                                                */  02350000
+ /*******************************************************************/  02360000
+0END RCBDP1U;                                                           02370000

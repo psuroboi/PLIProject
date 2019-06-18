@@ -1,0 +1,398 @@
+ /********************************************************************/
+ /* PROGRAM          : RCBBIRM - BUILD REJECT REPORT FOR KEY USER    */
+ /*                                                                  */
+ /* LANGUAGE         : PLI                                           */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : CREATE REPORT WITH REJECTED (PRIME INPUT)     */
+ /*                    RECORDS FROM FOLLOWING PROCESSES:             */
+ /*                       UI03 - SHRINK WRAP,                        */
+ /*                       UI05 - CISCO,                              */
+ /*                       UI07 - PEW,                                */
+ /*                       UI33 - DSW,                   CEDS00000647 */
+ /*                    TO BE SENT TO KEY USER(S)                     */
+ /*                                                                  */
+ /* INPUT            : RCBBIR0  REJECT FILE                          */
+ /*                    RCBBIR1  PROCESS ID / COUNTRY DATA            */
+ /*                                                                  */
+ /* OUTPUT           : RCBBIR2  REPORT CONTAINING REJECT FILE        */
+ /*                             INFORMATION                          */
+ /*                    RCBBIR3  REPORT CONTAINING REJECT FILE        */
+ /*                             SUBJECT                              */
+ /*                                                                  */
+ /* EXTERNAL MODULES : NONE                                          */
+ /*                                                                  */
+ /* MESSAGES         : NONE                                          */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT                                */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /* DATE      | WORK-ITEMNO. | DESCRIPTION                           */
+ /* ---------------------------------------------------------------- */
+ /* 2004-04-26| RB01251      | INITIAL VERSION                       */
+ /* 2008-07-21| CEDS00000420 | INCREASED THE LENGTH OF REJ_COUNT, AS */
+ /*           |              | 1 BYTE WAS GETTING TRUNCATED          */
+ /* 2013-09-03| CEDS00000647 | CORRECTED THE REJECTION FILE NAME FOR */
+ /*           |              | DSW - UI33 REPORT                     */
+ /********************************************************************/
+1/********************************************************************/
+ /* DEBUGGING                                                        */
+ /*                                                                  */
+ /* INFO PROGRAMMER     : PUT 'RCBBIRM_DEBUG' ON 'Y'                 */
+ /*                                                                  */
+ /* >>> FOR RELEASE THE VALUE MUST BE 'N' <<<                        */
+ /*                                                                  */
+ /********************************************************************/
+0%DCL RCBBIRM_DEBUG CHAR;
+ %RCBBIRM_DEBUG = 'N';
+1RCBBIRM: PROC(PARM)
+          OPTIONS(MAIN)
+          REORDER;
+
+0/********************************************************************/
+ /* PARAMETERS                                                       */
+ /********************************************************************/
+
+ DCL PARM                CHAR(15) VARYING;
+ DCL 1 PARM_DATA         BASED (ADDR(PARM)),
+      3 LENGTH           FIXED BIN(15),
+      3 PROCESS_ID       CHAR(04),
+      3 CSET             CHAR(02),
+      3 PGM_NAME         CHAR(07);
+
+1/********************************************************************/
+ /* FILES                                                            */
+ /********************************************************************/
+
+ DCL RCBBIR0    FILE RECORD   INPUT;     /* REJECTED RECORDS         */
+ DCL RCBBIR1    FILE RECORD   INPUT;     /* PROCESS-ID/COUNTRY DATA  */
+ DCL RCBBIR2    FILE RECORD   OUTPUT;    /* REPORT ABOUT REJECT RECS */
+ DCL RCBBIR3    FILE RECORD   OUTPUT;    /* SUBJECT OF REJECT REPORT */
+ DCL SYSPRINT   FILE EXTERNAL PRINT;
+
+0/********************************************************************/
+ /* RECORD LAYOUTS                                                   */
+ /********************************************************************/
+
+ DCL RCBBIR0_REC         CHAR(300) VARYING;      /* REJECT FILE      */
+
+ DCL RCBBIR1_AREA        CHAR(80);               /* PROC/CTRY DATA   */
+
+ DCL 1 INSTID_REC        BASED(ADDR(RCBBIR1_AREA)),
+      3 IDENTIFIER       CHAR(07),               /* INSTID:          */
+      3 FILLER_1         CHAR(01),
+      3 FLQ              CHAR(08);               /* FIRST LEVEL QUAL.*/
+
+ DCL 1 PROCID_REC        BASED(ADDR(RCBBIR1_AREA)),
+      3 IDENTIFIER       CHAR(07),               /*  PROCID:         */
+      3 FILLER_1         CHAR(01),
+      3 PROCESS_ID       CHAR(04),
+      3 FILLER_2         CHAR(01),
+      3 PROCESS_NAME     CHAR(25);
+
+ DCL 1 PRGMID_REC        BASED(ADDR(RCBBIR1_AREA)),
+      3 IDENTIFIER       CHAR(07),               /*  PRGMID:         */
+      3 FILLER_1         CHAR(01),
+      3 PGM_NAME         CHAR(07),
+      3 FILLER_2         CHAR(01),
+      3 LLQ              CHAR(08),               /* LAST LEVEL QUAL. */
+      3 FILLER_3         CHAR(01),
+      3 PGM_DESC         CHAR(25);
+
+ DCL 1 CSETID_REC        BASED(ADDR(RCBBIR1_AREA)),
+      3 IDENTIFIER       CHAR(07),               /*  CSETID:         */
+      3 FILLER_1         CHAR(01),
+      3 CSET             CHAR(02),
+      3 FILLER_2         CHAR(01),
+      3 COUNTRY_NUMBER   CHAR(03),
+      3 FILLER_3         CHAR(01),
+      3 SLQ              CHAR(33);               /* 2-ND LEVEL QUAL. */
+
+ DCL RCBBIR2_REC         CHAR(70);               /* REJECT REPORT    */
+
+ DCL RCBBIR3_REC         CHAR(80);               /* REPORT SUBJECT   */
+
+1/********************************************************************/
+ /* WORK FIELDS                                                      */
+ /********************************************************************/
+
+ DCL CURRENT_DATE        CHAR(10);
+ DCL REJ_COUNT           FIXED DEC(6,0);        /* CEDS00000420 */
+ DCL REJ_COUNT_PIC       PIC'ZZZZZ9';           /* CEDS00000420 */
+ DCL I                   FIXED BIN(31);
+ DCL RETURN_CODE         FIXED BIN(15);
+ DCL LTH_FLQ             FIXED BIN(15);
+ DCL LTH_SLQ             FIXED BIN(15);
+ DCL LTH_LLQ             FIXED BIN(15);
+
+ DCL 1 WORK,
+      3 PROCESS_ID       CHAR(04),
+      3 PROCESS_NAME     CHAR(25),
+      3 PGM_NAME         CHAR(07),
+      3 PGM_DESC         CHAR(25),
+      3 CSET             CHAR(02),
+      3 COUNTRY_NUMBER   CHAR(03),
+      3 FLQ              CHAR(08),
+      3 SLQ              CHAR(33),     /* Middle level qualifiers     */
+      3 LLQ              CHAR(08);
+
+0/********************************************************************/
+ /* SWITCHES                                                         */
+ /********************************************************************/
+
+ DCL EOF_RCBBIR0         BIT (1) INIT ('0'B);
+ DCL EOF_RCBBIR1         BIT (1) INIT ('0'B);
+
+0/********************************************************************/
+ /* BUILTIN FUNCTIONS                                                */
+ /********************************************************************/
+
+ DCL (ADDR,
+      DATETIME,
+      INDEX,
+      SUBSTR) BUILTIN;
+
+0/********************************************************************/
+ /*           ON CONDITIONS                                          */
+ /********************************************************************/
+
+ ON ENDFILE(RCBBIR0)
+   EOF_RCBBIR0 = '1'B;
+
+ ON ENDFILE(RCBBIR1)
+   EOF_RCBBIR1 = '1'B;
+
+1/********************************************************************/
+ /*           S T A R T   P R O C E S S I N G                        */
+ /********************************************************************/
+
+ CALL R000_INIT_PROCESS;
+
+ CALL R100_GET_CONTROL_DATA;
+
+ IF RETURN_CODE = 0                        /* CONTROL DATA FOUND ?   */
+ THEN DO;
+   CALL R300_CHECK_REJECT_FILE;
+   IF REJ_COUNT > 0 THEN                   /* REJECT RECORDS FOUND ? */
+     CALL R500_BUILD_REJECT_REPORT;
+ END;
+
+ CALL R999_END_PROCESS;
+
+ CALL PLIRETC(RETURN_CODE);
+1/********************************************************************/
+ /* R000_INIT_PROCESS                                                */
+ /********************************************************************/
+ R000_INIT_PROCESS:PROC;
+
+ REJ_COUNT   = 0;
+ RETURN_CODE = 0;
+ RCBBIR2_REC = '';
+ RCBBIR3_REC = '';
+ WORK        = '';
+
+ CURRENT_DATE = SUBSTR(DATETIME,1,4)||'-'||
+                SUBSTR(DATETIME,5,2)||'-'||
+                SUBSTR(DATETIME,7,2);
+
+ OPEN FILE(RCBBIR0),
+      FILE(RCBBIR1),
+      FILE(RCBBIR2),
+      FILE(RCBBIR3);
+
+ END R000_INIT_PROCESS;
+1/********************************************************************/
+ /* R100_GET_CONTROL_DATA                                            */
+ /*                                                                  */
+ /*       READ FILE WITH PROCESS_ID AND COUNTRY DATA                 */
+ /*       WHEN FILE.PROCESS_ID IS EQUAL TO PARM.PROCESS_ID           */
+ /*       WHEN FILE.CSET       IS EQUAL TO PARM.CSET                 */
+ /*       SAVE FIELDS                                                */
+ /********************************************************************/
+ R100_GET_CONTROL_DATA:PROC;
+
+ READ FILE (RCBBIR1) INTO (RCBBIR1_AREA);
+
+ IF (EOF_RCBBIR1)                           /* NO RECORDS FOUND      */
+ THEN DO;
+   %IF (RCBBIRM_DEBUG = 'Y') %THEN %DO;
+   PUT SKIP LIST('CONTROL DATA FILE (RCBBIR1) IS EMPTY, I QUIT !');
+   %END;
+   RETURN_CODE = 12;
+ END;
+ ELSE DO WHILE (¬EOF_RCBBIR1);
+   SELECT;
+     WHEN (CSETID_REC.IDENTIFIER = 'CSETID:')
+     DO;
+       IF CSETID_REC.CSET = PARM_DATA.CSET
+       THEN DO;
+         WORK.CSET           = CSETID_REC.CSET;
+         WORK.COUNTRY_NUMBER = CSETID_REC.COUNTRY_NUMBER;
+         WORK.SLQ            = CSETID_REC.SLQ;
+       END;
+     END;
+     WHEN (PROCID_REC.IDENTIFIER = 'PROCID:')
+     DO;
+       IF PROCID_REC.PROCESS_ID = PARM_DATA.PROCESS_ID
+       THEN DO;
+         WORK.PROCESS_ID   = PROCID_REC.PROCESS_ID;
+         WORK.PROCESS_NAME = PROCID_REC.PROCESS_NAME;
+       END;
+     END;
+     WHEN (PRGMID_REC.IDENTIFIER = 'PRGMID:')
+     DO;
+       IF PRGMID_REC.PGM_NAME = PARM_DATA.PGM_NAME
+       THEN DO;
+         WORK.PGM_NAME = PRGMID_REC.PGM_NAME;
+         WORK.PGM_DESC = PRGMID_REC.PGM_DESC;
+        IF WORK.PROCESS_ID = 'UI33' THEN         /* SOC CEDS00000647 */
+         WORK.LLQ      = 'RCBBIFF4';      /* DSW REJECTION FILE NAME */
+        ELSE                                     /* EOC CEDS00000647 */
+         WORK.LLQ      = PRGMID_REC.LLQ;
+       END;
+     END;
+     WHEN (INSTID_REC.IDENTIFIER = 'INSTID:')
+       WORK.FLQ = INSTID_REC.FLQ;
+     OTHERWISE;
+   END;
+
+   READ FILE (RCBBIR1) INTO (RCBBIR1_AREA);
+ END;
+
+ IF (WORK.FLQ = '' | WORK.SLQ = '' | WORK.LLQ = '')
+ THEN DO;
+   %IF (RCBBIRM_DEBUG = 'Y') %THEN %DO;
+   PUT SKIP LIST( 'CONTROL DATA NOT FOUND IN: RCBBIR1, I QUIT !');
+   PUT SKIP LIST( '- INSTID: ',WORK.FLQ);
+   PUT SKIP LIST( '- PROCID: ',PARM_DATA.PROCESS_ID);
+   PUT SKIP LIST( '- PRGMID: ',PARM_DATA.PGM_NAME);
+   PUT SKIP LIST( '- CSETID: ',PARM_DATA.CSET);
+   %END;
+   RETURN_CODE = 8;
+ END;
+ ELSE DO;
+   LTH_FLQ = INDEX(WORK.FLQ,' ');              /* FIND FIRST BLANK   */
+   IF LTH_FLQ = 0
+   THEN LTH_FLQ = 8;
+   ELSE LTH_FLQ = LTH_FLQ - 1;                 /* ACTUAL DATA LENGTH */
+
+   LTH_SLQ = INDEX(WORK.SLQ,' ');              /* FIND FIRST BLANK   */
+   IF LTH_SLQ = 0
+   THEN LTH_SLQ = 8;
+   ELSE LTH_SLQ = LTH_SLQ - 1;                 /* ACTUAL DATA LENGTH */
+
+   LTH_LLQ = INDEX(WORK.LLQ,' ');              /* FIND FIRST BLANK   */
+   IF LTH_LLQ = 0
+   THEN LTH_LLQ = 8;
+   ELSE LTH_LLQ = LTH_LLQ - 1;                 /* ACTUAL DATA LENGTH */
+ END;
+
+ END R100_GET_CONTROL_DATA;
+1/********************************************************************/
+ /* R300_CHECK_REJECT_FILE                                           */
+ /********************************************************************/
+ R300_CHECK_REJECT_FILE: PROC;
+                              /* GET FIRST RECORD FROM REJECTED FILE */
+ READ FILE (RCBBIR0) INTO (RCBBIR0_REC);
+
+ IF (EOF_RCBBIR0)                           /* NO RECORDS FOUND      */
+ THEN DO;
+   %IF (RCBBIRM_DEBUG = 'Y') %THEN %DO;
+   PUT SKIP LIST( 'NO RECORDS FOUND, REJECT FILE IS EMPTY, I QUIT !');
+   %END;
+   RETURN_CODE = 4;
+ END;
+ ELSE DO;
+   DO WHILE (¬EOF_RCBBIR0);
+     REJ_COUNT = REJ_COUNT + 1;
+     READ FILE (RCBBIR0) INTO (RCBBIR0_REC);
+   END;
+ END;
+
+ END R300_CHECK_REJECT_FILE;
+1/********************************************************************/
+ /* R500_BUILD_REJECT_REPORT                                         */
+ /********************************************************************/
+ R500_BUILD_REJECT_REPORT: PROC;
+
+ RCBBIR2_REC = (70)'*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     C E D S    U P S T R E A M   P R O C E S S';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*          R E J E C T I O N    R E P O R T';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     DATE . . . . . . . : ' || CURRENT_DATE;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     PROCESS ID . . . . : ' || WORK.PROCESS_ID ||
+               ' - ' || WORK.PROCESS_NAME;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     PROGRAM NAME . . . : ' || WORK.PGM_NAME ||
+               ' - ' || WORK.PGM_DESC;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     REGION / CSET  . . : ' || WORK.CSET;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     COUNTRY NUMBER . . : ' || WORK.COUNTRY_NUMBER;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*     REJECT FILE NAME . : ' ||
+               SUBSTR(WORK.FLQ,1,LTH_FLQ)    || '.' ||
+               SUBSTR(WORK.SLQ,1,LTH_SLQ)    || '.' ||
+               SUBSTR(WORK.LLQ,1,LTH_LLQ);
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ REJ_COUNT_PIC = REJ_COUNT;
+ RCBBIR2_REC = '*     NUMBER OF REJECTS  : ' || REJ_COUNT_PIC;
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = '*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR2_REC = (70)'*';
+ WRITE FILE (RCBBIR2) FROM (RCBBIR2_REC);
+
+ RCBBIR3_REC = 'Subject: CEDS Rejection report ' || WORK.PROCESS_ID ||
+               ' - ' || WORK.CSET || ' - ' || WORK.PROCESS_NAME;
+ WRITE FILE (RCBBIR3) FROM (RCBBIR3_REC);
+
+ END R500_BUILD_REJECT_REPORT;
+1/********************************************************************/
+ /* R999_END_PROCESS                                                 */
+ /********************************************************************/
+ R999_END_PROCESS:PROC;
+
+ CLOSE FILE(RCBBIR0),
+       FILE(RCBBIR1),
+       FILE(RCBBIR2),
+       FILE(RCBBIR3);
+
+ END R999_END_PROCESS;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+0 %INCLUDE DAIFPLH;                      /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBBIRM);                      /* MODULE TO BE COMPILED   */
+0/*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+ END RCBBIRM;

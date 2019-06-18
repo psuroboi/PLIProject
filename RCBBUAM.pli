@@ -1,0 +1,1201 @@
+ /* RCBBUAM - RETRIEVE COUNTRY SERVICE LEVEL RECORDS                 */
+ /*           CREATE COMPAREBLE TABLE LIKE FILE                      */
+ /*                                                                  */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* PROGRAM          : RCBBUAM                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLISQL                                        */
+ /*                                                                  */
+ /* TYPE             : BMP                                           */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE COUNTRY SERVICE LEVEL RECORDS        */
+ /*                    FROM LAM (TEMPORARY LAM OR CHIS LAM)          */
+ /*                    CREATE TABLE-LIKE FILE.                       */
+ /*                                                                  */
+ /* INPUT            : - DB2   : RCBT0500_PARM                       */
+ /*                    - ARG   : LAM TYPE/MODEL SERVICE LEVEL RECORD */
+ /*                            : LAM CALL RESULT CODE                */
+ /*                                                                  */
+ /* OUTPUT           : - FILES : RCBBMAP TABLE LIKE FILE COUNTRY SLC */
+ /*                              RCB0M10 MESSAGES ISSUED             */
+ /*                    - ARG   : LAM ACCESS MODE                     */
+ /*                                                                  */
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */
+ /*                    - RCB0M1M   COMMON MESSAGE ROUTINE            */
+ /*                    - RCB0T1M   RETRIEVE SYSTEM DATE              */
+ /*                    - RCB0T1M   RETRIEVE SYSTEM DATE              */
+ /*                    - RCB018M   COMPUTE HASH TOTAL                */
+ /*                    - RCB019M   RETRIEVE COUNTRY NUMBER           */
+ /*                    - RCB020M   RETRIEVE RUN DATE                 */
+ /*                    - RCBI50M   READ      PARAMETER               */
+ /*                    - RCBF50M   INSERT    PARAMETER               */
+ /*                    - RCBG50M   UPDATE    PARAMETER               */
+ /*                    - RCBIK3M   COUNTRY SERVICE LEVEL LAM         */
+ /*                                                                  */
+ /* MESSAGES         : 0001,0002,0003,0004,0005,0013,0151,0173,0189, */
+ /*                    9999                                          */
+ /*                                                                  */
+ /* PROCESSING DETAIL: OPEN, FETCH AND CLOSE COMMANDS ARE PASSED     */
+ /*                    TO LAM, RETRIEVED RECORDS ARE WRITTEN IN      */
+ /*                    TABLE LIKE FILE RCBBUAP.                      */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT (ON REQUEST)                   */
+ /*                                                                  */
+ /*  MAINTENANCE LOG :                                               */
+ /*  ---------------                                                 */
+ /*                                                                  */
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */
+ /*  --------------------------------------------------------------  */
+ /*  23-09-1997 | RC01188      | CEDS FIRST IMPLEMENTATION           */
+ /*  20-10-1997 | PTM1073      | CHANGE ERROR HANDLING IN RCBIK3M    */
+ /*  20-10-1997 | PTM1086      | STORE HASH TOTAL PRO COUNTRY NUMBER */
+ /*  22-10-1997 | PTM1092      | CHANGE WI IN MAINT LOG IN RC01188   */
+ /*  1999-08-09 | PTM1279      | RETRIEVE RUN_DATE FOR EACH COUNTRY  */
+ /*  2001-11-21 | RA01229      | SERVICE REFERENCE INTERIM SOLUTION  */
+ /*  2009-04-07 | RB01299      | CEDS ALIGNMENT TO CHIS 810          */
+ /*  2013-07-08 | CEDS00000640 | PASSING THE RECORD COUNT FIELD TO   */
+ /*             |              | THE SUB PROGRAM RCBIK3M TO MATCH THE*/
+ /*             |              | TRAILER COUNT.                      */
+ /*------------------------------------------------------------------*/
+1
+ /* RCBBUAM: PROC                                        /* RB01299 */
+ RCBBUAM: PROC (PARM)                                    /* RB01299 */
+          OPTIONS (MAIN)
+          REORDER;
+
+1/*-----------------------------------------------------------------*/
+ /* ARGUMENTS                                                       */
+ /*-----------------------------------------------------------------*/
+
+ /*-----------------------------------------------------------------*/
+ /* INCLUDE SQLCA                                                   */
+ /*-----------------------------------------------------------------*/
+ EXEC SQL INCLUDE SQLCA;
+
+ /*-----------------------------------------------------------------*/
+ /* FILES                                                           */
+ /*-----------------------------------------------------------------*/
+ DCL RCBBUA0      FILE  /* COUNTRY SERVICE LEVEL TABLE LIKE FILE */
+                  OUTPUT
+                  RECORD;
+
+ /*-----------------------------------------------------------------*/
+ /* EXTERNAL ENTRIES                                                */
+ /*-----------------------------------------------------------------*/
+ DCL RCB0E1M   ENTRY  EXTERNAL;     /* COMMON ERROR ROUTINE         */
+ DCL RCB0M1M   ENTRY  EXTERNAL;     /* COMMON MESSAGE ROUTINE       */
+ DCL RCB0T1M   ENTRY  EXTERNAL;     /* RETRIEVE SYSTEM DATE         */
+ DCL RCB018M   ENTRY  EXTERNAL;     /* COMPUTE HASH TOTAL           */
+ DCL RCB019M   ENTRY  EXTERNAL;     /* RETRIEVE COUNTRY NUMBER      */
+ DCL RCB020M   ENTRY  EXTERNAL;     /* RETRIEVE RUN DATE            */
+ DCL RCBI50M   ENTRY  EXTERNAL;     /* READ      PARAMETER          */
+ DCL RCBF50M   ENTRY  EXTERNAL;     /* INSERT    PARAMETER          */
+ DCL RCBG50M   ENTRY  EXTERNAL;     /* UPDATE    PARAMETER          */
+ DCL RCBIK3M   ENTRY  RETURNS(BIT(1)) EXTERNAL;      /* SOC RB01299 */
+ /*DCL RCBIK3M   ENTRY  EXTERNAL;    /* COUNTRY SERVICE LEVEL LAM   */
+                                                     /* EOC RB01299 */
+
+ /*-----------------------------------------------------------------*/
+ /* BUILTIN FUNCTIONS                                               */
+ /*-----------------------------------------------------------------*/
+ DCL   SUBSTR        BUILTIN;
+ DCL   VERIFY        BUILTIN;
+ DCL   ADDR          BUILTIN;
+ DCL   CSTG          BUILTIN;
+ DCL   NULL          BUILTIN;
+ DCL   STG           BUILTIN;
+ DCL   DIM           BUILTIN;
+ DCL   DATE          BUILTIN;
+ DCL   TIME          BUILTIN;
+ DCL   HIGH          BUILTIN;
+ DCL   LOW           BUILTIN;
+ DCL   LENGTH        BUILTIN;
+ DCL   STRING        BUILTIN;
+
+1/*------------------------------------------------------------------*/
+ /*  RECORD STRUCTURES FOR FILES                                     */
+ /*------------------------------------------------------------------*/
+ DCL 1 RCBBUA0_REC               CHAR(220);
+ DCL 1 RCBBUA0_HEADER            BASED(ADDR(RCBBUA0_REC)),
+       %INCLUDE (RCBBAASH);;
+ DCL 1 RCBBUA0_TRAILER           BASED(ADDR(RCBBUA0_REC)),
+ /*    %INCLUDE (RCBBAAST);;                              /* RB01299 */
+       %INCLUDE (RCBBMAST);;                              /* RB01299 */
+ DCL 1 RCBBUA0_COUNTRY_SLC_REC   BASED(ADDR(RCBBUA0_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV475,
+         %INCLUDE (RCB475S);,
+       3 TB_RCBV475_IND,
+         %INCLUDE (RCB475SI);;
+
+ /*-----------------------------------------------------------------*/
+ /* EXTERNAL PARAMETER INTERFACES                                   */
+ /*-----------------------------------------------------------------*/
+
+ /* CALLING PROCEDURE RCBIK3M                                       */
+ DCL   COUNTRY_SLC_COMMAND_PTR     PTR;     /* PTR LAM COMMAND AREA */
+ DCL   COUNTRY_SLC_DATA_RESULT_PTR PTR;     /* PTR DATA RESULT AREA */
+ DCL   COUNTRY_SLC_PROC_RESULT_PTR PTR;     /* PTR PROC RESULT AREA */
+
+ DCL 1 COUNTRY_SLC_COMMAND,
+                                          %INCLUDE RCBIK2SI; ;
+ DCL 1 COUNTRY_SLC_DATA_RESULT,
+                                          %INCLUDE RCBIK3SO; ;
+ DCL 1 RCBIK30_HDR               BASED(ADDR(COUNTRY_SLC_DATA_RESULT)),
+                                          %INCLUDE RCBBUASH; ;
+ DCL 1 RCBIK30_TLR               BASED(ADDR(COUNTRY_SLC_DATA_RESULT)),
+                                          %INCLUDE RCBBUAST; ;
+                                                      /* SOC RB01299 */
+ DCL 1 RCBIK30_HDR_CHIS810       BASED(ADDR(COUNTRY_SLC_DATA_RESULT)),
+                                          %INCLUDE RCBBJASH; ;
+ DCL 1 RCBIK30_TLR_CHIS810       BASED(ADDR(COUNTRY_SLC_DATA_RESULT)),
+                                          %INCLUDE RCBBJAST; ;
+                                                      /* EOC RB01299 */
+ DCL 1 COUNTRY_SLC_PROC_RESULT   LIKE SQLCA;
+
+
+ /* VARIOUS PARAMETERS                                              */
+ DCL PTR_INT_AREA                PTR;
+ DCL PTR_RETURN_AREA             PTR;
+ DCL PTR_COUNTRY_AREA            PTR;
+ DCL PTR_RUN_DATE_AREA           PTR;
+ DCL PARM                        CHAR(09) VARYING;        /* RB01299 */
+
+ DCL 1 PARM_INT_AREA,                           /* INTERFACE AREA    */
+       %INCLUDE (RCBZ01S);;
+ DCL 1 RETURN_AREA,                             /* RETURN AREA       */
+       %INCLUDE (RCBZ02S);;
+ DCL 1 COUNTRY_AREA,                            /* COUNTRY AREA      */
+       %INCLUDE (RCBZ26S);;
+ DCL 1 RUN_DATE_AREA,                           /* RUN DATE AREA     */
+       %INCLUDE (RCBZ28S);;
+
+ /*------------------------------------------------------------------*/
+ /* DB2 TABLE STRUCTURES                                             */
+ /*------------------------------------------------------------------*/
+ DCL PTR_RCBV500    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV500I   PTR;               /* PTR NULL-IND. PARAMETER    */
+
+ DCL 1 TB_RCBV500,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB500S);;
+ DCL 1 TB_RCBV500_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB500SI);;
+
+ DCL 1 TB_RCB035      BASED(PTR_RCBV500),        /* FILE SEQUENCE    */
+       %INCLUDE (RCBP35S);;
+ DCL 1 RCB035,
+       %INCLUDE (RCBP35S);;
+
+ /*-----------------------------------------------------------------*/
+ /* BIT SWITCHES                                                    */
+ /*-----------------------------------------------------------------*/
+ /* WORK FIELDS WITH CONSTANT VALUES.                               */
+ DCL FALSE                       BIT(1)   INIT('0'B);
+ DCL TRUE                        BIT(1)   INIT('1'B);
+
+ /* WORK FIELDS CHANGED IN PROCEDURE                                 */
+ DCL MAX_REC_CNT                 BIT(1)   INIT('0'B); /* SOC RB01299 */
+ DCL CHIS810_VAL_REC             BIT(1)   INIT('0'B);
+ DCL CHIS810_INVAL_REC           BIT(1)   INIT('0'B); /* EOC RB01299 */
+ DCL MORE_COUNTRY_SLC_RECORDS    BIT(1)   INIT('1'B) STATIC;
+ DCL MORE_COUNTRY_NUMBERS        BIT(1)   INIT('1'B) STATIC;
+
+ /*------------------------------------------------------------------*/
+ /*  PROGRAM CONTROL PARAMETERS                                      */
+ /*------------------------------------------------------------------*/
+ DCL 1 PARM_HASH        BASED(PTR_RCBV500),        /* HASH TOTAL     */
+       %INCLUDE (RCBP24S);;
+
+ /*------------------------------------------------------------------*/
+ /*  COUNTS                                                          */
+ /*------------------------------------------------------------------*/
+ DCL 1 CNT,
+ /*    3 RCBBUA0           FIXED BIN (31);                /* RB01299 */
+       3 RCBBUA0           FIXED DEC (15,0);              /* RB01299 */
+ DCL 1 CNT_HASH_TOTAL,
+       3 RCBBUA0           FIXED DEC (15,0);
+ DCL CNT_PIC9              PIC'(9)9';
+
+1/*------------------------------------------------------------------*/
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */
+ /*------------------------------------------------------------------*/
+ DCL WRK_MOD_NAME       CHAR (08)   INIT ('RCBBUAM ');
+ DCL WRK_PGM_NAME       CHAR (08)   INIT ('RCBBUAP ');
+ DCL WRK_SYSTEM_TYPE    CHAR (01)   INIT ('B');
+ DCL WRK_CTRY_IDX       FIXED BIN (31);           /* INDEX COUNTRIES */
+ DCL WRK_RUN_DATE       CHAR (10);
+ DCL WRK_OPEN_DATE      CHAR (10)   INIT ('9999-12-31');
+ DCL WRK_DATETIME       CHAR (20);
+ DCL WRK_HASH_FIELD     CHAR (04);
+ DCL WRK_HASH_TOTAL     FIXED DEC(15,0);
+ DCL WRK_FILE_NAME      CHAR(07);
+ DCL WRK_LENGTH_RCB024  FIXED BIN (15);
+ DCL WRK_PGR_TYPE       CHAR (03);
+ DCL WRK_RCBBUA0        CHAR (07)   INIT ('RCBBUA0');
+
+ DCL WRK_SEQ_NBR        PIC'ZZZZZZZ';                 /* SOC RB01299 */
+ DCL RCBIK30_CNT        FIXED DEC(10,0) INIT(0);
+ DCL RCBIK30_CNT_ACT    FIXED DEC(15,0) INIT(0);
+ /* DCL RCBIK30_CNT     FIXED BIN(15) INIT(0);        /* EOC RB01299 */
+
+ DCL WRK_FILE_SEQ       PIC'ZZZZZ';
+ DCL CNT_PIC15          PIC'(15)9';
+
+ /*------------------------------------------------------------------*/
+ /* ON ERROR CONDITIONS                                              */
+ /*------------------------------------------------------------------*/
+ %INCLUDE (RCB0E0M);
+   END;
+
+1/*-----------------------------------------------------------------*/
+ /* MAIN LINE                                                       */
+ /*-----------------------------------------------------------------*/
+
+ CALL RCBBUAM_R090_INIT_PROGRAM;
+
+ DO WHILE (MORE_COUNTRY_NUMBERS);
+
+   DO WHILE (MORE_COUNTRY_SLC_RECORDS);
+                                                      /* SOC RB01299 */
+     IF PARM = 'CHIS810' THEN
+     DO;
+       IF ¬CHIS810_VAL_REC THEN              /* INVALID DATA RECORDS */
+       DO;
+          CHIS810_INVAL_REC       = TRUE;
+          COUNTRY_SLC_DATA_RESULT = '';
+       END;
+       ELSE
+       DO;                           /* ABEND IF SECOND HEADER FOUND */
+         IF COUNTRY_SLC_DATA_RESULT.COUNTRY_NUMBER = LOW(3) THEN
+         DO;
+           PARM_INT_AREA.MSG_VAR_CODES   = '';
+           PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+           PARM_INT_AREA.MESSAGE_NUMBER  = '0014';
+           PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';
+           PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBIK30';
+           CALL RCB0M1M (PTR_INT_AREA);
+           CALL RCBBUAM_ERROR (NULL, 'OTHER', '#019');      /* ABEND */
+         END;
+       END;
+                                /* IF RECORD COUNT REACHES MAX LIMIT */
+       IF RCBIK30_CNT    = '9999999999' THEN
+       DO;
+         MAX_REC_CNT     = TRUE;
+         RCBIK30_CNT_ACT = RCBIK30_CNT + RCBIK30_CNT_ACT;
+         RCBIK30_CNT     = 0;
+       END;
+     END;                                             /* EOC RB01299 */
+                                                /* VALID DATA RECORD */
+     IF COUNTRY_SLC_DATA_RESULT.COUNTRY_NUMBER =
+        PARM_INT_AREA.COUNTRY_NUMBER             THEN
+     DO;
+       CALL RCBBUAM_R071_FILL_COUNTRY_SLC;
+       CALL RCBBUAM_R072_WRITE_COUNTRY_SLC;
+     END;
+
+     RCBIK30_CNT = RCBIK30_CNT + 1;
+
+     CALL RCBBUAM_R080_FETCH_COUNTRY_SLC;
+
+   END; /* DO WHILE (MORE_COUNTRY_SLC_RECORDS) */
+
+   CALL RCBBUAM_R075_NEXT_COUNTRY;
+
+ END; /* DO WHILE (MORE_COUNTRY_NUMBERS) */
+
+ CALL RCBBUAM_R095_WRITE_TRAILER;
+ CALL RCBBUAM_R096_CLOSE_FILES;
+ CALL RCBBUAM_R097_SAVE_HASH;
+ CALL RCBBUAM_R099_CLOSE_PROGRAM;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : FILL_COUNTRY_SLC                              */
+ /*                                                                  */
+ /* DESCRIPTION : FILL TYPE/MODEL SERVICE LEVEL DATA RECORD RCBBUA0  */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R071_FILL_COUNTRY_SLC: PROC;
+
+    /* INITITALIZE RECORD */
+   RCBBUA0_REC                  = ' ';
+
+    /* FILL STANDARD FIELDS */
+   RCBBUA0_COUNTRY_SLC_REC.REC_TYPE = '02';
+   RCBBUA0_COUNTRY_SLC_REC.CTRYNO = PARM_INT_AREA.COUNTRY_NUMBER;
+   RCBBUA0_COUNTRY_SLC_REC.PGR_TYPE = WRK_PGR_TYPE;
+   RCBBUA0_COUNTRY_SLC_REC.RUN_DATE = WRK_RUN_DATE;
+
+    /* FILL COUNTRY SLC FIELDS */
+   RCBBUA0_COUNTRY_SLC_REC.COUNTRY_NUMBER =
+     COUNTRY_SLC_DATA_RESULT.COUNTRY_NUMBER ;
+   RCBBUA0_COUNTRY_SLC_REC.SERVICE_LVL_CODE =
+     COUNTRY_SLC_DATA_RESULT.SERVICE_LVL_CODE ;
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_1 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.MONFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_1 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.MONTO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_2 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.TUEFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_2 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.TUETO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_3 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.WEDFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_3 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.WEDTO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_4 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.THUFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_4 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.THUTO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_5 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.FRIFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_5 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.FRITO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_6 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.SATFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_6 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.SATTO);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_START_7 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.SUNFROM);
+   RCBBUA0_COUNTRY_SLC_REC.COVERAGE_END_7 =
+     RCBBUAM_R073_CONVERT_TIME (COUNTRY_SLC_DATA_RESULT.SUNTO);
+   RCBBUA0_COUNTRY_SLC_REC.COMMENT_TEXT   =
+     COUNTRY_SLC_DATA_RESULT.COMMENT_TEXT   ;
+
+    /* CHECK VALUE OF FIELDS AND NULL INDICATORS */
+   CALL RCBBUAM_R074_SET_NULL_IND;
+
+ END RCBBUAM_R071_FILL_COUNTRY_SLC;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : WRITE_COUNTRY_SLC                             */
+ /*                                                                  */
+ /* DESCRIPTION : WRITE TYPE/MODEL SERVICE LEVEL DATA RECORD RCBBUA0 */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R072_WRITE_COUNTRY_SLC: PROC;
+
+   WRITE FILE (RCBBUA0) FROM (RCBBUA0_REC);
+
+   CNT.RCBBUA0 = CNT.RCBBUA0 + 1;
+
+    /* RAISE HASH TOTAL WITH CURRENT RECORD */
+   WRK_HASH_FIELD =
+         SUBSTR(RCBBUA0_COUNTRY_SLC_REC.SERVICE_LVL_CODE,1,3);
+   CALL RCB018M (WRK_HASH_FIELD,
+                 CNT_HASH_TOTAL.RCBBUA0,
+                 PTR_INT_AREA);
+
+ END RCBBUAM_R072_WRITE_COUNTRY_SLC;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : CONVERT_TIME                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : CONVERT TIME FROM HHMM TO HH:MM:SS            */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R073_CONVERT_TIME: PROC (TIME_IN) RETURNS (CHAR (8));
+  DCL TIME_IN CHAR (4);
+  DCL 1 TIME_STRUCT DEFINED TIME_IN,
+        3 HOURS    CHAR(2),
+        3 MINUTES  CHAR(2);
+                                                /* PTM1247: USE '.'  */
+  RETURN (HOURS || '.' || MINUTES || '.00');    /* I.S.O. ':'        */
+
+ END RCBBUAM_R073_CONVERT_TIME;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : SET_NULL_IND                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : SET THE VALUES OF THE NULL INDICATORS         */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R074_SET_NULL_IND: PROC;
+
+    /* SET NULL INDICATORS VALUE FIELD FILLED IN ('O') */
+   RCBBUA0_COUNTRY_SLC_REC.INDNULL(*) = 0;
+
+    /* NO NULLS ARE ALLOWED IN THIS TABLE */
+
+ END RCBBUAM_R074_SET_NULL_IND;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : NEXT_COUNTRY                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : SELECT NEXT COUNTRY OF COUNTRY ARRAY
+ /*                    CLOSE LAM FOR CURRENT COUNTRY                 */
+ /*                    OPEN THE LAM AGAIN FOR NEXT COUNTRY           */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R075_NEXT_COUNTRY : PROC;
+
+   WRK_CTRY_IDX = WRK_CTRY_IDX + 1;
+
+   IF WRK_CTRY_IDX <= COUNTRY_AREA.COUNT_CTRY
+   THEN DO;
+      /* CLOSE LAM */
+     COUNTRY_SLC_COMMAND.ACCMODE = 'CLOSE';
+     CALL RCBBUAM_R081_CALL_RCBIK3M;
+      /* SAVE AND RESET HAST TOTAL */
+     CALL RCBBUAM_R097_SAVE_HASH;
+     CNT_HASH_TOTAL.RCBBUA0 = 0;
+
+      /* NEXT COUNTRY */
+     PARM_INT_AREA.COUNTRY_NUMBER=COUNTRY_AREA.CTRYNO(WRK_CTRY_IDX);
+     WRK_PGR_TYPE                =COUNTRY_AREA.PGR_TYPE(WRK_CTRY_IDX);
+
+     /* RETRIEVE RUN DATE    */
+    CALL RCBBUAM_R094_FETCH_RCB001;                       /* PTM1279 */
+
+      /* RESET LAM SELECTION WITH OPEN, FETCH FIRST LAM RECORD*/
+     MORE_COUNTRY_SLC_RECORDS   = TRUE;
+     COUNTRY_SLC_COMMAND.ACCMODE = 'OPEN';
+     CALL RCBBUAM_R081_CALL_RCBIK3M;
+     RCBIK30_CNT     = 1;
+     RCBIK30_CNT_ACT = 1;                                 /* RB01299 */
+
+     COUNTRY_SLC_COMMAND.ACCMODE = 'FETCH';
+     CALL RCBBUAM_R081_CALL_RCBIK3M;
+     CALL RCBBUAM_R080_FETCH_COUNTRY_SLC;
+   END;
+   ELSE DO;
+     MORE_COUNTRY_NUMBERS = FALSE;
+   END;
+
+ END RCBBUAM_R075_NEXT_COUNTRY;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : RETRIEVE_COUNTRY_SLC                          */
+ /*                                                                  */
+ /* DESCRIPTION:   READ RECORD FROM TYPE/MODEL SERVICE LEVEL LAM     */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R080_FETCH_COUNTRY_SLC: PROC;
+
+    /* FETCH RECORD FROM LAM */
+   COUNTRY_SLC_COMMAND.ACCMODE = 'FETCH';
+   CALL RCBBUAM_R081_CALL_RCBIK3M;
+
+   IF MORE_COUNTRY_SLC_RECORDS
+   THEN DO;
+      /* SET KEY RECEIVED TYPE/MODEL SERVICE LEVEL RECORD */
+     PARM_INT_AREA.SEQUENCE_KEY=
+                    COUNTRY_SLC_DATA_RESULT.COUNTRY_NUMBER ||
+                    COUNTRY_SLC_DATA_RESULT.SERVICE_LVL_CODE ;
+   END;
+ END RCBBUAM_R080_FETCH_COUNTRY_SLC;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : CALL_RCBIK3M                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : CALL TYPE/MODEL SERVICE LEVEL LAM             */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R081_CALL_RCBIK3M: PROC;
+
+    /* FILL COUNTRY NUMBER */
+   COUNTRY_SLC_COMMAND.CTY     = PARM_INT_AREA.COUNTRY_NUMBER;
+
+    /* CALL LAM */
+                                                      /* SOC RB01299 */
+                                              /* SOC CEDS00000640 */
+ /*CHIS810_VAL_REC = RCBIK3M(COUNTRY_SLC_COMMAND_PTR, */
+   CHIS810_VAL_REC = RCBIK3M(RCBIK30_CNT,
+                            COUNTRY_SLC_COMMAND_PTR,
+                                              /* EOC CEDS00000640 */
+                            COUNTRY_SLC_DATA_RESULT_PTR,
+                            COUNTRY_SLC_PROC_RESULT_PTR,
+                            PARM);
+ /*CALL RCBIK3M(COUNTRY_SLC_COMMAND_PTR,
+ /*             COUNTRY_SLC_DATA_RESULT_PTR,
+ /*             COUNTRY_SLC_PROC_RESULT_PTR);
+                                                      /* EOC RB01299 */
+   SELECT (COUNTRY_SLC_PROC_RESULT.SQLCODE);
+     WHEN (0);
+
+     WHEN (100) DO
+       IF CHIS810_INVAL_REC THEN                      /* SOC RB01299 */
+       DO;
+         PARM_INT_AREA.MSG_VAR_CODES   = '';
+         PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+         PARM_INT_AREA.MESSAGE_NUMBER  = '0000';
+         PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';
+         PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBIK30';
+         CALL RCB0M1M (PTR_INT_AREA);
+         CALL RCBBUAM_ERROR(NULL,'OTHER','#020');
+       END;                                           /* EOC RB01299 */
+       MORE_COUNTRY_SLC_RECORDS = FALSE;
+     END;
+
+     WHEN (9999) DO;
+        /* SPECIAL LAM ERROR SITUATION */
+       PARM_INT_AREA.MSG_VAR_CODES   = '';
+       PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+       PARM_INT_AREA.MESSAGE_NUMBER  = '0000';
+       PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';
+       PARM_INT_AREA.MSG_VAR_VALUE_6 = WRK_RCBBUA0;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBBUAM_ERROR(NULL,'OTHER','#001');
+     END;
+     OTHERWISE DO;
+        /* DB2 ERROR SITUATION */
+       PARM_INT_AREA.MSG_VAR_CODES   = '';
+       PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+       PARM_INT_AREA.MESSAGE_NUMBER  = '0000';
+       PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';
+       PARM_INT_AREA.MSG_VAR_VALUE_6 = WRK_RCBBUA0;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBBUAM_ERROR (ADDR (COUNTRY_SLC_PROC_RESULT),
+                           'DB2',
+                           '#002');
+     END;
+   END;
+ END RCBBUAM_R081_CALL_RCBIK3M;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : FETCH_COUNTRIES                               */
+ /*                                                                  */
+ /* DESCRIPTION      : FETCH COUNTRIES                               */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R092_FETCH_COUNTRIES: PROC;
+
+   WRK_CTRY_IDX             = 1;
+   CALL RCB019M (PTR_COUNTRY_AREA,
+                 PTR_INT_AREA);
+
+   IF COUNTRY_AREA.COUNT_CTRY = 0
+   THEN DO;
+     MORE_COUNTRY_NUMBERS            = FALSE;
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';
+     PARM_INT_AREA.MSG_VAR_CODES     = '';
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#003');
+   END;
+   ELSE DO;
+     PARM_INT_AREA.COUNTRY_NUMBER = COUNTRY_AREA.CTRYNO(1);
+     WRK_PGR_TYPE                 = COUNTRY_AREA.PGR_TYPE(1);
+   END;
+ END RCBBUAM_R092_FETCH_COUNTRIES;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : INIT_PROGRAM                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALIZE PROGRAM VARIABLES. OPEN FILES      */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R090_INIT_PROGRAM: PROC;
+
+  /* INITIALIZE POINTERS */
+ PTR_INT_AREA               = ADDR(PARM_INT_AREA);
+ PTR_RETURN_AREA            = ADDR(RETURN_AREA);
+ PTR_COUNTRY_AREA           = ADDR(COUNTRY_AREA);
+ PTR_RUN_DATE_AREA          = ADDR(RUN_DATE_AREA);
+ PTR_RCBV500                = ADDR(TB_RCBV500);
+ PTR_RCBV500I               = ADDR(TB_RCBV500_I);
+ COUNTRY_SLC_COMMAND_PTR    = ADDR(COUNTRY_SLC_COMMAND);
+ COUNTRY_SLC_DATA_RESULT_PTR = ADDR(COUNTRY_SLC_DATA_RESULT);
+ COUNTRY_SLC_PROC_RESULT_PTR = ADDR(COUNTRY_SLC_PROC_RESULT);
+
+  /* INITIALIZE INTERFACE AREA AND OPEN MESSAGE FILE */
+ PARM_INT_AREA.MSG_AREA        = '';
+ PARM_INT_AREA.ERR_AREA        = '';
+ PARM_INT_AREA.MSG_REQUEST     = 'O';
+ PARM_INT_AREA.MSG_TARGET      = 'F';
+ PARM_INT_AREA.ID_SOURCE_APPL  = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG  = WRK_PGM_NAME;
+ PARM_INT_AREA.ID_MOD_PATH (1) = WRK_MOD_NAME;
+ PARM_INT_AREA.ID_MOD_LEVEL    = 1;
+ PARM_INT_AREA.SYSTEM_TYPE     = WRK_SYSTEM_TYPE;
+ PARM_INT_AREA.PTR_PCB_IO      = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT     = NULL;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+  /* MISCELLANEOUS INITIALIZATIONS */
+ CNT                      = 0;
+ CNT_HASH_TOTAL           = 0;
+ WRK_LENGTH_RCB024        = CSTG (PARM_HASH.TIME_STAMP) +
+                            CSTG (PARM_HASH.HASH_TOTAL);
+
+  /* RETRIEVE SYSTEM DATE */
+ CALL RCB0T1M(PTR_INT_AREA);
+
+  /* RETRIEVE COUNTRIES   */
+ CALL RCBBUAM_R092_FETCH_COUNTRIES;
+
+  /* RETRIEVE RUN DATE    */
+ CALL RCBBUAM_R094_FETCH_RCB001;
+
+ PTR_RCBV500        =  ADDR (TB_RCBV500);
+ PTR_RCBV500I       =  ADDR (TB_RCBV500_I);
+
+ /* RETRIEVE PREVIOUS FILE SEQUENCE NUMBER FROM RCB035 */
+
+ TB_RCBV500                  = '';
+ TB_RCBV500_I                = '';
+ TB_RCB035.NUMBER            = 'RCB035';
+ TB_RCB035.PROC_ID           = COUNTRY_AREA.PROC_ID;
+ TB_RCB035.SEQ_NR            = '01';
+ TB_RCB035.FILLER_G1         = COUNTRY_AREA.CTRY_SET_ID;
+
+0CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+                                                      /* SOC RB01299 */
+ IF RETURN_AREA.RETURN_CODE = 4  THEN
+ DO;
+   TB_RCB035.FILLER_G1 = '';
+   CALL RCBI50M ('U',
+                 PTR_RCBV500,
+                 PTR_RCBV500I,
+                 PTR_RETURN_AREA,
+                 PTR_INT_AREA);
+
+   IF RETURN_AREA.RETURN_CODE = 0  THEN
+   DO;
+     TB_RCB035.FILLER_G1 = COUNTRY_AREA.CTRY_SET_ID;
+     CALL RCBF50M (PTR_RCBV500,
+                   PTR_RCBV500I,
+                   PTR_RETURN_AREA,
+                   PTR_INT_AREA);
+   END;
+ END;
+                                                      /* EOC RB01299 */
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0)
+     DO;
+       DCL ATEMP_PIC7 PIC'ZZZZZZZ';
+       DCL BTEMP_PIC7 PIC'ZZZZZZZ';
+       RCB035 = TB_RCB035 , BY NAME;
+       ATEMP_PIC7 = TB_RCB035.FILE_SEQ_NUM_SC;
+       BTEMP_PIC7 = RCB035.FILE_SEQ_NUM_SC;
+       WRK_SEQ_NBR = RCB035.FILE_SEQ_NUM_SC;              /* RB01299 */
+     END;
+   WHEN (4)
+     DO;
+       PARM_INT_AREA.MSG_VAR_CODES      = '';
+       PARM_INT_AREA.MESSAGE_TYPE       = 'IS';
+       PARM_INT_AREA.MESSAGE_NUMBER     = 'I050';
+       PARM_INT_AREA.MSG_VAR_CODE_6     = 'PN';
+       PARM_INT_AREA.MSG_VAR_VALUE_6    = 'RCB035';
+       PARM_INT_AREA.MSG_VAR_CODE_7     = 'PK';
+       PARM_INT_AREA.MSG_VAR_VALUE_7    = TB_RCBV500.PARAMETER_KEY;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBBUAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2','#004');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBBUAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2','#005');
+     END;
+ END;  /* SELECT */
+
+    /* OPEN FILES AND LAM FOR FIRST COUNTRY */
+   CALL RCBBUAM_R091_OPEN_FILES;
+   CALL RCBBUAM_R093_WRITE_HEADER;
+   CALL RCBBUAM_R080_FETCH_COUNTRY_SLC;
+
+ END RCBBUAM_R090_INIT_PROGRAM;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : OPEN_FILES                                    */
+ /*                                                                  */
+ /* DESCRIPTION      : OPEN OUTPUT FILES                             */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R091_OPEN_FILES: PROC;
+
+ OPEN FILE (RCBBUA0);
+
+    /* OPEN LAM */
+ COUNTRY_SLC_COMMAND.ACCMODE = 'OPEN';
+ CALL RCBBUAM_R081_CALL_RCBIK3M;
+
+    /* READ LAM FOR HEADER */
+ COUNTRY_SLC_COMMAND.ACCMODE = 'FETCH';
+ CALL RCBBUAM_R081_CALL_RCBIK3M;
+
+ RCBIK30_CNT = RCBIK30_CNT + 1;
+
+ IF PARM = 'CHIS810' THEN                             /* SOC RB01299 */
+ DO;
+   IF RCBIK30_HDR_CHIS810.HEADER  ¬= LOW(3) THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES   = '';
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER  = '0016';
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = 'RCBIK30';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#013');            /* ABEND */
+   END;
+
+   IF RCBIK30_HDR_CHIS810.DISTRIBUTOR ¬= 'RCBIK30'  |
+     (RCBIK30_HDR_CHIS810.TYPE        ¬= 'UPDATE' &
+      RCBIK30_HDR_CHIS810.TYPE        ¬= 'REFRESH') |
+      RCBIK30_HDR_CHIS810.DATE         = ' '          THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES       = '';
+     PARM_INT_AREA.MESSAGE_TYPE        = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER      = '0014';
+     PARM_INT_AREA.MSG_VAR_CODE_6      = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6     = 'RCBIK30';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#014');            /* ABEND */
+   END;
+
+   WRK_SEQ_NBR = WRK_SEQ_NBR + 1;
+
+   IF WRK_SEQ_NBR ¬= RCBIK30_HDR_CHIS810.SEQ_NBR  THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES      = '';
+     PARM_INT_AREA.MESSAGE_TYPE       = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER     = '0180';
+     PARM_INT_AREA.MSG_VAR_CODE_6     = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6    = 'RCBIK30';
+     PARM_INT_AREA.MSG_VAR_CODE_7     = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_7    = RCBIK30_HDR_CHIS810.SEQ_NBR;
+     PARM_INT_AREA.MSG_VAR_CODE_8     = 'OV';
+     CNT_PIC9                         = RCB035.FILE_SEQ_NUM_SC;
+     PARM_INT_AREA.MSG_VAR_VALUE_8    = CNT_PIC9;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#015');            /* ABEND */
+   END;
+   ELSE
+     WRK_FILE_SEQ = RCBIK30_HDR_CHIS810.SEQ_NBR;
+ END;
+
+ IF PARM = 'CHIS800' THEN
+ DO;                                                  /* EOC RB01299 */
+   IF RCBIK30_HDR.DISTRIBUTOR ¬= 'RCBIK3F0' THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES      = '';
+     PARM_INT_AREA.MESSAGE_TYPE       = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER     = '0016';
+     PARM_INT_AREA.MSG_VAR_CODE_6     = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6    = 'RCBIK30';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#006');            /* ABEND */
+   END;
+   IF RCB035.FILE_SEQ_NUM_SC > RCBIK30_HDR.SEQ_NBR THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES      = '';
+     PARM_INT_AREA.MESSAGE_TYPE       = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER     = '0180';
+     PARM_INT_AREA.MSG_VAR_CODE_6     = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6    = 'RCBIK30';
+     PARM_INT_AREA.MSG_VAR_CODE_7     = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_7    = RCBIK30_HDR.SEQ_NBR;
+     PARM_INT_AREA.MSG_VAR_CODE_8     = 'OV';
+     CNT_PIC9                         = RCB035.FILE_SEQ_NUM_SC;
+     PARM_INT_AREA.MSG_VAR_VALUE_8    = CNT_PIC9;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#007');            /* ABEND */
+   END;
+   ELSE
+     WRK_FILE_SEQ = RCBIK30_HDR.SEQ_NBR;
+ END;                                                     /* RB01299 */
+
+ END RCBBUAM_R091_OPEN_FILES;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : WRITE_HEADER                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE HEADER RECORDS TO OUTPUT FILES          */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R093_WRITE_HEADER: PROC;
+
+    /* GET CURRENT TIMESTAMP FOR HEADER RECORDS OUTPUT FILES */
+   WRK_DATETIME = PARM_INT_AREA.SYSTEM_DATE || '.' || TIME();
+
+   RCBBUA0_REC                     = ' ';
+   RCBBUA0_HEADER.REC_TYPE         = '01';
+   RCBBUA0_HEADER.FILE_ID          = WRK_RCBBUA0;
+   RCBBUA0_HEADER.SOURCE_INDICATOR = '';
+   RCBBUA0_HEADER.TIMESTAMP        = WRK_DATETIME;
+
+   WRITE FILE (RCBBUA0) FROM (RCBBUA0_REC);
+ END RCBBUAM_R093_WRITE_HEADER;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : RETRIEVE_RCB001                               */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE RCB001                               */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R094_FETCH_RCB001 : PROC;
+
+    /* RETRIEVE RUN DATE */
+   RUN_DATE_AREA.PROC_ID   =  COUNTRY_AREA.PROC_ID;
+   RUN_DATE_AREA.CTRYNO    =  PARM_INT_AREA.COUNTRY_NUMBER;
+   RUN_DATE_AREA.PGR_TYPE  =  WRK_PGR_TYPE;
+
+   CALL RCB020M (PTR_RUN_DATE_AREA,
+                 PTR_INT_AREA);
+
+   IF RUN_DATE_AREA.RUN_DATE = ''    /* NO RUN DATE RCB001 FOUND */
+   THEN DO;
+     RUN_DATE_AREA.RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;
+   END;
+
+   WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;
+   PARM_INT_AREA.RUN_DATE = RUN_DATE_AREA.RUN_DATE;
+
+   PARM_INT_AREA.MSG_VAR_CODES    = '';
+   PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+   PARM_INT_AREA.MESSAGE_NUMBER   = '0002';
+   PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';
+   PARM_INT_AREA.MSG_VAR_VALUE_6  = RUN_DATE_AREA.RUN_DATE;
+
+   CALL RCB0M1M(PTR_INT_AREA);
+
+ END RCBBUAM_R094_FETCH_RCB001;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : WRITE_TRAILER                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE TRAILER RECORDS TO OUTPUT FILES         */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R095_WRITE_TRAILER: PROC;
+
+   RCBBUA0_REC              = ' ';
+   RCBBUA0_TRAILER.REC_TYPE = '99';
+   RCBBUA0_TRAILER.CNT_RECS = CNT.RCBBUA0;
+
+   WRITE FILE (RCBBUA0) FROM (RCBBUA0_REC);
+
+ END RCBBUAM_R095_WRITE_TRAILER;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : CLOSE_FILES                                   */
+ /*                                                                  */
+ /* DESCRIPTION      : CLOSE FILES AND GIVE TYPE/MODEL SERVICE LEVEL */
+ /*                    LAM CLOSE COMMAND.                            */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R096_CLOSE_FILES: PROC;
+
+ IF PARM = 'CHIS810' THEN                             /* SOC RB01299 */
+ DO;
+   IF RCBIK30_TLR_CHIS810.TRAILER ¬= HIGH(3) THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0017';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBIK30';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#016');            /* ABEND */
+   END;
+
+   RCBIK30_CNT = RCBIK30_CNT + 1;
+
+   IF MAX_REC_CNT THEN
+   DO;
+     MAX_REC_CNT                    = FALSE;
+     RCBIK30_CNT_ACT                = RCBIK30_CNT + RCBIK30_CNT_ACT;
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0007';
+     PARM_INT_AREA.MSG_VAR_CODE_5   = 'IS';
+     PARM_INT_AREA.MSG_VAR_VALUE_5  = 'REC_CNT EXCEEDED MAXLIMIT';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBIK30';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'IS';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = 'ACTUAL REC_CNT IS';
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'C15';
+     CNT_PIC15                      = RCBIK30_CNT_ACT;
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+     CALL RCB0M1M (PTR_INT_AREA);
+   END;
+
+   IF RCBIK30_CNT ¬= RCBIK30_TLR_CHIS810.REC_COUNT THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0007';
+     PARM_INT_AREA.MSG_VAR_CODE_5   = 'IS';
+     PARM_INT_AREA.MSG_VAR_VALUE_5  = 'TRAILER RECORD CNT ERROR ';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBIK30';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'C7';
+     CNT_PIC15                      = RCBIK30_CNT;
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = CNT_PIC15;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = RCBIK30_TLR_CHIS810.REC_COUNT;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#017');            /* ABEND */
+   END;
+ END;
+
+ IF PARM = 'CHIS800' THEN
+ DO;                                                  /* EOC RB01299 */
+   IF RCBIK30_TLR.TRAILER ¬= HIGH(3) THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0017';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBIK30';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#008');             /* ABEND */
+   END;
+
+   RCBIK30_CNT = RCBIK30_CNT + 1;
+
+   IF RCBIK30_CNT ¬= RCBIK30_TLR.REC_COUNT THEN
+   DO;
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0007';
+     PARM_INT_AREA.MSG_VAR_CODE_5   = 'IS';
+     PARM_INT_AREA.MSG_VAR_VALUE_5  = 'TRAILER RECORD CNT ERROR ';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBIK30';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'C7';
+     CNT_PIC9                       = RCBIK30_CNT;
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = CNT_PIC9;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = RCBIK30_TLR.REC_COUNT;
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBUAM_ERROR (NULL, 'OTHER', '#009');            /* ABEND */
+   END;
+ END;                                                     /* RB01299 */
+
+ TB_RCBV500             = '';
+ TB_RCBV500_I           = '';
+                                           /* UPDATE FILE SEQ.NUMBER */
+ IF PARM = 'CHIS810'  THEN                            /* SOC RB01299 */
+ DO;
+   IF WRK_FILE_SEQ = '99999' THEN
+     WRK_FILE_SEQ = 0;
+
+   RCB035.FILE_SEQ_NUM_SC = WRK_FILE_SEQ;
+
+   TB_RCB035              = RCB035 , BY NAME;
+
+   CALL RCBG50M(PTR_RCBV500,
+                PTR_RCBV500I,
+                PTR_RETURN_AREA,
+                PTR_INT_AREA);
+
+   SELECT (RETURN_AREA.RETURN_CODE);
+     WHEN(0);
+     OTHERWISE
+        DO;
+          CALL RCBBUAM_ERROR(ADDR (RETURN_AREA.RETURN_SQL),
+                            'DB2','#018');
+        END;
+   END;
+ END;
+
+ IF PARM = 'CHIS800' THEN
+ DO;                                                  /* EOC RB01299 */
+   IF RCB035.FILE_SEQ_NUM_SC ¬= WRK_FILE_SEQ
+   THEN
+     DO;
+        RCB035.FILE_SEQ_NUM_SC = WRK_FILE_SEQ;
+        TB_RCB035              = RCB035 , BY NAME;
+
+        CALL RCBG50M(PTR_RCBV500,
+                     PTR_RCBV500I,
+                     PTR_RETURN_AREA,
+                     PTR_INT_AREA);
+
+        SELECT (RETURN_AREA.RETURN_CODE);
+          WHEN(0);
+          OTHERWISE
+            DO;
+              CALL RCBBUAM_ERROR(ADDR (RETURN_AREA.RETURN_SQL),
+                                'DB2','#010');
+            END;
+        END;
+     END;
+ END;                                                     /* RB01299 */
+
+    /* CLOSE LAM */
+   COUNTRY_SLC_COMMAND.ACCMODE = 'CLOSE';
+   CALL RCBBUAM_R081_CALL_RCBIK3M;
+
+   CLOSE FILE (RCBBUA0);
+
+ END RCBBUAM_R096_CLOSE_FILES;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : SAVE_HASH                                     */
+ /*                                                                  */
+ /* DESCRIPTION      : SAVE HASH TOTALS                              */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R097_SAVE_HASH : PROC;
+
+    /* SAVE HASH TOTAL FILE RCBBUA0 */
+   WRK_FILE_NAME          = WRK_RCBBUA0;
+   WRK_HASH_TOTAL         = CNT_HASH_TOTAL.RCBBUA0;
+   CALL RCBBUAM_R098_UPD_RCB024;
+
+    /* HASH TOTAL MESSAGE */
+   PARM_INT_AREA.MSG_VAR_CODES    = '';
+   PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+   PARM_INT_AREA.MESSAGE_NUMBER   = '0173';
+   PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+   PARM_INT_AREA.MSG_VAR_CODE_7   = 'TP';
+   PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_DATETIME;
+   PARM_INT_AREA.MSG_VAR_CODE_8   = 'HT';
+
+   PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBUA0;
+   CNT_PIC15                      = CNT_HASH_TOTAL.RCBBUA0;
+   PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+   CALL RCB0M1M(PTR_INT_AREA);
+
+  END RCBBUAM_R097_SAVE_HASH;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : UPD_RCB024                                    */
+ /*                                                                  */
+ /* DESCRIPTION      : SAVE HASH TOTAL INFORMATION ON PARAMETER.     */
+ /*                    IF THE PARAMETER DOES NOT YET EXIST, IT WILL  */
+ /*                    BE INSERTED.                                  */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R098_UPD_RCB024 : PROC;
+
+    /* INIT TABLESTRUCTURE */
+   TB_RCBV500                  = '';
+   TB_RCBV500_I                = '';
+   PARM_HASH.NUMBER            = 'RCB024';
+   PARM_HASH.PROC_ID           = COUNTRY_AREA.PROC_ID;
+   PARM_HASH.CTRYNO            = PARM_INT_AREA.COUNTRY_NUMBER;
+   PARM_HASH.FILE_NAME         = WRK_FILE_NAME;
+   PARM_HASH.SEQ_NUMBER        = '01';
+   PARM_HASH.LENGTH_PARM       = WRK_LENGTH_RCB024;
+   PARM_HASH.TIME_STAMP        = WRK_DATETIME;
+   PARM_HASH.HASH_TOTAL        = WRK_HASH_TOTAL;
+
+    /* UPDATE PARAMETER RCB024    */
+   CALL RCBG50M (ADDR(TB_RCBV500),
+                 ADDR(TB_RCBV500_I),
+                 PTR_RETURN_AREA,
+                 PTR_INT_AREA);
+
+   SELECT(RETURN_AREA.RETURN_CODE);
+     WHEN (0);
+     WHEN (4) DO;
+        /* WHEN NOT FOUND THEN INSERT  */
+       CALL RCBF50M (ADDR(TB_RCBV500),
+                     ADDR(TB_RCBV500_I),
+                     PTR_RETURN_AREA,
+                     PTR_INT_AREA);
+
+       IF RETURN_AREA.RETURN_CODE ¬= 0
+       THEN DO;
+         CALL RCBBUAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                             'DB2',
+                             '#011');
+       END;
+     END;
+     OTHERWISE DO;
+       CALL RCBBUAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2',
+                           '#012');
+     END;
+   END; /* SELECT */
+ END RCBBUAM_R098_UPD_RCB024;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : CLOSE_PROGRAM                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : ISSUE MESSAGES AND CLOSE MESSAGE FILE         */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_R099_CLOSE_PROGRAM: PROC;
+
+  /* IF NO RECORDS PROCESSED, GIVE ERROR MESSAGE */
+  /* COUNT MESSAGES FOR THE OUTPUT FILES */
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0004';
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+ PARM_INT_AREA.MSG_VAR_CODE_7   = 'C6';
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBUA0;
+ /* CNT_PIC9                       = CNT.RCBBUA0;     /* SOC RB01299 */
+ /* PARM_INT_AREA.MSG_VAR_VALUE_7  = CNT_PIC9;                       */
+ CNT_PIC15                      = CNT.RCBBUA0;
+ PARM_INT_AREA.MSG_VAR_VALUE_7  = CNT_PIC15;          /* EOC RB01299 */
+ CALL RCB0M1M(PTR_INT_AREA);
+  /* PROGRAM SUCCESSFUL MESSAGE */
+ PARM_INT_AREA.COUNTRY_NUMBER       = ' ';
+ PARM_INT_AREA.MESSAGE_TYPE         = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER       = '9999';
+ PARM_INT_AREA.MSG_VAR_CODES        = '';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+  /* CLOSE MESSAGE FILE */
+ PARM_INT_AREA.MSG_REQUEST    = 'C';
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ END RCBBUAM_R099_CLOSE_PROGRAM;
+
+1/*------------------------------------------------------------------*/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBUAM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /*------------------------------------------------------------------*/
+ RCBBUAM_ERROR: PROC     (PTR_ERROR,
+                          ERR_TYPE,
+                          CALL_ID);
+
+   DCL PTR_ERROR    PTR;
+   DCL ERR_TYPE     CHAR(8);
+   DCL CALL_ID      CHAR(4);
+   PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;
+   PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;
+   PARM_INT_AREA.CALL_ID        = CALL_ID;
+   CALL RCB0E1M (PTR_INT_AREA);
+ END RCBBUAM_ERROR;
+
+1/*-----------------------------------------------------------------*/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*-----------------------------------------------------------------*/
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBBUAM);                      /* MODULE TO BE COMPILED   */
+
+ /*-----------------------------------------------------------------*/
+ /* END OF ABR BLOCK                                                */
+ /*-----------------------------------------------------------------*/
+
+ END RCBBUAM;

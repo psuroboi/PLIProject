@@ -1,0 +1,280 @@
+ /* RCB020M - RETRIEVE RCB001 - RUN DATE                             */ 00019314
+ /*                                                                  */ 00020000
+ /********************************************************************/ 00030000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCB020M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLI                                           */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THIS PROGRAM RETRIEVES THE RUN DATE FROM      */ 00140000
+ /*                    PARAMETER RCB001 AND STORES IT IN THE         */ 00150000
+ /*                    RUN_DATE_AREA.                                */ 00160000
+ /*                                                                  */ 00170000
+ /*                    IF NO RCB001 PARAMETER CAN BE FOUND FOR THE   */ 00180000
+ /*                    GIVEN PROC_ID / CTRYNO / PGR_TYPE             */ 00190000
+ /*                    COMBINATION THEN THE RCB001 WILL BE           */ 00200000
+ /*                    SEARCHED FOR THE PROC_ID (1-2) WHICH MEANS    */ 00210000
+ /*                    THE OVERALL PROCESS ID. IF AGAIN THE RCB001   */ 00220000
+ /*                    CANNOT BE FOUND THEN A SEARCH WILL BE DONE    */ 00230000
+ /*                    FOR PROC_ID IS 'SY' WHICH MEANS THE OVERALL   */ 00240000
+ /*                    SYSTEM PARAMETER.                             */ 00250000
+ /*                    IF STILL NO RCB001 IS FOUND A (LAST) SEARCH   */ 00260000
+ /*                    IS DONE, FOR RCBCYC: CEDS CYCLE DATE          */ 00270000
+ /*                                                                  */ 00280000
+ /* INPUT            : - PARMS : RCBZ28S                             */ 00290000
+ /*                                                                  */ 00300000
+ /* OUTPUT           : - PARMS : RCBZ28S                             */ 00310000
+ /*                                                                  */ 00320000
+ /* EXTERNAL MODULES : RCBI50M  -  RETRIEVE PARAMETER                */ 00330000
+ /*                    RCB0E1M  -  COMMON ERROR ROUTINE              */ 00340000
+ /*                    RCB0M1M  -  COMMON MESSAGE MODULE             */ 00350000
+ /*                                                                  */ 00360000
+ /* MESSAGES         : NONE                                          */ 00370000
+ /*                                                                  */ 00380000
+ /* DEPENDENCIES     : NONE                                          */ 00390000
+ /*                                                                  */ 00400000
+ /* FREQUENCY        : -                                             */ 00410000
+ /*                                                                  */ 00420000
+ /* MAINTENANCE LOG    :                                             */ 00430000
+ /* ---------------                                                  */ 00440000
+ /*                                                                  */ 00450000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00460000
+ /* --------------------------------------------------------------   */ 00470000
+ /*  27011993 | ----         | CEDS INITIAL DEVELOPMENT              */ 00480000
+ /*  11011994 | PTM 280      | SEE PTM DESCRIPTION                   */ 00490000
+ /*  29071999 | RC01219      | DORO                                  */ 00500000
+ /*           |              |                                       */ 00510000
+ /********************************************************************/ 00520000
+1RCB020M: PROC (PTR_RUN_DATE_AREA,                                      00530000
+                PTR_INT_AREA)                                           00540000
+          REORDER;                                                      00550000
+0DEFAULT RANGE (*)        STATIC;                                       00560000
+0/********************************************************************/ 00570000
+ /*  PARAMETERS                                                      */ 00580000
+ /********************************************************************/ 00590000
+0DCL PTR_RUN_DATE_AREA            POINTER;                              00600000
+ DCL 1 RUN_DATE_AREA              BASED (PTR_RUN_DATE_AREA),            00610000
+       %INCLUDE (RCBZ28S);;                                             00620000
+0DCL PTR_INT_AREA                 POINTER;                              00630000
+ DCL 1 PARM_INT_AREA              BASED (PTR_INT_AREA),                 00640000
+       %INCLUDE (RCBZ01S);;                                             00650000
+0DCL PTR_RETURN_AREA  PTR;                                              00660000
+ DCL 1 RETURN_AREA,                                                     00670000
+       %INCLUDE (RCBZ02S);;                                             00680000
+1/********************************************************************/ 00690000
+ /* DB2 TABLE STRUCTURES                                             */ 00700000
+ /********************************************************************/ 00710000
+ DCL RCBV500_PTR    PTR;               /* PTR PARAMETER ROW          */ 00720000
+ DCL RCBV500I_PTR   PTR;               /* PTR NULL-IND. PARAMETER    */ 00730000
+                                                                        00740000
+ DCL 1 TB_RCBV500,                     /* PARAMETER ROW              */ 00750000
+       %INCLUDE (RCB500S);;                                             00760000
+ DCL 1 TB_RCBV500_I,                   /* NULL-IND. PARAMETER        */ 00770000
+       %INCLUDE (RCB500SI);;                                            00780000
+ DCL 1 TB_RCB001        BASED (RCBV500_PTR),                            00790000
+       %INCLUDE (RCBP01S);;                                             00800000
+ DCL 1 RCB001,                                                          00810000
+       %INCLUDE (RCBP01S);;                                             00820000
+0/********************************************************************/ 00830000
+ /* EXTERNAL ENTRIES                                                 */ 00840000
+ /********************************************************************/ 00850000
+ DCL RCB0E1M   ENTRY  EXTERNAL;                                         00860000
+ DCL RCB0M1M   ENTRY  EXTERNAL;                                         00870000
+ DCL RCBI50M   ENTRY  EXTERNAL;                                         00880000
+1/********************************************************************/ 00890000
+ /*  BUILTIN FUNCTIONS                                               */ 00900000
+ /********************************************************************/ 00910000
+0DCL ADDR       BUILTIN;                                                00920000
+ DCL DIM        BUILTIN;                                                00930000
+ DCL NULL       BUILTIN;                                                00940000
+ DCL SUBSTR     BUILTIN;                                                00950000
+ DCL LENGTH     BUILTIN;                                                00960000
+1/********************************************************************/ 00970000
+ /*  SWITCHES                                                        */ 00980000
+ /********************************************************************/ 00990000
+0DCL TRUE                 BIT (01)               INIT ('1'B);           01000000
+ DCL FALSE                BIT (01)               INIT ('0'B);           01010000
+ DCL SWITCH_RCB001_FOUND  BIT (01)               INIT ('0'B);           01020000
+1/********************************************************************/ 01030000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01040000
+ /********************************************************************/ 01050000
+0DCL WRK_MOD_NAME      CHAR (08)                 INIT ('RCB020M');      01060000
+0DCL 1 WRK_ARRAY,                                                       01070000
+       3 PROC_ID (3)   CHAR (04);                                       01080000
+0DCL WRK_IDX           FIXED BIN (15,0);                                01090000
+0DCL WRK_LEVEL         FIXED BIN (15,0);                                01100000
+1/********************************************************************/ 01110000
+ /*  ON ERROR CONDITIONS                                             */ 01120000
+ /********************************************************************/ 01130000
+0%INCLUDE (RCB0E0M);                                                    01140000
+  END;                                                                  01150000
+1/********************************************************************/ 01160000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01170000
+ /********************************************************************/ 01180000
+0CALL R090_INIT;                                                        01190000
+0CALL R091_READ_RCB001;                                                 01200000
+0IF SWITCH_RCB001_FOUND = FALSE                          /* PTM 280  */ 01210000
+ THEN                                                    /* PTM 280  */ 01220000
+   CALL R092_READ_RCBCYC;                                /* PTM 280  */ 01230000
+0CALL R099_END;                                                         01240000
+1/********************************************************************/ 01250000
+ /*                                                                  */ 01260000
+ /* MODULE NAME      : R090_INIT                                     */ 01270000
+ /*                                                                  */ 01280000
+ /* DESCRIPTION      : INITIAL ACTIONS FOR THE PROGRAM               */ 01290000
+ /*                                                                  */ 01300000
+ /********************************************************************/ 01310000
+0R090_INIT : PROC;                                                      01320000
+                                                                        01330000
+ RCBV500_PTR      = ADDR (TB_RCBV500);                                  01340000
+ RCBV500I_PTR     = ADDR (TB_RCBV500_I);                                01350000
+ PTR_RETURN_AREA  = ADDR (RETURN_AREA);                                 01360000
+                                                                        01370000
+ WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01380000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01390000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = WRK_MOD_NAME;                  01400000
+                                                                        01410000
+0END R090_INIT;                                                         01420000
+                                                                        01430000
+1/********************************************************************/ 01440000
+ /*                                                                  */ 01450000
+ /* MODULE NAME      : R091_READ_RCB001                              */ 01460000
+ /*                                                                  */ 01470000
+ /* DESCRIPTION      : PARAMETER RCB001 MUST BE SEARCHED FOR THE     */ 01480000
+ /*                    PROC. ID'S WHICH ARE IN THE WRK_ARRAY. IF     */ 01490000
+ /*                    RCB001 IS FOUND FOR A PROC. ID THE SEARCH IS  */ 01500000
+ /*                    STOPPED.                                      */ 01510000
+ /*                                                                  */ 01520000
+ /********************************************************************/ 01530000
+0R091_READ_RCB001 : PROC;                                               01540000
+                                                                        01550000
+ WRK_ARRAY.PROC_ID (1)  =  RUN_DATE_AREA.PROC_ID;                       01560000
+ WRK_ARRAY.PROC_ID (2)  =  SUBSTR (RUN_DATE_AREA.PROC_ID,1,2);          01570000
+ WRK_ARRAY.PROC_ID (3)  = 'SY';                                         01580000
+                                                                        01590000
+ SWITCH_RCB001_FOUND = FALSE;                                           01600000
+                                                                        01610000
+ DO WRK_IDX = 1 TO 3 WHILE (¬SWITCH_RCB001_FOUND);                      01620000
+                                                                        01630000
+   TB_RCBV500                  = '';                                    01640000
+   TB_RCBV500_I                = '';                                    01650000
+   TB_RCB001.NUMBER            = 'RCB001';                              01660000
+   TB_RCB001.PROC_ID           =  WRK_ARRAY.PROC_ID (WRK_IDX);          01670000
+   TB_RCB001.CTRYNO            =  RUN_DATE_AREA.CTRYNO;                 01680000
+   TB_RCB001.PGR_TYPE          =  RUN_DATE_AREA.PGR_TYPE;               01690000
+                                                                        01700000
+   CALL RCBI50M ('U',                                     /* RC01219 */ 01710000
+                 RCBV500_PTR,                                           01720000
+                 RCBV500I_PTR,                                          01730000
+                 PTR_RETURN_AREA,                                       01740000
+                 PTR_INT_AREA);                                         01750000
+                                                                        01760000
+   SELECT (RETURN_AREA.RETURN_CODE);                                    01770000
+     WHEN (0)                                                           01780000
+       DO;                                                              01790000
+         RCB001              =  '';                                     01800000
+         RCB001              =  TB_RCB001 , BY NAME;                    01810000
+         SWITCH_RCB001_FOUND =  TRUE;                                   01820000
+       END;                                                             01830000
+     WHEN (4);                                                          01840000
+     OTHERWISE                                                          01850000
+       CALL RCB020M_ERROR (ADDR (RETURN_AREA.RETURN_SQL),               01860000
+                           'DB2','#001');                               01870000
+   END;                                                                 01880000
+ END;                                                                   01890000
+                                                                        01900000
+ IF SWITCH_RCB001_FOUND                                                 01910000
+ THEN                                                                   01920000
+   DO;                                                                  01930000
+     RUN_DATE_AREA.RUN_DATE = RCB001.RUN_DATE;                          01940000
+   END;                                                                 01950000
+ ELSE                                                                   01960000
+   DO;                                                                  01970000
+     RUN_DATE_AREA.RUN_DATE = '';                                       01980000
+   END;                                                                 01990000
+                                                                        02000000
+0END R091_READ_RCB001;                                                  02010000
+                                                                        02020000
+1/********************************************************************/ 02030000
+ /*                                                                  */ 02040000
+ /* MODULE NAME      : R092_READ_RCBCYC                              */ 02050000
+ /*                                                                  */ 02060000
+ /* DESCRIPTION      : PARAMETER RCBCYC IS READ TO RETRIEVE THE      */ 02070000
+ /*                    CYCLE-DATE-TIMESTAMP.                         */ 02080000
+ /*                    IF A CYCLE DATE IS FOUND, THE RUN-DATE IS     */ 02090000
+ /*                    FILLED WITH THE DATE FROM THE TIMESTAMP.      */ 02100000
+ /* HISTORY          :                                               */ 02110000
+ /*         11011994 : PROCEDURE ADDED AS PART OF IMPLEMENTATION OF  */ 02120000
+ /*                    PTM 280                                       */ 02130000
+ /*                                                                  */ 02140000
+ /********************************************************************/ 02150000
+0R092_READ_RCBCYC : PROC;                                               02160000
+                                                                        02170000
+ TB_RCBV500                  = '';                                      02180000
+ TB_RCBV500_I                = '';                                      02190000
+ TB_RCBV500.PARAMETER_NUMBER = 'RCBCYC';                                02200000
+                                                                        02210000
+ CALL RCBI50M ('U',                                       /* RC01219 */ 02220000
+               RCBV500_PTR,                                             02230000
+               RCBV500I_PTR,                                            02240000
+               PTR_RETURN_AREA,                                         02250000
+               PTR_INT_AREA);                                           02260000
+                                                                        02270000
+ SELECT (RETURN_AREA.RETURN_CODE);                                      02280000
+   WHEN (0)                                                             02290000
+     RUN_DATE_AREA.RUN_DATE = SUBSTR(TB_RCBV500.PARAMETER_VALUE,1,10);  02300000
+   WHEN (4)                                                             02310000
+     RUN_DATE_AREA.RUN_DATE = '';                                       02320000
+   OTHERWISE                                                            02330000
+     CALL RCB020M_ERROR (ADDR (RETURN_AREA.RETURN_SQL),                 02340000
+                         'DB2','#002');                                 02350000
+ END;                                                                   02360000
+                                                                        02370000
+0END R092_READ_RCBCYC;                                                  02380000
+                                                                        02390000
+1/********************************************************************/ 02400000
+ /*                                                                  */ 02410000
+ /* MODULE NAME      : R099_END                                      */ 02420000
+ /*                                                                  */ 02430000
+ /* DESCRIPTION      : ENDING ACTIONS FOR THE PROGRAM                */ 02440000
+ /*                                                                  */ 02450000
+ /********************************************************************/ 02460000
+0R099_END: PROC;                                                        02470000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            02480000
+0END R099_END;                                                          02490000
+                                                                        02500000
+1/********************************************************************/ 02510000
+ /*                                                                  */ 02520000
+ /* MODULE NAME      : RCB020M_ERROR                                 */ 02530000
+ /*                                                                  */ 02540000
+ /* DESCRIPTION      : CALL THE ERROR MODULE                         */ 02550000
+ /*                                                                  */ 02560000
+ /********************************************************************/ 02570000
+0RCB020M_ERROR : PROC     (PTR_ERROR,                                   02580000
+                           ERR_TYPE,                                    02590000
+                           CALL_ID);                                    02600000
+0DCL PTR_ERROR    POINTER;                                              02610000
+ DCL ERR_TYPE     CHAR(8);                                              02620000
+ DCL CALL_ID      CHAR(4);                                              02630000
+                                                                        02640000
+ PARM_INT_AREA.PTR_ERROR      =  PTR_ERROR;                             02650000
+ PARM_INT_AREA.ERR_TYPE       =  ERR_TYPE;                              02660000
+ PARM_INT_AREA.CALL_ID        =  CALL_ID;                               02670000
+ CALL RCB0E1M (PTR_INT_AREA);                                           02680000
+                                                                        02690000
+0END RCB020M_ERROR;                                                     02700000
+                                                                        02710000
+1/*******************************************************************/  02720000
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                    */  02730000
+ /*******************************************************************/  02740000
+0%INCLUDE DAIFPLH ;                   /* COMPILE DATE/TIME STAMP    */  02750000
+ $DAIMOD (RCB020M);                   /* MODULE TO BE COMPILED      */  02760000
+0/*******************************************************************/  02770000
+ /* END OF ABR BLOCK                                                */  02780000
+ /*******************************************************************/  02790000
+0END RCB020M;                                                           02800000

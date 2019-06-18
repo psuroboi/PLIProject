@@ -1,0 +1,317 @@
+ /* RCB0E3M - COMMON ERROR ROUTINE (NON-IMS)                         */ 00019920
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCB0E3M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLISQL                                        */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : COMMON                                        */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THE COMMON ERROR ROUTINE HANDLES ALL          */ 00140000
+ /*                    UNEXPECTED IMS AND DB2 STATUS CODES, AND ALL  */ 00150000
+ /*                    OTHER ERRORS, WHICH SHOULD CAUSE A PROGRAM TO */ 00160000
+ /*                    ABEND RUNNING IN A NON-IMS ENVIRONMENT        */ 00170000
+ /*                                                                  */ 00180000
+ /* INPUT            : PARAMETER INTERFACE (FROM CALLING PROGRAM)    */ 00190000
+ /*                                                                  */ 00200000
+ /* OUTPUT           : MESSAGES TO - SECONDARY LOG                   */ 00210000
+ /*                                - SYSPRINT                        */ 00220000
+ /*                                                                  */ 00230000
+ /*                                                                  */ 00240000
+ /*                                                                  */ 00250000
+ /* EXTERNAL MODULES : DSNTIAR (SQL MSG TRANSLATION)                 */ 00260000
+ /*                                                                  */ 00270000
+ /*                                                                  */ 00280000
+ /* MESSAGES         : E001,...,E006,E010,...,E012                   */ 00290000
+ /*                                                                  */ 00300000
+ /* DEPENDENCIES     : NONE                                          */ 00310000
+ /*                                                                  */ 00320000
+ /* MAINTENANCE LOG  :                                               */ 00330000
+ /* ---------------                                                  */ 00340000
+ /*                                                                  */ 00350000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00360000
+ /*  --------------------------------------------------------------  */ 00370000
+ /*  1991-09-30 | ----         | CEDS INITIAL DEVELOPMENT            */ 00380000
+ /*  1997-04-11 | PTM1036      | CORRECTED PROLOG                    */ 00390000
+ /*  1997-05-05 | PTM1038      | CORRECT NAMES                       */ 00400000
+ /*             |              |                                     */ 00410000
+ /********************************************************************/ 00420000
+1RCB0E3M: PROC    (PTR_INT_AREA)                                        00430000
+          REORDER;                                                      00440000
+1/********************************************************************/ 00450000
+ /*  PARAMETERS                                                      */ 00460000
+ /********************************************************************/ 00470000
+0DCL PTR_INT_AREA             PTR;                                      00480000
+1/********************************************************************/ 00490000
+ /* EXTERNAL ENTRIES                                                 */ 00500000
+ /********************************************************************/ 00510000
+0DCL DSNTIAR   ENTRY  EXTERNAL  OPTIONS (ASM INTER RETCODE);            00520000
+0/********************************************************************/ 00530000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00540000
+ /********************************************************************/ 00550000
+0DCL 1 PARM_INT_AREA  BASED (PTR_INT_AREA),                             00560000
+     %INCLUDE (RCBZ01S);;                                               00570000
+0/********************************************************************/ 00580000
+ /*  BIT SWITCHES                                                    */ 00590000
+ /********************************************************************/ 00600000
+0DCL FALSE              BIT (1)            INIT ('0'B);                 00610000
+ DCL TRUE               BIT (1)            INIT ('1'B);                 00620000
+0DCL SWITCH_PARM_OK     BIT (1)            INIT ('0'B);                 00630000
+0/********************************************************************/ 00640000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 00650000
+ /********************************************************************/ 00660000
+0DCL WRK_COUNT                  FIXED BIN(15);                          00670000
+ DCL WRK_LEVEL                  FIXED BIN(15);                          00680000
+0DCL WRK_LEN_DATA               FIXED BIN(31,0) INIT(80);               00690000
+0DCL WRK_SQL_INDEX              FIXED BIN(15);                          00700000
+0DCL 1 WRK_MSG_SQL,                                                     00710000
+       3 LENGTH                 FIXED BIN(15,0) UNAL INIT((7*80)),      00720000
+       3 SQLTEXT (7)            CHAR(80) INIT('');                      00730000
+0DCL 1 MSG_SYSTEM,                                                      00740000
+       %INCLUDE (RCB0M0S);;                               /* PTM1038 */ 00750000
+0DCL 1 MSG_BATCH_ID,                                                    00760000
+       3 PROGRAM                CHAR(05) INIT(' PGM='),                 00770000
+       3 PGM_NAME               CHAR(08),                               00780000
+       3 MODULE                 CHAR(05) INIT(' MOD='),                 00790000
+       3 MOD_NAME               CHAR(08);                               00800000
+0DCL 1 MSG_MOD_PATH,                                                    00810000
+       3 MODULE                 CHAR(05) INIT(' MOD='),                 00820000
+       3 MOD_NAME               CHAR(08);                               00830000
+0DCL 1 MSG_PARM_ERR1,                                                   00840000
+       3 MSG_DSCR_SHORT         CHAR(41)                                00850000
+                    INIT('NO PROGRAM OR MODULE PATH IN ROUTINE CALL'),  00860000
+       3 SEMI_COL               CHAR(01) INIT(';');                     00870000
+0DCL 1 MSG_PARM_ERR2,                                                   00880000
+       3 MSG_DSCR_SHORT         CHAR(40)                                00890000
+                    INIT('NO DATABASE INFORMATION IN ROUTINE CALL,'),   00900000
+       3 ERR                    CHAR(05) INIT(' ERR='),                 00910000
+       3 ERR_TYPE               CHAR(08),                               00920000
+       3 SEMI_COL               CHAR(01) INIT(';');                     00930000
+0DCL 1 MSG_PARM_ERR3,                                                   00940000
+       3 MSG_DSCR_SHORT         CHAR(19)                                00950000
+                    INIT('INVALID ERROR-TYPE '),                        00960000
+       3 ERR_TYPE               CHAR(08),                               00970000
+       3 SEMI_COL               CHAR(01) INIT(';');                     00980000
+0DCL 1 MSG_PARM_ERR4,                                                   00990000
+       3 MSG_DSCR_SHORT         CHAR(20)                                01000000
+                    INIT('INVALID SYSTEM-TYPE '),                       01010000
+       3 SYSTEM_TYPE            CHAR(01),                               01020000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01030000
+0DCL 1 MSG_PARM_ERR5,                                                   01040000
+       3 MSG_DSCR_SHORT_1       CHAR(12)                                01050000
+                    INIT('SYSTEM-TYPE '),                               01060000
+       3 SYSTEM_TYPE            CHAR(01),                               01070000
+       3 MSG_DSCR_SHORT_2       CHAR(31)                                01080000
+                    INIT(' DOES NOT MATCH IMS ENVIRONMENT'),            01090000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01100000
+0DCL 1 MSG_PGM_END,                                                     01110000
+       3 MSG_DSCR_SHORT         CHAR(20)                                01120000
+                    INIT('PROGRAM ABNORMAL END'),                       01130000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01140000
+0DCL 1 MSG_PGM_ID,                                                      01150000
+       3 MSG_DSCR_SHORT         CHAR(30)                                01160000
+                    INIT('ROUTINE CALL IDENTIFICATION : '),             01170000
+       3 CALL_ID                CHAR(04);                               01180000
+0DCL 1 MSG_PGM_PATH,                                                    01190000
+       3 MSG_DSCR_SHORT         CHAR(20)                                01200000
+                    INIT('ROUTINE CALL PATH : ');                       01210000
+0DCL 1 MSG_SEQ_ID,                                                      01220000
+       3 MSG_DSCR_SHORT         CHAR(30)                                01230000
+                    INIT('MAIN SEQUENCE FIELD AT ABEND: '),             01240000
+       3 SEQ_KEY                CHAR(30),                               01250000
+       3 LAST_REF               CHAR(25);                               01260000
+0DCL 1 MSG_DB2_ERR,                                                     01270000
+       3 ID_TEXT                CHAR(11) INIT('DB2-ERROR :'),           01280000
+       3 RETURN_CODE            CHAR(08) INIT(' SQL-RC='),              01290000
+       3 SQL_CODE               PIC 'S9999',                            01300000
+       3 DESCR_ERR              CHAR(13) INIT(' DESCRIPTION='),         01310000
+       3 MSG_SQL_ERR            CHAR(70),                               01320000
+       3 MSG                    CHAR(09) INIT(' MESSAGE='),             01330000
+       3 MSG_SQL(7),                                                    01340000
+         5 NEWLINE              CHAR(01) INIT ('*'),                    01350000
+         5 SQLTEXT              CHAR(80);                               01360000
+1/********************************************************************/ 01370000
+ /*  BUILTIN FUNCTIONS                                               */ 01380000
+ /********************************************************************/ 01390000
+0DCL ADDR       BUILTIN;                                                01400000
+ DCL NULL       BUILTIN;                                                01410000
+ DCL PLIDUMP    BUILTIN;                                                01420000
+ DCL PLIRETC    BUILTIN;                                                01430000
+ DCL STRING     BUILTIN;                                                01440000
+1/********************************************************************/ 01450000
+ /* ON ERROR CONDITIONS                                              */ 01460000
+ /********************************************************************/ 01470000
+0ON ERROR                                                               01480000
+ BEGIN;                                                                 01490000
+   ON ERROR SYSTEM;                                                     01500000
+   EXEC SQL                                                             01510000
+       ROLLBACK WORK                                                    01520000
+       ;                                                                01530000
+0  CALL PLIDUMP('TFC');                                                 01540000
+0  CALL PLIRETC (16);                                                   01550000
+ END;                                                                   01560000
+1/********************************************************************/ 01570000
+ /* DB2/SQL SQLCA                                                    */ 01580000
+ /********************************************************************/ 01590000
+0EXEC SQL                                                               01600000
+   INCLUDE SQLCA                                                        01610000
+   ;                                                                    01620000
+0DCL SQLCA_R    BASED (PARM_INT_AREA.PTR_ERROR)                         01630000
+     LIKE SQLCA ;                                                       01640000
+1/********************************************************************/ 01650000
+ /* INITIALISE VARIABLES                                             */ 01660000
+ /********************************************************************/ 01670000
+0SWITCH_PARM_OK = TRUE;                                                 01680000
+0WRK_LEVEL  = PARM_INT_AREA.ID_MOD_LEVEL;                               01690000
+0MSG_SYSTEM = '';                                                       01700000
+0MSG_SYSTEM.MESSAGE_TYPE   = 'IS';                                      01710000
+ MSG_SYSTEM.MSG_MOD_NAME   = 'RCB0E3M';                                 01720000
+ MSG_SYSTEM.TEXT_G3        = ' : ';                                     01730000
+0MSG_PARM_ERR2.ERR_TYPE    = PARM_INT_AREA.ERR_TYPE;                    01740000
+ MSG_PARM_ERR3.ERR_TYPE    = PARM_INT_AREA.ERR_TYPE;                    01750000
+ MSG_PARM_ERR4.SYSTEM_TYPE = PARM_INT_AREA.SYSTEM_TYPE;                 01760000
+ MSG_PARM_ERR5.SYSTEM_TYPE = PARM_INT_AREA.SYSTEM_TYPE;                 01770000
+ MSG_PGM_ID.CALL_ID        = PARM_INT_AREA.CALL_ID;                     01780000
+1/********************************************************************/ 01790000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01800000
+ /********************************************************************/ 01810000
+0/***********************************/                                  01820000
+ /* CHECK PARM_INT_AREA FOR ERRORS  */                                  01830000
+ /***********************************/                                  01840000
+0IF (PARM_INT_AREA.SYSTEM_TYPE ¬= 'C') &   /* NON TSO/CSP ENVIRONMENT */01850000
+    (PARM_INT_AREA.TXN_CODE    ¬= ''    |                               01860000
+     PARM_INT_AREA.PTR_PCB_IO  ¬= NULL  |                               01870000
+     PARM_INT_AREA.PTR_PCB_ALT ¬= NULL)                                 01880000
+ THEN                                                                   01890000
+   DO;                                                                  01900000
+     MSG_SYSTEM.MESSAGE_NUMBER = 'E012';                                01910000
+     MSG_SYSTEM.MSG_PRIORITY   = '1';                                   01920000
+0    PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR5,MSG_BATCH_ID) (A);         01930000
+     SIGNAL ERROR;                                                      01940000
+   END;                                                                 01950000
+0/************************************/                                 01960000
+ /* SETUP ALL MESSAGES AS NEEDED     */                                 01970000
+ /************************************/                                 01980000
+0CALL RCB0E3M_BATCH;                                                    01990000
+0/***************/                                                      02000000
+ /* FORCE ABEND */                                                      02010000
+ /***************/                                                      02020000
+ IF PARM_INT_AREA.CALL_ID       = '#000'   |                            02030000
+    PARM_INT_AREA.ERR_TYPE ¬= 'OTHER'                                   02040000
+ THEN                                                                   02050000
+   DO;                                                                  02060000
+     CALL PLIDUMP('TFCHB');                                             02070000
+   END;                                                                 02080000
+ CALL PLIRETC (16);                                                     02090000
+ SIGNAL ERROR;                                                          02100000
+1/********************************************************************/ 02110000
+ /*                                                                  */ 02120000
+ /* MODULE NAME : RCB0E3M_BATCH                                      */ 02130000
+ /*                                                                  */ 02140000
+ /* DESCRIPTION : HANDLE THE ERRORS IN A BATCH PROGRAM               */ 02150000
+ /*                                                                  */ 02160000
+ /********************************************************************/ 02170000
+0RCB0E3M_BATCH : PROC;                                                  02180000
+0MSG_BATCH_ID.PGM_NAME = PARM_INT_AREA.ID_SOURCE_PROG;                  02190000
+ MSG_BATCH_ID.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL);         02200000
+0/*************************/                                            02210000
+ /* SEND INITIAL MESSAGES */                                            02220000
+ /*************************/                                            02230000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E004';                                    02240000
+ MSG_SYSTEM.MSG_PRIORITY   = '1';                                       02250000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_END,MSG_BATCH_ID) (A);               02260000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E005';                                    02270000
+ MSG_SYSTEM.MSG_PRIORITY   = '3';                                       02280000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_ID) (A);                             02290000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E006';                                    02300000
+ MSG_SYSTEM.MSG_PRIORITY   = '3';                                       02310000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_PATH) (A);                           02320000
+0WRK_COUNT = 1;                                                         02330000
+0DO WHILE (WRK_COUNT <= WRK_LEVEL);                                     02340000
+   MSG_MOD_PATH.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_COUNT);       02350000
+0  PUT SKIP EDIT (MSG_SYSTEM,MSG_MOD_PATH) (A);                         02360000
+0  WRK_COUNT = WRK_COUNT + 1;                                           02370000
+ END;                                                                   02380000
+ IF PARM_INT_AREA.SEQUENCE_KEY ¬= ''  |                                 02390000
+    PARM_INT_AREA.LAST_REFERENCE ¬= ''                                  02400000
+ THEN DO;                                                               02410000
+   MSG_SYSTEM.MESSAGE_NUMBER = 'E020';                                  02420000
+   MSG_SYSTEM.MSG_PRIORITY = '3';                                       02430000
+   MSG_SEQ_ID.SEQ_KEY = PARM_INT_AREA.SEQUENCE_KEY;                     02440000
+   MSG_SEQ_ID.LAST_REF = PARM_INT_AREA.LAST_REFERENCE;                  02450000
+   PUT SKIP EDIT (MSG_SYSTEM,MSG_SEQ_ID) (A);                           02460000
+ END;                                                                   02470000
+0/************************/                                             02480000
+ /* CHECK IDENTIFICATION */                                             02490000
+ /************************/                                             02500000
+0IF (PARM_INT_AREA.ID_SOURCE_PROG       = '' |                          02510000
+     STRING (PARM_INT_AREA.ID_MOD_PATH) = '' )                          02520000
+ THEN                                                                   02530000
+   DO;                                                                  02540000
+     MSG_SYSTEM.MESSAGE_NUMBER = 'E001';                                02550000
+     MSG_SYSTEM.MSG_PRIORITY   = '3';                                   02560000
+0    PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR1,MSG_BATCH_ID) (A);         02570000
+   END;                                                                 02580000
+0/*****************************************/                            02590000
+ /* DETERMINE ERROR TYPE AND HANDLE ERROR */                            02600000
+ /*****************************************/                            02610000
+ SELECT (PARM_INT_AREA.ERR_TYPE);                                       02620000
+ WHEN ('DB2')                                                           02630000
+   DO;                                                                  02640000
+0    IF PARM_INT_AREA.PTR_ERROR = NULL                                  02650000
+     THEN                                                               02660000
+       DO;                                                              02670000
+         /* NO BASE PTR FOR SQLCA IN ERROR */                           02680000
+         MSG_SYSTEM.MESSAGE_NUMBER = 'E002';                            02690000
+         MSG_SYSTEM.MSG_PRIORITY = '1';                                 02700000
+0        PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR2,MSG_BATCH_ID) (A);     02710000
+       END;                                                             02720000
+     ELSE DO;                                                           02730000
+       /******************************************/                     02740000
+       /* GET DB2 INFORMATION OF SQLCA (ERR_PTR) */                     02750000
+       /******************************************/                     02760000
+0      CALL DSNTIAR (SQLCA_R,WRK_MSG_SQL,WRK_LEN_DATA);                 02770000
+0      MSG_DB2_ERR.SQLTEXT(*)    = WRK_MSG_SQL.SQLTEXT(*);              02780000
+       MSG_DB2_ERR.SQL_CODE      = SQLCA_R.SQLCODE;                     02790000
+       MSG_DB2_ERR.MSG_SQL_ERR = SQLCA_R.SQLERRM;                       02800000
+0      MSG_SYSTEM.MESSAGE_NUMBER = 'E010';                              02810000
+       MSG_SYSTEM.MSG_PRIORITY     = '1';                               02820000
+0      PUT SKIP (2) EDIT (MSG_SYSTEM,                                   02830000
+                          MSG_DB2_ERR.ID_TEXT,                          02840000
+                          MSG_DB2_ERR.RETURN_CODE,                      02850000
+                          MSG_DB2_ERR.SQL_CODE,                         02860000
+                          MSG_DB2_ERR.DESCR_ERR) (A);                   02870000
+0      PUT SKIP EDIT (MSG_DB2_ERR.MSG_SQL_ERR,                          02880000
+                      MSG_DB2_ERR.MSG) (A);                             02890000
+       WRK_SQL_INDEX = 1;                                               02900000
+       DO WHILE (WRK_SQL_INDEX <= 7 &                                   02910000
+                 MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX) ¬= '');             02920000
+0          PUT SKIP EDIT (MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX)) (A);      02930000
+0          WRK_SQL_INDEX = WRK_SQL_INDEX + 1;                           02940000
+       END;                                                             02950000
+     END;                                                               02960000
+   END;                                                                 02970000
+ WHEN ('OTHER');                                                        02980000
+ OTHERWISE                                                              02990000
+   DO;                                                                  03000000
+     MSG_SYSTEM.MESSAGE_NUMBER = 'E003';                                03010000
+     MSG_SYSTEM.MSG_PRIORITY       = '1';                               03020000
+0    PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR3,MSG_BATCH_ID) (A);         03030000
+                                                                        03040000
+   END;                                                                 03050000
+ END;                                                                   03060000
+0CLOSE FILE (SYSPRINT);                                                 03070000
+0END RCB0E3M_BATCH;                                                     03080000
+1/*******************************************************************/  03090000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  03100000
+ /*******************************************************************/  03110000
+0%INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  03120000
+ $DAIMOD (RCB0E3M);                      /* MODULE TO BE COMPILED   */  03130000
+0/*******************************************************************/  03140000
+ /* END OF ABR BLOCK                                                */  03150000
+ /*******************************************************************/  03160000
+0END RCB0E3M;                                                           03170000

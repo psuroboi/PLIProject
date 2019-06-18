@@ -1,0 +1,2078 @@
+ /* RCBBEKM - OIMS/EACM INTERFACE MQ PROCESSING                      */ 00010000
+ /*                                                                  */ 00020000
+ /********************************************************************/ 00030000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060000
+ /********************************************************************/ 00070000
+ /*                                                                  */ 00080000
+ /* MODULE NAME      : RCBBEKM                                       */ 00090000
+ /*                                                                  */ 00100000
+ /* PROGRAM NAME     : RCBBKBP                                       */ 00110000
+ /*                                                                  */ 00120000
+ /* LANGUAGE         : PLI                                           */ 00130000
+ /*                                                                  */ 00140000
+ /* TYPE             : BATCH                                         */ 00150000
+ /*                                                                  */ 00160000
+ /* DESCRIPTION      : RETRIEVE HW PRODUCT REFERENCE DATA IN XML     */ 00170000
+ /*                    FORMAT FROM OIMS/EACM MQ INTERFACE AND STORE  */ 00180000
+ /*                    IN CEDS INTERMEDIATE TABLES                   */ 00190000
+ /*                                                                  */ 00194000
+ /* INPUT            :                                               */ 00200000
+ /*                                                                  */ 00210000
+ /*      PARM        : MODE_OF_MQ                                    */ 00220000
+ /*                    MQ_INPUT_QUEUE                                */ 00230000
+ /*                    MQ_MGR_NAME                                   */ 00240000
+ /*                    T769_DEL_DAYS                                 */ 00250000
+ /*                    T769_DEL_WEEKS                                */ 00260000
+ /* INTERMEDIATE TABLE:                                              */ 00270000
+ /*                    RCBT0695_TRANS_INT_ISO_CTRY                   */ 00280000
+ /*                    RCBT0697_TRANS_ISO_IBM_CTRY                   */ 00290000
+ /*                                                                  */ 00300000
+ /* OUTPUT           :                                               */ 00310000
+ /*      CEDS TABLES :                                               */ 00320000
+ /*                    RCBT0693_TYPE_MOD_WW_LVL                      */ 00330000
+ /*                    RCBT0694_TYPE_MOD_CTRY_LVL                    */ 00340000
+ /*                    RCBT0695_TRANS_INT_ISO_CTRY                   */ 00350000
+ /*                    RCBT0696_TYPE_MOD_DESC                        */ 00360000
+ /*                    RCBT0769_OIMS_MSG_LOG                         */ 00370000
+ /*      FILE                                                        */ 00380000
+ /*                    RCBBEK0/RCBBEK1 RESTART FILE LOGICAL NAME     */ 00390000
+ /*                    RCB0M10 MESSAGES ISSUED                       */ 00400000
+ /*                                                                  */ 00410000
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */ 00420000
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */ 00430000
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */ 00440000
+ /*                    RCBXC1M   PARSER TO EXTRACT HEADER DETAILS    */ 00450000
+ /*                    RCBXC2M   PARSER TO EXTRACT MODEL UPDATE      */ 00460000
+ /*                    RCBXC3M   PARSER TO EXTRACT REFOFER UPDATE    */ 00470000
+ /*                    RCBXC4M   PARSER TO EXTRACT GENERALAREA       */ 00480000
+ /*                    RCBXC5M   PARSER TO EXTRACT SEO UPDATE        */ 00481089
+ /*                                                                  */ 00490000
+ /* MESSAGES         : 0267/ 0268/ 0269/ 0270/ 0271/ 0272/ 0273      */ 00500000
+ /*                    0274/ 0275/ 0276/ 0277/ 0278/ 0279/ 0280      */ 00510000
+ /*                    0290/ 0328                                    */ 00511091
+ /*                                                                  */ 00520075
+ /*                                                                  */ 00530000
+ /* DEPENDENCIES     : NO                                            */ 00540000
+ /*                                                                  */ 00550000
+ /* FREQUENCY        : USER DEPENDENT (ON REQUEST)                   */ 00560000
+ /*                                                                  */ 00570000
+ /* MAINTENANCE LOG  :                                               */ 00580000
+ /*  ---------------                                                 */ 00590000
+ /*                                                                  */ 00600000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00610000
+ /*  --------------------------------------------------------------  */ 00620000
+ /*  2011-11-02 | RB01315      | OIMS EACM REQUIREMENT-CEDS 3.3 A16  */ 00630000
+ /*             |              | RELEASE                             */ 00640000
+ /*  2012-04-12 | CEDS00000578 | ADDITION OF QMANAGER CCSID AS INPUT */ 00641000
+ /*             |              | PARAMETER AND PASSING TO PARSER     */ 00642000
+ /*  2012-04-27 | CEDS00000579 | HANDLING THE XML MESSAGE TYPE       */ 00643000
+ /*  2012-05-18 | CEDS00000582 | ERROR HANDLING FOR EMPTY COUNTRY    */ 00644000
+ /*             |              | MAPPING ARRAY                       */ 00645000
+ /*  2012-05-29 | RC01319      | PCRS ON CEDS 3.3 A16 RELEASE        */ 00646000
+ /*             |              | PCEDSP-0239                         */ 00647000
+ /*  2012-11-15 | CEDS00000613 | LIMIT INCREASE IN MQ_MESSAGE_LENGTH */ 00648034
+ /*             |              | VARIABLE                            */ 00649034
+ /*  2013-08-19 | RC01335      | INCREASED THE WORK VARIABLE LENGTH  */ 00649140
+ /*             |              | TO RETRIVE THE NO OF WEEKS PASSED   */ 00649239
+ /*             |              | THROUGH PARM - PCR CEDSP-0390       */ 00649340
+ /*  2014-04-25 | CEDS00000679 | TREC 1826:TO PROCESS NON- ENGLISH   */ 00649451
+ /*             |              | CHARACTERS SENT FROM OIMS           */ 00649548
+ /*  2014-08-12 | RC01345      | PCEDSP-0492 - HANDLING OF RECONCILE */ 00649681
+ /*             |              | PROCESS ( MESSAGE -0290) IN REFRESH */ 00649773
+ /*             |              | MODE                                */ 00649873
+ /*  2014-09-01 | RB01342      | CEDS 3.3 A23 RELEASE - SEO_UPDATE   */ 00649984
+ /*             |              | XML(MELODY)                         */ 00650084
+ /********************************************************************/ 00651073
+1RCBBEKM: PROC(MQPARM)                                                  00660000
+          OPTIONS (MAIN)                                                00670000
+          REORDER;                                                      00680000
+1/********************************************************************/ 00690000
+ /* PARM PARAMETER DECLARATION                                       */ 00700000
+ /********************************************************************/ 00710000
+ DCL MQPARM         CHAR(100) VARYING;    /* PARM PARAMETER          */ 00720000
+ DCL MODE_OF_MQ     CHAR(10);             /* MQ TYPE OF MODE         */ 00730000
+ DCL MQ_INPUT_QUEUE CHAR(40);             /* INPUT MQ NAME           */ 00740000
+ DCL MQ_MGR_NAME    CHAR(10);             /* MQ QUEUE MANAGER NAME   */ 00750000
+ DCL T769_DEL_DAYS  FIXED BIN(31);        /* T769 CLEAN UP PROCESS   */ 00760000
+ DCL T769_DEL_WEEKS FIXED BIN(31);        /* T769 CLEAN UP PROCESS   */ 00770000
+1/********************************************************************/ 00780000
+ /* FILE DECLARATIONS                                                */ 00790000
+ /********************************************************************/ 00800000
+0DCL RCBBEK1  CHAR(8)                     /* TO STORE RESTART DATA   */ 00810000
+0DCL RCB0M10  FILE  RECORD OUTPUT;        /* MESSAGE FILE            */ 00820000
+1/********************************************************************/ 00830000
+ /* EXTERNAL ENTRIES                                                 */ 00840000
+ /********************************************************************/ 00850000
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */ 00860000
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGE ROUTINE   */ 00870000
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* SYSTEM DATE              */ 00880000
+ DCL RCB004M   ENTRY  EXTERNAL;          /* RETRIEVE SYSTEM DATE     */ 00890000
+ DCL RCBXC1M   ENTRY  EXTERNAL;          /* PARSER FOR HEADER        */ 00900000
+ DCL RCBXC2M   ENTRY  EXTERNAL;          /* PARSER FOR MODEL UPDATE  */ 00910000
+ DCL RCBXC3M   ENTRY  EXTERNAL;          /* PARSER FOR REFOFER UPDATE*/ 00920000
+ DCL RCBXC4M   ENTRY  EXTERNAL;          /* PARSER FOR GENERALAREA   */ 00930000
+                                                      /* SOC RB01342 */ 00930189
+ DCL RCBXC5M   ENTRY  EXTERNAL;          /* PARSER FOR SEO UPDATE    */ 00931089
+                                                      /* EOC RB01342 */ 00932089
+0/********************************************************************/ 00940000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00950000
+ /********************************************************************/ 00960000
+0DCL PTR_INT_AREA           PTR;                                        00970000
+ DCL PTR_RETURN_AREA        PTR;                                        00980000
+ DCL PTR_COUNTRY_AREA       PTR;                                        00990000
+ DCL PTR_RUN_DATE_AREA      PTR;                                        01000000
+ DCL PTR_DATE_AREA          PTR;                                        01010000
+ DCL PTR_MQDATA             PTR;                                        01020000
+ DCL PTR_PARSER_C1M_INPUT   PTR;                                        01030000
+ DCL PTR_PARSER_C1M_RETURN  PTR;                                        01040000
+ DCL PTR_ERROR_RETURN       PTR;                                        01050000
+ DCL PTR_COUNTRY            PTR;                                        01060000
+ DCL PTR_PARSER_INPUT       PTR;                                        01070000
+ DCL PTR_PARSER_RETURN      PTR;                                        01080000
+ DCL PTR_CCSID              PTR;                   /* CEDS00000578   */ 01081000
+                                                                        01090000
+ DCL 1 PARM_INT_AREA,                              /* INTERFACE AREA */ 01100000
+      %INCLUDE (RCBZ01S);;                                              01110000
+ DCL 1 RUN_DATE_AREA,                              /* RUN DATE AREA  */ 01120000
+      %INCLUDE (RCBZ28S);;                                              01130000
+                                                                        01140000
+0DCL 1 DATE_AREA,                                  /* DATE AREA      */ 01150000
+       %INCLUDE (RCBZ03S);;                                             01160000
+1/********************************************************************/ 01170000
+ /* INTERFACE STRUCTURES                                             */ 01180000
+ /********************************************************************/ 01190000
+                                                                        01200000
+ DCL 1 MQ_MSG_DET(*)        CHAR(*)    CONTROLLED;                      01210000
+ DCL   MQ_MSG_DET_TEMP      CHAR(1)    INIT(' ');                       01220000
+                                                                        01230000
+ DCL 1 MQ_BUFFER CHAR(MQ_MESSAGE_LEN1) BASED (PTR_MQDATA);              01240000
+ DCL PTR_MQ_BUFFER          PTR;                                        01250000
+                                                                        01260000
+ DCL      MQCC_OK           BIT (1);                                    01270000
+ DCL      MQ_MORE_MSG       CHAR(1);                                    01280000
+                                                                        01290000
+ DCL HCONN    FIXED BINARY(31) INIT(0);    /* CONNECTION HANDLE       */01300000
+ DCL COMPCODE FIXED BINARY(31) INIT(0);    /* COMPLETION CODE         */01310000
+ DCL REASON   FIXED BINARY(31) INIT(0);    /* QUALIFYING REASON       */01320000
+                                                                        01330000
+ DCL 1 OBJDESC      LIKE MQOD;             /* OBJECT DESCRIPTOR       */01340000
+ DCL 1 MSGDESCIN    LIKE MQMD;             /* MESSAGE DESCRIPTOR IN Q */01350000
+ DCL 1 GETMSGOPTS   LIKE MQGMO;            /* OPTIONS WHICH CONTROL   */01360000
+                                                                        01370000
+ DCL OPENOPTIONS FIXED BINARY(31) INIT(0); /* OPTIONS WHICH CONTROL   */01380000
+                                           /* THE MQOPEN CALL         */01390000
+ DCL HOBJIN      FIXED BINARY(31) INIT(0); /* OBJECT HANDLE           */01400000
+ DCL MQ_MESSAGE_LEN  FIXED BINARY(31)    INIT(0);                       01410000
+ DCL MQ_MESSAGE_LEN1 FIXED BINARY(31)    INIT(1);                       01420000
+                                                                        01430000
+ %INCLUDE SYSLIB(CMQP) ;                                                01440000
+ %INCLUDE SYSLIB(CMQEPP) ;                                              01450000
+                                                                        01460000
+ /* PARSER PROGRAM */                                                   01470000
+ DCL 1 PARSER_C1M_DATA_AREA,                 /* RCBXC1M INPUT        */ 01480000
+       5  MQ_TYPE_OF_MODE CHAR(10),                                     01490000
+       5  MQ_MSG_LENGTH   FIXED BIN(31);                                01500000
+                                                                        01510000
+ DCL 1 PARSER_C1M_RETURN_AREA,               /* RCBXC1M OUTPUT       */ 01520000
+   %INCLUDE RCBBE5S;;                                                   01530000
+                                                                        01540000
+ DCL 1 ERROR_CODE_DET,                                                  01550000
+       5 PTR_ERROR        PTR,                                          01560000
+       5 ERR_TYPE         CHAR(8),                                      01570000
+       5 CALL_ID          CHAR(4);                                      01580000
+                                                                        01590000
+ DCL 1 PARSER_INPUT_AREA,                    /* RCBXC2M/3M/4M INPUT  */ 01600000
+   %INCLUDE RCBBE6S;;                                                   01610000
+                                                                        01620000
+ DCL 1 PARSER_RETURN_AREA,                   /* RCBXC2M/3M/4M OUTPUT */ 01630000
+   %INCLUDE RCBBE4S;;                                                   01640000
+                                                                        01650000
+ DCL IC_CNTRY_REQ(300) CHAR(4) INIT((300)'');/* OIMS INTERNAL COUNTRY*/ 01660000
+ DCL NO_COUNTRES_REQ   FIXED BIN(31);        /* NO OF COUNTRIES REQ  */ 01670000
+ DCL IC_CNTRY_NOT_REQ(300) CHAR(4);          /* LIST OF COUNTRIES NOT*/ 01680000
+                                             /* REQUESTED            */ 01690000
+1/********************************************************************/ 01720000
+ /* DB2 TABLE STRUCTURES                                             */ 01730000
+ /********************************************************************/ 01740000
+ DCL 1 TB_RCBV695,                                                      01750000
+       %INCLUDE (RCB695S);;                                             01760000
+ DCL 1 TB_RCBV769,                                                      01770000
+       %INCLUDE (RCB769S);;                                             01780000
+0/*********************************************************************/01830000
+ /*  RECORD STRUCTURES FOR OUTPUT FILE                                */01840000
+ /*********************************************************************/01850000
+                                          /*TO STORE RESTART FILE DATA*/01860000
+ DCL 1 FILE_RCBBEK0,                                                    01870000
+       3  DATE_YY_MM_DD    CHAR(10),        /*RUN DATE                */01880000
+       3  NO_MQ_MSG_READ   FIXED BIN(31),   /*NO OF MQ MES READ       */01890000
+       3  NO_MQ_MSG_SUCCES FIXED BIN(31),   /*NO OF MQ MSG SUCCESS    */01900000
+       3  NO_MQ_MSG_FORMAF FIXED BIN(31),   /*NO OF MQ MSG FORMAT FAIL*/01910000
+       3  NO_MQ_MSG_REJ    FIXED BIN(31),   /*NO OF MQ MES REJECTED   */01920000
+       3  NO_CTRY_SPEC_REJ FIXED BIN(31),   /*COUNTRY SPECIF DATA REJ */01930000
+                                            /* SOC RC01319            */01931000
+   /*  3  NO_REJ_WW_NOTFND FIXED BIN(31), *//*WW DATA NOT FOUND       */01940000
+       3  NO_REJ_CTRY_WW_NOTFND FIXED BIN(31),                          01941000
+       3  NO_REJ_LANG_WW_NOTFND FIXED BIN(31),                          01942000
+                                            /* EOC RC01319            */01943000
+       3  NO_SKIP_CTRY_NOTREQ FIXED BIN(31),/*MODEL CONTRY NOT REQ    */01950000
+       3  NO_SKIP_TYPE_NOTREQ FIXED BIN(31),/*MSG TYPE NOT REQ        */01960000
+       3  NO_SKIP_STATUSF  FIXED BIN(31),   /*NO OF MQ MESSAGES SKIP  */01970000
+       3  NO_MODEL_UP_MSG  FIXED BIN(31),   /*NO OF MODEL MSG READ    */01980000
+                                                       /* SOC RB01342 */01981084
+       3  NO_SEO_UP_MSG  FIXED BIN(31),                                 01982084
+       3  NO_CTRY_SPEC_REJ_SEO FIXED BIN(31),                           01983084
+       3  NO_REJ_CTRY_WW_NOTFND_SEO FIXED BIN(31),                      01984084
+       3  NO_REJ_LANG_WW_NOTFND_SEO FIXED BIN(31),                      01985084
+       3  NO_SKIP_CTRY_NOTREQ_SEO FIXED BIN(31),                        01986084
+       3  LIST_CTRY_NOT_REQ_SEO(1000) CHAR(4),                          01987084
+       3  NO_CNTRY_NOT_REQ_SEO FIXED BIN(31),                           01988084
+                                                       /* EOC RB01342 */01989084
+       3  NO_REFOFER_UP_MSG   FIXED BIN(31),/*NO OF REFOFER MSG READ  */01990000
+       3  NO_GENERALA_UP_MSG  FIXED BIN(31),/*NO OF GENAREA MSG READ  */02000000
+       3  NO_RECONCILE_MSG  FIXED BIN(31),  /*NO OF RECON MSG READ    */02010000
+       3  NO_CNTRY_NOT_REQ FIXED BIN(31),   /*NO OF COUNTRIES NOT REQ */02020000
+       3  LIST_CTRY_NOT_REQ(1000) CHAR(4), /*LIST OF COUNTRIES NOT REQ*/02030000
+       3  GENAREA_UPD_DETAILS,                                          02040000
+          7 NO_INVALID_DATA_REJ   FIXED BIN(31),                        02050000
+       3  T693_DETAILS,                                                 02060000
+          7 T693_INSERTS          FIXED BIN(31),                        02070000
+          7 T693_UPDATES          FIXED BIN(31),                        02080000
+          7 T693_UPDATES_MODEL    FIXED BIN(31),       /* SOC RB01342 */02081084
+          7 T693_UPDATES_SEO      FIXED BIN(31),       /* EOC RB01342 */02082084
+       3  T694_DETAILS,                                                 02090000
+          7 T694_INSERTS          FIXED BIN(31),                        02100000
+          7 T694_UPDATES          FIXED BIN(31),                        02110000
+          7 T694_UPDATES_MODEL    FIXED BIN(31),       /* SOC RB01342 */02111084
+          7 T694_UPDATES_SEO      FIXED BIN(31),       /* EOC RB01342 */02112084
+       3  T695_DETAILS,                                                 02120000
+          7 T695_INSERTS          FIXED BIN(31),                        02130000
+          7 T695_UPDATES          FIXED BIN(31),                        02140000
+       3  T696_DETAILS,                                                 02150000
+          7 T696_INSERTS          FIXED BIN(31),                        02160000
+          7 T696_UPDATES          FIXED BIN(31);                        02170000
+                                                                        02180000
+                                     /* TO WRITE DATA ON RESART FILE */ 02190000
+ DCL 1 RESTART_DET LIKE FILE_RCBBEK0;                                   02200000
+                                                                        02210000
+ /* INTERMEDIATE STRUCTURE TO DATA REQUIRED FOR RESTART */              02220000
+ DCL 1 MQ_COUNT_DET    LIKE FILE_RCBBEK0;                               02230000
+                                                                        02240000
+0/********************************************************************/ 02250000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 02260000
+ /********************************************************************/ 02270000
+ DCL I                      FIXED BIN(31)   INIT(1);                    02280000
+ DCL J                      FIXED BIN(31)   INIT(1);                    02290000
+ DCL K                      FIXED BIN(31)   INIT(1);                    02300000
+ DCL L                      FIXED BIN(31)   INIT(0);                    02310000
+ DCL M                      FIXED BIN(31)   INIT(0);                    02320000
+ DCL N                      FIXED BIN(31)   INIT(0);                    02330000
+ DCL P                      FIXED BIN(31)   INIT(0);                    02340000
+ DCL Q                      FIXED BIN(31)   INIT(0);                    02350000
+ DCL R                      FIXED BIN(31)   INIT(0);                    02360000
+ DCL S                      FIXED BIN(31)   INIT(0);                    02370000
+ DCL T                      FIXED BIN(31)   INIT(0);                    02380000
+ DCL MQ_QUEUE_NAME          CHAR(40)        INIT('');                   02390000
+ DCL LEN1                   FIXED BIN(31)   INIT(0);                    02400000
+ DCL WRK_CNT_PIC            PIC '(15)9';                                02410000
+ DCL WRK_CREATION_DATE      CHAR(10)        INIT('');                   02420000
+ DCL WRK_IC_CTRY_DET        CHAR(04);                                   02430000
+ DCL WRK_MOD_NAME           CHAR(07)        INIT('RCBBEKM');            02440000
+ DCL WRK_NR_OF_DELETIONS    FIXED BIN(31)   INIT(0);                    02450000
+ DCL WRK_PGM_NAME           CHAR(07)        INIT('RCBBEKP');            02460000
+ DCL WRK_PIC_10             PIC 'Z,ZZZ,ZZZ,ZZ9';                        02470000
+ DCL WRK_POS_1              FIXED BIN(31)   INIT(0);                    02480000
+ DCL WRK_POS_2              FIXED BIN(31)  INIT(0);                     02490000
+ DCL WRK_POS_3              FIXED BIN(31)  INIT(0);                     02500000
+ DCL WRK_POS_4              FIXED BIN(31)  INIT(0);                     02510000
+                                                 /* SOC CEDS00000578 */ 02512000
+ DCL WRK_POS_5              FIXED BIN(31)  INIT(0);                     02513000
+ DCL WRK_POS_6              FIXED BIN(31)  INIT(0);                     02514000
+                                                 /* EOC CEDS00000578 */ 02515000
+ DCL WRK_SYSTEM_TYPE        CHAR(01)        INIT('B');                  02520000
+ DCL WRK_TEMP               CHAR(100)       INIT('');                   02530000
+ DCL WRK_TEMP1              CHAR(100)       INIT('');                   02540000
+ DCL WRK_TEMP2              CHAR(100)       INIT('');                   02550000
+ /* DCL WRK_TEMP3           CHAR(4)         INIT('');*//* SOC RC01335 */02560040
+ DCL WRK_TEMP3              CHAR(100)       INIT('');  /* EOC RC01335 */02560140
+ DCL WRK_TEMP4              CHAR(4)         INIT(''); /* CEDS00000578 */02561000
+ DCL WRK_TIMESTAMP          CHAR(26)        INIT('');                   02570000
+ DCL WRK_TIMESTAMP_D        CHAR(26)        INIT('');                   02580000
+ DCL WRK_TIMESTAMP_W        CHAR(26)        INIT('');                   02590000
+ DCL MQ_BUFFER_LENGTH       FIXED BIN(31)   INIT('');                   02600000
+                                                  /* SOC CEDS00000578 */02601000
+ DCL MQ_CCSID               FIXED BIN(31)   INIT('');                   02602000
+ DCL WRK_CCSID              FIXED BIN(31)   INIT('');                   02603000
+                                                  /* EOC CEDS00000578 */02604000
+                                                                        02610000
+ DCL TB_MSG_CREATE_DATE          CHAR(26) INIT ('');    /*SOC RC01345*/ 02611072
+ DCL TB_MSG_ENTITY_ID            CHAR(08) INIT ('');                    02612061
+ DCL WRK_MSG_TYPE                CHAR(50) VAR INIT ('');/*EOC RC01345*/ 02613072
+ DCL WRK_SEO_IN_693           FIXED BIN(31)   INIT(0);/* SOC RB01342 */ 02614084
+ DCL WRK_SEO_UP_693           FIXED BIN(31)   INIT(0);                  02615084
+ DCL WRK_SEO_IN_694           FIXED BIN(31)   INIT(0);                  02616084
+ DCL WRK_SEO_UP_694           FIXED BIN(31)   INIT(0);                  02617096
+ DCL WRK_SEO_IN_696           FIXED BIN(31)   INIT(0);                  02618096
+ DCL WRK_SEO_UP_696           FIXED BIN(31)   INIT(0);/* EOC RB01342 */ 02619096
+0/*********************************************************************/02620000
+ /*  BIT SWITCHES                                                     */02630000
+ /*********************************************************************/02640000
+ DCL TRUE                   BIT (1)         INIT('1'B);                 02650000
+ DCL FALSE                  BIT (1)         INIT('0'B);                 02660000
+ DCL OK                     BIT (1)         INIT('1'B);                 02670000
+ DCL SKIP                   BIT (1)         INIT('0'B);                 02680000
+ DCL EOF_RCBBEK0            BIT (1)         INIT('0'B);                 02690000
+ DCL RESTART_SW             BIT (1)         INIT('0'B);                 02700000
+ DCL SWITCH_END_OF_CURS_REF BIT (1)         INIT('0'B);    /* RC01345 */02701072
+                                                                        02710000
+1/********************************************************************/ 02720000
+ /* ON ERROR CONDITIONS                                              */ 02730000
+ /********************************************************************/ 02740000
+   ON ERROR                                                             02750000
+     BEGIN;                                                             02760000
+       ON ERROR SYSTEM;                                                 02770000
+                                                                        02780000
+   EXEC SQL                                                             02790000
+       ROLLBACK WORK                                                    02800000
+       ;                                                                02810000
+       PUT SKIP LIST('ONCODE  :',ONCODE);                               02820000
+       PUT SKIP LIST('ONLOC   :',ONLOC);                                02830000
+       PUT SKIP LIST('ONCHAR  :',ONCHAR);                               02840000
+       PUT SKIP LIST('ONSOURCE:',ONSOURCE);                             02850000
+                                                                        02860000
+       IF REASON > 0 THEN                  /* MQ REASON CODE          */02870000
+       DO;                                                              02880000
+         PUT SKIP LIST('REASON   :',REASON);                            02890000
+         PUT SKIP LIST('COMPCODE :',COMPCODE);                          02900000
+       END;                                                             02910000
+                                                                        02920000
+       /* WRITE  RESTART DATA ONTO RESTART FILE */                      02930000
+       CLOSE FILE(RCBBEK0);   /*CLOSE FILE WHICH IS OPEN IN INPUT MODE*/02940000
+       OPEN FILE(RCBBEK0) RECORD OUTPUT TITLE(RCBBEK1);                 02950000
+       WRITE FILE(RCBBEK0) FROM(RESTART_DET);                           02960000
+       CLOSE FILE(RCBBEK0);                                             02970000
+                                                                        02980000
+       CALL MQ_ROLLBACK;                                                02990000
+       PARM_INT_AREA.PTR_ERROR      = NULL();                           03000000
+       PARM_INT_AREA.PTR_ERROR      = ERROR_CODE_DET.PTR_ERROR;         03010000
+       PARM_INT_AREA.ERR_TYPE       = ERROR_CODE_DET.ERR_TYPE;          03020000
+       PARM_INT_AREA.CALL_ID        = ERROR_CODE_DET.CALL_ID;           03030000
+       CALL RCB0E1M (PTR_INT_AREA);                                     03040000
+       CALL PLIRETC (16);                                               03050000
+     END;                                                               03060000
+                                                                        03070000
+ ON ENDFILE (RCBBEK0)                                                   03080000
+   BEGIN;                                                               03090000
+     EOF_RCBBEK0 = TRUE;                                                03100000
+   END;                                                                 03110000
+1/********************************************************************/ 03120000
+ /*  BUILTIN FUNCTIONS                                               */ 03130000
+ /********************************************************************/ 03140000
+0DCL (ADDR,                                                             03150000
+      CSTG,                                                             03160000
+      INDEX,                                                            03170000
+      LENGTH,                                                           03180000
+      NULL,                                                             03190000
+      PLIRETC,                                                          03200000
+      TRIM,                                                             03210000
+      SUBSTR,                                                           03220000
+      ONCODE,                                                           03230000
+      ONLOC,                                                            03240000
+      ONCHAR,                                                           03250000
+      ONSOURCE) BUILTIN;                                                03260000
+0/********************************************************************/ 03270000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 03280000
+ /********************************************************************/ 03290000
+ EXEC SQL                                                               03300000
+   INCLUDE SQLCA                                                        03310000
+   ;                                                                    03320000
+1/********************************************************************/ 03330000
+ /*  DB2/SQL CURSOR DECLERATION                                      */ 03340000
+ /********************************************************************/ 03350000
+ /* CURSOR TO SELECT EACM_COUNTRY_FC FROM TABLE T695/697*/              03360000
+                                                                        03370000
+0EXEC SQL                                                               03380000
+   DECLARE CURS_IBMTOIC CURSOR FOR                                      03390000
+                                                                        03400000
+   SELECT  B.EACM_COUNTRY_FC                                            03410000
+                                                                        03420000
+   FROM  RCBV0697_TRANS_ISO_IBM_CTRY A,                                 03430000
+         RCBV0695_TRANS_INT_ISO_CTRY B                                  03440000
+                                                                        03450000
+   WHERE A.ISO_CTRY  = B.ISO_CTRY                                       03460000
+   AND   A.PROCESS_PRODUCT_IND = 'Y'                                    03470000
+   ;                                                                    03480000
+ EXEC SQL                                            /* SOC RC01345  */ 03481072
+   DECLARE CURS_RCBV0769_REFRESH CURSOR FOR                             03482052
+   SELECT MSG_CREATE_DATE,                                              03483052
+          MSG_ENTITY_ID,                                                03484061
+          MESSAGE_TYPE                                                  03484161
+   FROM   RCBT0769_OIMS_MSG_LOG                                         03485052
+   WHERE  RECONCILED_FLAG_OK   =  'N'                                   03486052
+     AND  (MESSAGE_TYPE        =  'MODEL_UPDATE'                        03487052
+        OR MESSAGE_TYPE        =  'SEO_UPDATE'                          03487192
+        OR MESSAGE_TYPE        =  'REFOFER_UPDATE')                     03488052
+     AND  TYPE_OF_MODE         =  'REFRESH'                             03489052
+   ORDER BY MSG_CREATE_DATE                                             03489152
+   FOR FETCH ONLY                                                       03489252
+   ;                                                 /* EOC RC01345  */ 03489372
+1/********************************************************************/ 03490000
+ /*                 S T A R T   P R O C E S S I N G                  */ 03500000
+ /********************************************************************/ 03510000
+ CALL RCBBEKM_INIT_PROG;                                                03520000
+                                                                        03530000
+ /*  CONNECT AND OPEN MESSAGE QUEUE */                                  03540000
+ CALL MQ_CON_OPEN_QUEUE;                                                03550000
+                                                                        03560000
+ /* GET MQ FIRST MESSAGE LENGTH    */                                   03570000
+                                                                        03572000
+ CALL MQ_GET_LENGTH;                                                    03580000
+                                                                        03590000
+ /* GET MESSAGE FROM MQUEUE AND CONTINUE TILL NO MORE MSGS*/            03600000
+ MQ_MORE_MSG = 'Y';                                                     03610000
+                                                                        03620000
+ DO UNTIL (MQ_MORE_MSG ='N');                                           03630000
+    CALL MQ_GET_QUEUE;                                                  03640000
+                                                                        03650000
+ /* COMMIT MESSAGE */                                                   03660095
+    CALL MQ_COMMIT_QUEUE;                                               03671099
+                                                                        03680000
+ /* GET THE LENGTH OF THE NEXT MSG */                                   03690000
+    CALL MQ_GET_LENGTH;                                                 03700000
+                                                                        03710000
+ END;                                                                   03720000
+ /*  GENERATE FINAL REPROT */                                           03730000
+ CALL GENERATE_REPORT;                                                  03740000
+                                                                        03750000
+ /*  CLOSE MESSAGE QUEUE   */                                           03760000
+ CALL MQ_CLOSE_QUEUE;                                                   03770000
+                                                     /* SOC RC01345  */ 03780072
+  IF MODE_OF_MQ = 'REFRESH' & MQ_COUNT_DET.NO_RECONCILE_MSG > 0         03781059
+     THEN                                                               03783052
+      DO;                                                               03784052
+        CALL OPEN_RCBV0769_REFRESH;                                     03785052
+        CALL FETCH_CUR_RCBV0769_REFRESH;                                03786052
+                                                                        03787052
+        DO WHILE(¬SWITCH_END_OF_CURS_REF);                              03788052
+           CALL FETCH_CUR_RCBV0769_REFRESH;                             03789052
+        END;                                                            03789152
+                                                                        03789252
+         CALL CLOSE_RCBV0769_REFRESH;                                   03789352
+      END;                                            /* EOC RC01345  */03789472
+ /* CLEAN UP PROCESS FOR T769_OIMS_MSG_LOG */                           03790000
+ CALL CLEANUP_T769_PROCESS;                                             03800000
+                                                                        03810000
+ CALL RCBBEKM_END_PROG;                                                 03820000
+                                                                        03830000
+1/********************************************************************/ 03840000
+ /*                                                                  */ 03850000
+ /* MODULE NAME      : RCBBEKM_INIT_PROG                             */ 03860000
+ /*                                                                  */ 03870000
+ /* DESCRIPTION      : INITIAL ACTIONS FOR THE PROGRAM               */ 03880000
+ /*                                                                  */ 03890000
+ /********************************************************************/ 03900000
+ RCBBEKM_INIT_PROG : PROC;                                              03910000
+                                                                        03920000
+ PTR_DATE_AREA         =  ADDR (DATE_AREA);                             03930000
+ PTR_INT_AREA          =  ADDR (PARM_INT_AREA);                         03940000
+ PTR_RETURN_AREA       =  ADDR (RETURN_AREA);                           03950000
+ PTR_COUNTRY_AREA      =  ADDR (COUNTRY_AREA);                          03960000
+ PTR_RUN_DATE_AREA     =  ADDR (RUN_DATE_AREA);                         03970000
+                                                                        03980000
+ PTR_PARSER_C1M_INPUT  = ADDR(PARSER_C1M_DATA_AREA);                    03990000
+ PTR_PARSER_C1M_RETURN = ADDR(PARSER_C1M_RETURN_AREA);                  04000000
+ PTR_ERROR_RETURN      = ADDR(ERROR_CODE_DET);                          04010000
+ PTR_PARSER_INPUT      = ADDR(PARSER_INPUT_AREA);                       04020000
+ PTR_COUNTRY           = ADDR(IC_CNTRY_REQ);                            04030000
+ PTR_PARSER_RETURN     = ADDR(PARSER_RETURN_AREA);                      04040000
+                                             /* INITIALISE VARIABLES */ 04050000
+ PARM_INT_AREA.MSG_AREA       = '';                                     04060000
+ PARM_INT_AREA.ERR_AREA       = ' ';                                    04070000
+ PARM_INT_AREA.MSG_REQUEST    = 'O';                                    04080000
+ PARM_INT_AREA.MSG_TARGET     = 'F';                                    04090000
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';                                  04100000
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PGM_NAME;                           04110000
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;                           04120000
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;                                      04130000
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;                        04140000
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;                                   04150000
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;                                   04160000
+ RCBBEK1                      = 'RCBBEK1';                              04170000
+ SWITCH_END_OF_CURS_REF       = FALSE;                /* RC01345 */     04171076
+  K         = 1;                                                        04180000
+  WRK_TEMP  = ' ';                                                      04190000
+  WRK_TEMP1 = ' ';                                                      04200000
+  WRK_TEMP2 = ' ';                                                      04210000
+  WRK_TEMP3 = ' ';                                 /* CEDS00000578 */   04211000
+ /* RETRIVE MQ TYPE, INPUT QUEUE NAME AND QUEUE MANAGER NAME AND        04220000
+    PARAMETERS REQUIRED TO TABLE T769 CLEAN UP */                       04230000
+  WRK_POS_1             = INDEX(MQPARM,',');                            04240000
+  MODE_OF_MQ            = SUBSTR(MQPARM,1,(WRK_POS_1-1));               04250000
+  WRK_TEMP              = SUBSTR(MQPARM,(WRK_POS_1+1));                 04260000
+  WRK_POS_2             = INDEX(WRK_TEMP,',');                          04270000
+  MQ_INPUT_QUEUE        = SUBSTR(WRK_TEMP,1,(WRK_POS_2-1));             04280000
+  WRK_TEMP1             = SUBSTR(WRK_TEMP,(WRK_POS_2+1));               04290000
+  WRK_POS_3             = INDEX(WRK_TEMP1,',');                         04300000
+  IF WRK_POS_3 > 0 THEN                                                 04310000
+  DO;                                                                   04320000
+  MQ_MGR_NAME           = SUBSTR(WRK_TEMP1,1,(WRK_POS_3-1));            04330000
+  WRK_TEMP2             = SUBSTR(WRK_TEMP1,(WRK_POS_3+1));              04340000
+  WRK_POS_4             = INDEX(WRK_TEMP2,',');                         04350000
+  IF WRK_POS_4  > 0 THEN                                                04360000
+  DO;                                                                   04370000
+                                                  /* SOC CEDS00000578 */04370100
+  /*                                                                    04371000
+    T769_DEL_DAYS       = SUBSTR(WRK_TEMP2,1,(WRK_POS_4-1));            04380000
+    T769_DEL_WEEKS      = SUBSTR(WRK_TEMP2,WRK_POS_4+1);                04390000
+  END;                                                                  04400000
+ END;                                                                   04410000
+ ELSE                                                                   04420000
+    DO;                                                                 04430000
+       MQ_MGR_NAME          = WRK_TEMP1;                                04440000
+      T769_DEL_DAYS         = 0;                                        04450000
+      T769_DEL_WEEKS        = 0;                                        04460000
+    END; */                                                             04470000
+     MQ_CCSID              = SUBSTR(WRK_TEMP2,1,(WRK_POS_4-1));         04472000
+     WRK_TEMP3             = SUBSTR(WRK_TEMP2,(WRK_POS_4+1));           04473000
+     WRK_POS_5             = INDEX(WRK_TEMP3,',');                      04474000
+     IF WRK_POS_5 > 0 THEN                                              04475000
+     DO;                                                                04476000
+        T769_DEL_DAYS      = SUBSTR(WRK_TEMP3,1,(WRK_POS_5-1));         04476136
+        T769_DEL_WEEKS     = SUBSTR(WRK_TEMP3,(WRK_POS_5+1));           04477036
+     END;                                                               04479000
+     ELSE                                                               04479100
+     DO;                                                                04479200
+        T769_DEL_DAYS      = WRK_TEMP3;                                 04479300
+        WRK_POS_6          = INDEX(WRK_TEMP3,',');                      04479500
+        IF WRK_POS_6       > 0 THEN                                     04479700
+          T769_DEL_WEEKS   = WRK_TEMP3;                                 04479800
+        ELSE                                                            04479900
+          T769_DEL_WEEKS   = 0;                                         04480000
+     END;                                                               04480300
+  END;                                                                  04480400
+  ELSE                                                                  04480500
+  DO;                                                                   04480600
+     MQ_CCSID              = WRK_TEMP2;                                 04480700
+     T769_DEL_DAYS         = 0;                                         04480800
+     T769_DEL_WEEKS        = 0;                                         04480900
+  END;                                                                  04481000
+  END;                                                                  04481100
+  ELSE                                                                  04481200
+  DO;                                                                   04481300
+     MQ_MGR_NAME = WRK_TEMP1;                                           04481400
+     MQ_CCSID    = '';                                                  04481500
+     T769_DEL_DAYS         = 0;                                         04481600
+     T769_DEL_WEEKS        = 0;                                         04481700
+   END;                                                                 04481800
+                                                                        04481900
+  PTR_CCSID                = ADDR(MQ_CCSID);                            04482000
+                                                  /* EOC CEDS00000578 */04482100
+                                                                        04483000
+  CALL RCB0M1M (PTR_INT_AREA);                                          04490000
+                                                                        04500000
+  CALL RCB0T1M (PTR_INT_AREA);                /* RETRIEVE SYSTEM DATE*/ 04510000
+                                                                        04520000
+  WRK_CREATION_DATE    = PARM_INT_AREA.SYSTEM_DATE;                     04530000
+  WRK_TIMESTAMP        = WRK_CREATION_DATE;  /* YYYY-MM-DD          */  04540000
+  FILE_RCBBEK0='';                                                      04550000
+  OPEN FILE(RCBBEK0) RECORD INPUT TITLE(RCBBEK1); /* READ RESTART FILE*/04560000
+  RESTART_DET = '';                                                     04570000
+  READ FILE (RCBBEK0) INTO(FILE_RCBBEK0);                               04580000
+                                                                        04590000
+ IF (EOF_RCBBEK0)                                                       04600000
+ THEN DO;                                                               04610000
+   MQ_COUNT_DET = '';                      /* NORMAL PROCESS          */04620000
+ END;                                                                   04630000
+ ELSE                                      /* RESTART PROCESS         */04640000
+   DO;                                                                  04650000
+     RESTART_SW         = TRUE;                                         04660000
+     MQ_COUNT_DET       = FILE_RCBBEK0, BY NAME;                        04670000
+     RESTART_DET        = FILE_RCBBEK0, BY NAME;                        04680000
+     /* RESET THE COUNT 'K' FROM MQ_COUNT_DET.NO_CNTRY_NOT_REQ */       04690000
+     K = MQ_COUNT_DET.NO_CNTRY_NOT_REQ + 1;                             04700000
+   END;                                                                 04710000
+                                                                        04720000
+  MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO = K;                  /* RB01342 */ 04721084
+  MQ_COUNT_DET.DATE_YY_MM_DD = WRK_CREATION_DATE;                       04730000
+  CALL RCBBEKM_LIST_COUNTRIES_IBMTOIC;     /* GET LIST OF COUNTRIES  */ 04740000
+                                           /* REQ TO PROCESS         */ 04750000
+ END RCBBEKM_INIT_PROG;                                                 04760000
+                                                                        04770000
+1/********************************************************************/ 04780000
+ /*                                                                  */ 04790000
+ /* MODULE NAME      : RCBBEKM_LIST_COUNTRIES_IBMTOIC                */ 04800000
+ /*                                                                  */ 04810000
+ /* DESCRIPTION      : GET LIST OF COUNTIES WHICH REQUIRED TO PROCESS*/ 04820000
+ /*                                                                  */ 04830000
+ /********************************************************************/ 04840000
+  RCBBEKM_LIST_COUNTRIES_IBMTOIC: PROC;                                 04850000
+  /* GET ISO COUNTRY CODE FROM TABLE T695,T697 */                       04860000
+0EXEC SQL                                                               04870000
+     OPEN CURS_IBMTOIC;                                                 04880000
+                                                                        04890000
+ SELECT(SQLCA.SQLCODE);                          /* SOC CEDS00000582 */ 04891000
+   WHEN(0)                                                              04892000
+   DO;                                           /* EOC CEDS00000582 */ 04893000
+     J            = 0;                                                  04900000
+     IC_CNTRY_REQ ='';                                                  04910000
+                                                                        04920000
+     DO UNTIL (SQLCA.SQLCODE= +100);                                    04930000
+       J = J + 1;                                                       04940000
+                                                                        04950000
+       EXEC SQL                                                         04960000
+         FETCH CURS_IBMTOIC                                             04970000
+         INTO :WRK_IC_CTRY_DET                                          04980000
+         ;                                                              04990000
+        SELECT (SQLCA.SQLCODE);                                         05000000
+          WHEN (0)                                                      05010000
+             DO;                                                        05020000
+               IC_CNTRY_REQ(J) = WRK_IC_CTRY_DET;                       05030000
+             END;                                                       05040000
+          WHEN (+100)                                                   05050000
+             DO;                                                        05060000
+               IF J > 1 THEN                                            05070000
+                 NO_COUNTRES_REQ      = J-1;                            05080000
+               ELSE                                                     05090000
+                 NO_COUNTRES_REQ      = 0;                              05100000
+             END;                                                       05110000
+          OTHERWISE                                                     05120000
+               CALL RCBBEKM_ERROR ( ADDR (SQLCA),                       05130000
+                                   'DB2',                               05140000
+                                   '#001');                             05150000
+        END;                                                            05160000
+     END;                                                               05170000
+   END;                                           /* SOC CEDS00000582 */05171000
+   OTHERWISE                                                            05172000
+      CALL RCBBEKM_ERROR(ADDR (SQLCA),'DB2','#012');                    05173000
+ END;                                                                   05174100
+                                                                        05174200
+ EXEC SQL                                                               05176000
+   CLOSE CURS_IBMTOIC;                                                  05177000
+                                                                        05177100
+ SELECT(SQLCA.SQLCODE);                                                 05178000
+   WHEN(0);                                                             05179000
+   OTHERWISE                                                            05179100
+      CALL RCBBEKM_ERROR(ADDR (SQLCA),'DB2','#013');                    05179200
+ END;                                            /* EOC CEDS00000582 */ 05179300
+                                                                        05179500
+ END RCBBEKM_LIST_COUNTRIES_IBMTOIC;                                    05180000
+1/********************************************************************/ 05190000
+ /*                                                                  */ 05200000
+ /* MODULE NAME      : MQ_CON_OPEN_QUEUE                             */ 05210000
+ /*                                                                  */ 05220000
+ /* DESCRIPTION      : CONNECT AND OPEN MQ                           */ 05230000
+ /*                                                                  */ 05240000
+ /*                                                                  */ 05250000
+ /********************************************************************/ 05260000
+ MQ_CON_OPEN_QUEUE: PROC;                                               05270000
+  /* CONNECT AND OPEN MQ */                                             05280000
+ MQ_QUEUE_NAME =MQ_INPUT_QUEUE;                                         05290000
+ CALL MQCONN (MQ_MGR_NAME,                                              05300000
+              HCONN,                                                    05310000
+              COMPCODE,                                                 05320000
+              REASON);                                                  05330000
+                                                                        05340000
+ IF ((COMPCODE ¬= MQCC_OK) | (REASON ¬= MQRC_NONE)) THEN                05350000
+   DO;                                                                  05360000
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    05370000
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0267';                  05380000
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     05390000
+      CALL RCB0M1M (PTR_INT_AREA);                                      05400000
+      CALL RCBBEKM_ERROR ( NULL,                                        05410000
+                          'OTHER',                                      05420000
+                          '#002');                                      05430000
+   END;                                                                 05440000
+ /*-----------------------------------------------------------------*/  05450000
+ /* OPEN THE QUEUE FOR MQGETS                                       */  05460000
+ /*-----------------------------------------------------------------*/  05470000
+ OBJDESC.OBJECTNAME = MQ_QUEUE_NAME;                                    05480000
+ OPENOPTIONS  = MQOO_INPUT_SHARED ;     /* OPEN QUEUE FOR GET      */   05490000
+ CALL MQOPEN(HCONN,                                                     05500000
+             OBJDESC,                                                   05510000
+             OPENOPTIONS,                                               05520000
+             HOBJIN,                                                    05530000
+             COMPCODE,                                                  05540000
+             REASON);                                                   05550000
+                                                                        05560000
+ IF ((COMPCODE ¬= MQCC_OK) | (REASON ¬= MQRC_NONE)) THEN                05570000
+   DO;                                                                  05580000
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    05590000
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0268';                  05600000
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     05610000
+      CALL RCB0M1M (PTR_INT_AREA);                                      05620000
+      CALL RCBBEKM_ERROR ( NULL,                                        05630000
+                          'OTHER',                                      05640000
+                          '#003');                                      05650000
+   END;                                                                 05660000
+                                                                        05670000
+ END MQ_CON_OPEN_QUEUE;                                                 05680000
+                                                                        05690000
+1/********************************************************************/ 05700000
+ /*                                                                  */ 05710000
+ /* MODULE NAME      : MQ_GET_LENGTH                                 */ 05720000
+ /*                                                                  */ 05730000
+ /* DESCRIPTION      : GET MQ MESSAGE LENGTH                         */ 05740000
+ /*                                                                  */ 05750000
+ /*                                                                  */ 05760000
+ /********************************************************************/ 05770000
+ MQ_GET_LENGTH: PROC;                                                   05780000
+  /* GET LENGTH OF MQ MESSAGE */                                        05790000
+                                                                        05800000
+ MSGDESCIN.FORMAT   = MQFMT_STRING;       /* MESSAGE CONTAINS CHARS */  05810000
+                                                  /* SOC CEDS00000579 */05811000
+ /*                                                                     05812000
+ GETMSGOPTS.OPTIONS =  MQGMO_WAIT  +    */                              05813000
+                                                  /* SOC CEDS00000578 */05814000
+                    /* MQGMO_SYNCPOINT +*//*CONVERT ASCII TO EBCDIC */  05815000
+                    /* MQGMO_CONVERT;   *//*CONVERT ASCII TO EBCDIC */  05816000
+                    /* MQGMO_SYNCPOINT +*/  /* CONVERTING TO UNICODE  */05817000
+                    /* MQGMO_CONVERT;   */  /* CONVERTING TO UNICODE  */05818000
+                                                  /* EOC CEDS00000578 */05819000
+                                             /* SOC CEDS00000679 */     05820050
+ /*GETMSGOPTS.OPTIONS =  MQGMO_WAIT  +                                  05851043
+                       MQGMO_SYNCPOINT +                                05860000
+                       MQGMO_CONVERT;*/     /* CONVERTING TO UNICODE  */05870047
+                                                  /* EOC CEDS00000579 */05881000
+   GETMSGOPTS.OPTIONS =  MQGMO_WAIT  +  MQGMO_SYNCPOINT ;               05882147
+                                             /* EOC CEDS00000679 */     05882250
+ MSGDESCIN.CORRELID    = MQCI_NONE;                                     05890000
+ MSGDESCIN.MSGID       = MQMI_NONE;                                     05900000
+                                                                        05901000
+                                                  /* SOC CEDS00000578 */05902000
+ /*                                                                     05903000
+ MSGDESCIN.ENCODING       = MQENC_NATIVE;*//*CONVERT ASCII TO EBCDIC */ 05904000
+ /*                                                                     05905000
+ MSGDESCIN.CODEDCHARSETID = MQCCSI_Q_MGR;*//*CONVERT ASCII TO EBCDIC */ 05906000
+                                             /* SOC CEDS00000679 */     05906150
+ /*                                                                     05906244
+ MSGDESCIN.ENCODING       = MQENC_NATIVE;*//* CONVERTING TO UNICODE  */ 05907044
+ /*                                                                     05907144
+ MSGDESCIN.CODEDCHARSETID = MQCCSI_Q_MGR;*//* CONVERTING TO UNICODE  */ 05908044
+                                             /* EOC CEDS00000679 */     05908150
+                                                  /* SOC CEDS00000578 */05909000
+ MQ_BUFFER_LENGTH         = 0;                                          05909100
+ MQ_MESSAGE_LEN           = 0;                                          05910000
+                                                                        05920000
+ CALL MQGET(HCONN,                                                      05930000
+            HOBJIN,                                                     05940000
+            MSGDESCIN,                                                  05950000
+            GETMSGOPTS,                                                 05960000
+            MQ_BUFFER_LENGTH,                                           05970000
+            MQ_MSG_DET_TEMP,                                            05980000
+            MQ_MESSAGE_LEN,                                             05990000
+            COMPCODE,                                                   06000000
+            REASON);                                                    06010000
+ IF REASON = MQRC_TRUNCATED_MSG_FAILED  THEN                            06020000
+ DO;                                                                    06030000
+   MQ_BUFFER_LENGTH = MQ_MESSAGE_LEN;                                   06040000
+   PARSER_C1M_DATA_AREA.MQ_MSG_LENGTH = MQ_MESSAGE_LEN;                 06050000
+                                             /* SOC CEDS00000613 */     06050134
+   /*                                                                   06051034
+   IF MQ_MESSAGE_LEN > 204800 THEN  */    /* MAX LENGTH IS 200KB */     06060034
+   IF MQ_MESSAGE_LEN > 104857600 THEN     /* MAX LENGTH IS 100MB */     06061034
+                                             /* EOC CEDS00000613 */     06062034
+    DO;                                                                 06070000
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    06080000
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0270';                  06090000
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     06100000
+      CALL RCB0M1M (PTR_INT_AREA);                                      06110000
+    END;                                                                06120000
+ END;                                                                   06130000
+ ELSE                                                                   06140000
+ IF REASON = MQRC_NO_MSG_AVAILABLE THEN     /* NO MESSAGES ON QUEUE */  06150000
+     MQ_MORE_MSG  = 'N';                                                06160000
+ ELSE                                                                   06170000
+   DO;                                                                  06180000
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    06190000
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0269';                  06200000
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     06210000
+      CALL RCB0M1M (PTR_INT_AREA);                                      06220000
+      CALL RCBBEKM_ERROR ( NULL,                                        06230000
+                          'OTHER',                                      06240000
+                          '#004');                                      06250000
+   END;                                                                 06260000
+  END MQ_GET_LENGTH;                                                    06270000
+1/********************************************************************/ 06280000
+ /*                                                                  */ 06290000
+ /* MODULE NAME      : MQ_GET_QUEUE                                  */ 06300000
+ /*                                                                  */ 06310000
+ /* DESCRIPTION      : GET MESSAGE FROM MQ QUEUE                     */ 06320000
+ /*                                                                  */ 06330000
+ /********************************************************************/ 06340000
+ MQ_GET_QUEUE: PROC;                                                    06350000
+                                                                        06360000
+ /* GET MQ MESSAGE */                                                   06370000
+ MSGDESCIN.FORMAT = MQFMT_STRING;          /* MESSAGE CONTAINS CHARS*/  06380000
+                                                  /* SOC CEDS00000579 */06381000
+ /*                                                                     06382000
+ GETMSGOPTS.OPTIONS =  MQGMO_SYNCPOINT +  */                            06390000
+                                                  /* SOC CEDS00000578 */06400000
+                   /*  MQGMO_CONVERT;  */  /*CONVERT ASCII TO EBCDIC */ 06410000
+ /*                                                                     06411000
+ GETMSGOPTS.OPTIONS =  MQGMO_SYNCPOINT +  */ /* CONVERTING TO UNICODE */06420000
+ /*                    MQGMO_CONVERT;     */ /* CONVERTING TO UNICODE */06430000
+                                                  /* EOC CEDS00000578 */06440000
+                                                 /* SOC CEDS00000679 */ 06440150
+ /*GETMSGOPTS.OPTIONS =  MQGMO_SYNCPOINT +                              06440243
+                       MQGMO_CONVERT;*/      /* CONVERTING TO UNICODE */06440343
+                                                  /* EOC CEDS00000579 */06441000
+ GETMSGOPTS.OPTIONS =  MQGMO_SYNCPOINT ;                                06442043
+                                                 /* EOC CEDS00000679 */ 06443050
+ MSGDESCIN.CORRELID = MQCI_NONE;                                        06450000
+                                                                        06451000
+                                                  /* SOC CEDS00000578 */06452000
+ /*                                                                     06453000
+ MSGDESCIN.ENCODING     = MQENC_NATIVE; *//*CONVERT ASCII TO EBCDIC */  06454000
+ /*                                                                     06455000
+ MSGDESCIN.CODEDCHARSETID = MQCCSI_Q_MGR;*//*CONVERT ASCII TO EBCDIC */ 06456000
+                                                 /* SOC CEDS00000679 */ 06456150
+ /*                                                                     06456243
+ MSGDESCIN.ENCODING     = MQENC_NATIVE;*/    /* CONVERTING TO UNICODE */06457043
+ /*                                                                     06457143
+ MSGDESCIN.CODEDCHARSETID = MQCCSI_Q_MGR;*/  /* CONVERTING TO UNICODE */06458043
+                                                  /* EOC CEDS00000578 */06459000
+                                                 /* EOC CEDS00000679 */ 06459150
+ FREE MQ_MSG_DET;                                                       06460000
+ ALLOCATE  MQ_MSG_DET(MQ_BUFFER_LENGTH)  CHAR(1);                       06470000
+                                                                        06480000
+                                                                        06490000
+ PTR_MQDATA    = ADDR(MQ_MSG_DET);                                      06500000
+ PTR_MQ_BUFFER = ADDR(MQ_BUFFER);                                       06510000
+                                                                        06520000
+ CALL MQGET(HCONN,                                                      06530000
+            HOBJIN,                                                     06540000
+            MSGDESCIN,                                                  06550000
+            GETMSGOPTS,                                                 06560000
+            MQ_BUFFER_LENGTH,                                           06570000
+            MQ_MSG_DET,                                                 06580000
+            MQ_MESSAGE_LEN,                                             06590000
+            COMPCODE,                                                   06600000
+            REASON);                                                    06610000
+                                                  /* SOC CEDS00000578 */06611000
+ WRK_CCSID = MSGDESCIN.CODEDCHARSETID;                                  06612000
+                                                                        06613000
+ IF MQ_CCSID = '' THEN                                                  06614000
+ DO;                                                                    06615000
+    MQ_CCSID  =  WRK_CCSID;                                             06616000
+    PTR_CCSID =  ADDR(MSGDESCIN.CODEDCHARSETID);                        06617000
+ END;                                                                   06618000
+                                                  /* EOC CEDS00000578 */06619000
+                                                                        06620000
+ IF REASON = MQRC_NO_MSG_AVAILABLE THEN     /* NO MESSAGES ON QUEUE */  06630000
+   DO;                                                                  06640000
+     MQ_MORE_MSG  = 'N';                                                06650000
+     RETURN;                                                            06660000
+   END;                                                                 06670000
+                                                                        06680000
+ IF ( ( (COMPCODE = MQCC_OK) |                                          06690000
+      ( (COMPCODE = MQCC_WARNING)))) THEN                               06700000
+   DO;                                                                  06710000
+      MQ_COUNT_DET.NO_MQ_MSG_READ = MQ_COUNT_DET.NO_MQ_MSG_READ + 1;    06720000
+      PARSER_C1M_DATA_AREA.MQ_MSG_LENGTH = MQ_MESSAGE_LEN;              06730000
+      PARSER_INPUT_AREA.MQ_MSG_LENGTH    = MQ_MESSAGE_LEN;              06740000
+      MQ_MESSAGE_LEN1 = MQ_MESSAGE_LEN;                                 06750000
+   END;                                                                 06770000
+ ELSE                                                                   06780000
+   DO;                        /*  GET FAILED, WRITE ERROR MESSAGE   */  06790000
+                                                                        06800000
+     PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                     06810000
+     PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0269';                   06820000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                      06830000
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'MQ';                             06840000
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = SUBSTR(MQ_INPUT_QUEUE,1,25);      06850000
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'CP';                             06860000
+     WRK_CNT_PIC                    = COMPCODE;                         06870000
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                      06880000
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'RE';                             06890000
+     WRK_CNT_PIC                    = REASON;                           06900000
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                      06910000
+     CALL RCB0M1M (PTR_INT_AREA);                                       06920000
+     CALL RCBBEKM_ERROR ( NULL,                                         06930000
+                         'OTHER',                                       06940000
+                         '#005');                                       06950000
+   END;                                                                 06960000
+                                                                        06970000
+ PARSER_RETURN_AREA       = '';                                         06980000
+ PARSER_C1M_RETURN_AREA   = '';                                         06990000
+ ERROR_CODE_DET           = '';                                         07000000
+ /* INITIALIZE ERROR_CODE_DETAILS WITH DEFAULT ERROR VALUES */          07010000
+                                                                        07020000
+ ERROR_CODE_DET.PTR_ERROR = NULL;                                       07030000
+ ERROR_CODE_DET.ERR_TYPE  = 'OTHER';                                    07040000
+ ERROR_CODE_DET.CALL_ID   = '#000';                                     07050000
+                                                                        07060000
+ PARSER_C1M_DATA_AREA.MQ_TYPE_OF_MODE  = MODE_OF_MQ;                    07070000
+ PARSER_C1M_RETURN_AREA.XML_MSG_FORMAT = 'N';                           07080000
+ PARSER_C1M_RETURN_AREA.XML_MSG_REJECT = 'N';                           07090000
+ /* CALL PARSER RXCBXC1M TO EXTRACT HEADER AND OTHER DETAILS */         07100000
+                                                                        07110000
+ CALL RCBXC1M ( PTR_PARSER_C1M_INPUT,                                   07120000
+                PTR_MQ_BUFFER,                                          07130000
+                PARSER_C1M_RETURN_AREA,                                 07140000
+                PTR_ERROR_RETURN,                                       07150000
+                                                  /* SOC CEDS00000578 */07160000
+         /*     PTR_INT_AREA); */                                       07161000
+                PTR_INT_AREA,                                           07162000
+                PTR_CCSID);                                             07163000
+                                                  /* EOC CEDS00000578 */07164000
+                                                                        07170000
+ IF XML_MSG_FORMAT  = 'Y' THEN                                          07180000
+    MQ_COUNT_DET.NO_MQ_MSG_FORMAF = MQ_COUNT_DET.NO_MQ_MSG_FORMAF + 1;  07190000
+ ELSE                                                                   07200000
+                                                      /* SOC RB01342 */ 07201084
+ /*IF XML_MSG_STATUS ¬= '0020' & (XML_MSG_TYPE = 'MODEL_UPDATE' |    */ 07210084
+ /*                               XML_MSG_TYPE = 'REFOFER_UPDATE')   */ 07220084
+ IF XML_MSG_STATUS ¬= '0020' & (XML_MSG_TYPE = 'MODEL_UPDATE' |         07222084
+                                XML_MSG_TYPE = 'REFOFER_UPDATE'|        07223084
+                                XML_MSG_TYPE = 'SEO_UPDATE')            07224084
+                                                      /* EOC RB01342 */ 07225084
+ THEN                                                                   07230000
+    MQ_COUNT_DET.NO_SKIP_STATUSF = MQ_COUNT_DET.NO_SKIP_STATUSF + 1;    07240000
+ ELSE                                                                   07250000
+ IF XML_MSG_REJECT ='Y' THEN                                            07260000
+   DO;                                                                  07270000
+      MQ_COUNT_DET.NO_MQ_MSG_REJ =                                      07280000
+      MQ_COUNT_DET.NO_MQ_MSG_REJ + 1;                                   07290000
+   END;                                                                 07300000
+ ELSE                                                                   07310000
+   DO;                                                                  07320000
+     PARSER_INPUT_AREA  = '';                                           07330000
+     PARSER_RETURN_AREA = '';                                           07340000
+     ERROR_CODE_DET     = '';                                           07350000
+                                                                        07360000
+     PARSER_INPUT_AREA  = PARSER_C1M_RETURN_AREA, BY NAME;              07370000
+     PARSER_INPUT_AREA.MQ_MSG_LENGTH = MQ_MESSAGE_LEN;                  07380000
+                                                                        07390000
+     /* INITIALIZE ERROR_CODE_DETAILS WITH DEFAULT ERROR VALUES */      07400000
+                                                                        07410000
+     ERROR_CODE_DET.PTR_ERROR = NULL;                                   07420000
+     ERROR_CODE_DET.ERR_TYPE  = 'OTHER';                                07430000
+     ERROR_CODE_DET.CALL_ID   = '#000';                                 07440000
+                                                                        07450000
+     CALL EXTRACT_MSG_TYPE;                /* EXTRACT EACH REQ MSG   */ 07460000
+   END;                                                                 07470000
+ END MQ_GET_QUEUE;                                                      07480000
+                                                                        07490000
+1/********************************************************************/ 07500000
+ /*                                                                  */ 07510000
+ /* MODULE NAME      : EXTRACT_MSG_TYPE                              */ 07520000
+ /*                                                                  */ 07530000
+ /* DESCRIPTION      : EXTRACT EACH REQUESTED MESSAGE TYPE           */ 07540000
+ /*                                                                  */ 07550000
+ /*                                                                  */ 07560000
+ /********************************************************************/ 07570000
+ EXTRACT_MSG_TYPE: PROC;                                                07580092
+                                                                        07581000
+ SELECT (XML_MSG_TYPE);                                                 07600000
+   WHEN ('MODEL_UPDATE')                                                07610000
+     DO;                                                                07620000
+       MQ_COUNT_DET.NO_MODEL_UP_MSG   =                                 07630000
+       MQ_COUNT_DET.NO_MODEL_UP_MSG + 1;                                07640000
+       PARSER_INPUT_AREA.CNT_CTRY_REQ = NO_COUNTRES_REQ;                07650000
+                                                                        07660000
+       CALL RCBXC2M ( PTR_COUNTRY,                                      07670000
+                      PTR_PARSER_INPUT,                                 07680000
+                      PTR_MQ_BUFFER,                                    07690000
+                      PTR_PARSER_RETURN,                                07700000
+                      PTR_ERROR_RETURN,                                 07710000
+                                                  /* SOC CEDS00000578 */07720000
+               /*     PTR_INT_AREA); */                                 07721000
+                      PTR_INT_AREA,                                     07722000
+                      PTR_CCSID);                                       07723000
+                                                  /* EOC CEDS00000578 */07724000
+                                                                        07730000
+       IF MSG_REJ_DATA_VIOLATION = 'Y'                                  07740000
+       THEN DO;                                                         07750000
+         MQ_COUNT_DET.NO_MQ_MSG_REJ =                                   07760000
+         MQ_COUNT_DET.NO_MQ_MSG_REJ + 1;                                07770000
+                                                                        07780000
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG > 0          07790000
+         THEN                                                           07800000
+        /*  MQ_COUNT_DET.NO_REJ_WW_NOTFND = */        /* SOC RC01319  */07801000
+        /*  MQ_COUNT_DET.NO_REJ_WW_NOTFND + */                          07802000
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND =                        07810000
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND +      /* EOC RC01319  */07820000
+            PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG;             07831000
+                                                      /* SOC RC01319  */07831100
+         IF PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG > 0          07832000
+         THEN                                                           07833000
+          DO;                                                           07833100
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND =                        07834000
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND +                        07835000
+            PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG;             07836000
+          END;                                                          07837000
+                                                      /* EOC RC01319  */07838000
+         END;                                                           07840000
+       ELSE DO;                                                         07850000
+         MQ_COUNT_DET.NO_MQ_MSG_SUCCES   =                              07860000
+         MQ_COUNT_DET.NO_MQ_MSG_SUCCES + 1;                             07870000
+                                                                        07880000
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_SPEC_DATA_VIOL > 0           07890000
+         THEN DO;                                                       07900000
+           MQ_COUNT_DET.NO_CTRY_SPEC_REJ =                              07910000
+           MQ_COUNT_DET.NO_CTRY_SPEC_REJ +                              07920000
+           PARSER_RETURN_AREA.NO_REJ_CTRY_SPEC_DATA_VIOL;               07930000
+           END;                                                         07940000
+                                                                        07950000
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG > 0          07960000
+         THEN                                                           07970000
+         /* MQ_COUNT_DET.NO_REJ_WW_NOTFND = */     /* SOC RC01319 */    07971000
+         /* MQ_COUNT_DET.NO_REJ_WW_NOTFND + */                          07972000
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND =                        07980000
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND +   /* EOC RC01319 */    07990000
+            PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG;             08000000
+                                                   /* SOC RC01319 */    08000100
+         IF PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG > 0          08001000
+         THEN DO;                                                       08002000
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND =                        08003000
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND +                        08004000
+            PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG;             08005000
+         END;                                                           08010000
+                                                   /* EOC RC01319 */    08010100
+                                                                        08011000
+         IF PARSER_RETURN_AREA.NO_MSG_SKIP_CTRY_NOT_REQ > 0             08020000
+         THEN                                                           08030000
+           MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ =                           08040000
+           MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ +                           08050000
+           PARSER_RETURN_AREA.NO_MSG_SKIP_CTRY_NOT_REQ;                 08060000
+                                                                        08070000
+         /* APPEND THE LIST COUNTRIES NOT REQUESTED TO MQ_COUNT_DET  */ 08080000
+         IF PARSER_RETURN_AREA.NO_CTRY_SKIP_CTRY_NOT_REQ > 0            08090000
+         THEN DO;                                                       08100000
+           IF MQ_COUNT_DET.NO_CNTRY_NOT_REQ > 1                         08110000
+           THEN DO;                                                     08120000
+             J = MQ_COUNT_DET.NO_CNTRY_NOT_REQ;                         08130000
+             J = J + 1;                                                 08140000
+             END;                                                       08150000
+           ELSE                                                         08160000
+             J = 1;                                                     08170000
+                                                                        08180000
+           DO K =1 TO  PARSER_RETURN_AREA.NO_CTRY_SKIP_CTRY_NOT_REQ;    08190000
+              MQ_COUNT_DET.LIST_CTRY_NOT_REQ(J) =                       08200000
+              PARSER_RETURN_AREA.LIST_OF_CTRY_NOT_REQ(K);               08210000
+              J = J + 1;                                                08220000
+           END;                                                         08230000
+                                                                        08240000
+           /* SORT THE LIST OF COUNTRIES NOT REQUESTED */               08250000
+           R = J-1                                                      08260000
+                                                                        08270000
+           DO P =1 TO R;                                                08280000
+             DO  Q = 1 TO R-1;                                          08290000
+               IF   MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q) >                 08300000
+                    MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q+1)                 08310000
+               THEN DO;                                                 08320000
+                 WRK_TEMP3 = MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q);         08330000
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q) =                    08340000
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q+1);                   08350000
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ(Q+1) = WRK_TEMP3;       08360000
+                 END;                                                   08370000
+             END;                                                       08380000
+           END;                                                         08390000
+                                                                        08400000
+           /* ELIMINATE DUPLICATES IN MQ_COUNT_DET.LIST_CTRY_NOT_REQ */ 08410000
+           K =1;                                                        08420000
+           WRK_TEMP3 =  MQ_COUNT_DET.LIST_CTRY_NOT_REQ(1);              08430000
+           DO S =1 TO J-1;                                              08440000
+             IF MQ_COUNT_DET.LIST_CTRY_NOT_REQ(S) ¬= WRK_TEMP3          08450000
+             THEN DO;                                                   08460000
+                  IC_CNTRY_NOT_REQ(K) = WRK_TEMP3;                      08470000
+                  WRK_TEMP3 = MQ_COUNT_DET.LIST_CTRY_NOT_REQ(S);        08480000
+                  K = K +1 ;                                            08490000
+               END;                                                     08500000
+           END;                                                         08510000
+           IC_CNTRY_NOT_REQ(K) = WRK_TEMP3;                             08520000
+           MQ_COUNT_DET.NO_CNTRY_NOT_REQ = K;                           08530000
+                                                                        08540000
+           /* MOVE IC_CNTRY_NOT_REQ ARRAY TO  */                        08550000
+           /* MQ_COUNT_DET.LIST_CTRY_NOT_REQ  */                        08560000
+           MQ_COUNT_DET.LIST_CTRY_NOT_REQ = '';                         08570000
+           DO I=1 TO MQ_COUNT_DET.NO_CNTRY_NOT_REQ;                     08580000
+            MQ_COUNT_DET.LIST_CTRY_NOT_REQ(I) =IC_CNTRY_NOT_REQ(I);     08590000
+           END;                                                         08600000
+                                                                        08610000
+         END;/* END FOR NO_CTRY_SKIP_CTRY_NOT_REQ > 1 */                08620000
+      END; /* END FOR ELSE MSG_REJ_DATA_VIOLATION = 'Y' */              08630000
+                                                                        08640000
+               MQ_COUNT_DET.T693_INSERTS =                              08650000
+               MQ_COUNT_DET.T693_INSERTS +                              08660000
+               PARSER_RETURN_AREA.T693_INSERTS;                         08670000
+                                                                        08680000
+               MQ_COUNT_DET.T693_UPDATES =                              08690000
+               MQ_COUNT_DET.T693_UPDATES +                              08700000
+               PARSER_RETURN_AREA.T693_UPDATES;                         08710000
+                                                                        08720000
+                                                      /* SOC RB01342 */ 08720194
+               MQ_COUNT_DET.T693_UPDATES_MODEL =                        08721094
+               MQ_COUNT_DET.T693_UPDATES_MODEL +                        08722084
+               PARSER_RETURN_AREA.T693_UPDATES_MODEL;                   08723084
+                                                                        08724084
+               MQ_COUNT_DET.T693_UPDATES_SEO =                          08725084
+               MQ_COUNT_DET.T693_UPDATES_SEO +                          08726084
+               PARSER_RETURN_AREA.T693_UPDATES_SEO;                     08727094
+                                                      /* EOC RB01342 */ 08728094
+               MQ_COUNT_DET.T694_INSERTS =                              08730000
+               MQ_COUNT_DET.T694_INSERTS +                              08740000
+               PARSER_RETURN_AREA.T694_INSERTS;                         08750000
+                                                                        08760000
+               MQ_COUNT_DET.T694_UPDATES =                              08770000
+               MQ_COUNT_DET.T694_UPDATES +                              08780000
+               PARSER_RETURN_AREA.T694_UPDATES;                         08790000
+                                                      /* SOC RB01342 */ 08800094
+               MQ_COUNT_DET.T694_UPDATES_MODEL =                        08801094
+               MQ_COUNT_DET.T694_UPDATES_MODEL +                        08802084
+               PARSER_RETURN_AREA.T694_UPDATES_MODEL;                   08803084
+                                                                        08804084
+               MQ_COUNT_DET.T694_UPDATES_SEO =                          08805084
+               MQ_COUNT_DET.T694_UPDATES_SEO +                          08806084
+               PARSER_RETURN_AREA.T694_UPDATES_SEO;                     08807094
+                                                      /* EOC RB01342 */ 08807194
+                                                                        08808084
+               MQ_COUNT_DET.T695_INSERTS =                              08810000
+               MQ_COUNT_DET.T695_INSERTS +                              08820000
+               PARSER_RETURN_AREA.T695_INSERTS;                         08830000
+                                                                        08840000
+               MQ_COUNT_DET.T695_UPDATES =                              08850000
+               MQ_COUNT_DET.T695_UPDATES +                              08860000
+               PARSER_RETURN_AREA.T695_UPDATES;                         08870000
+                                                                        08880000
+               MQ_COUNT_DET.T696_INSERTS =                              08890000
+               MQ_COUNT_DET.T696_INSERTS +                              08900000
+               PARSER_RETURN_AREA.T696_INSERTS;                         08910000
+                                                                        08920000
+               MQ_COUNT_DET.T696_UPDATES =                              08930000
+               MQ_COUNT_DET.T696_UPDATES +                              08940000
+               PARSER_RETURN_AREA.T696_UPDATES;                         08950000
+           END;                                                         08960000
+                                                      /* SOC RB01342 */ 08970094
+   WHEN ('SEO_UPDATE')                                                  08971094
+     DO;                                                                08972084
+       MQ_COUNT_DET.NO_SEO_UP_MSG   =                                   08973084
+       MQ_COUNT_DET.NO_SEO_UP_MSG + 1;                                  08974084
+       PARSER_INPUT_AREA.CNT_CTRY_REQ_SEO = NO_COUNTRES_REQ;            08975084
+       CALL RCBXC5M ( PTR_COUNTRY,                                      08976084
+                      PTR_PARSER_INPUT,                                 08977084
+                      PTR_MQ_BUFFER,                                    08978084
+                      PTR_PARSER_RETURN,                                08979084
+                      PTR_ERROR_RETURN,                                 08979184
+                      PTR_INT_AREA,                                     08979284
+                      PTR_CCSID);                                       08979384
+                                                                        08979484
+       IF MSG_REJ_DATA_VIOLATION = 'Y'                                  08979584
+       THEN DO;                                                         08979684
+         MQ_COUNT_DET.NO_MQ_MSG_REJ =                                   08979784
+         MQ_COUNT_DET.NO_MQ_MSG_REJ + 1;                                08979884
+                                                                        08979984
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG_SEO > 0      08980084
+         THEN                                                           08980184
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND_SEO =                    08980284
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND_SEO +                    08980384
+            PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG_SEO;         08980484
+                                                                        08980584
+         IF PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG_SEO > 0      08980684
+         THEN                                                           08980784
+          DO;                                                           08980884
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND_SEO =                    08980984
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND_SEO +                    08981084
+            PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG_SEO;         08981184
+          END;                                                          08981284
+                                                                        08981384
+         END;                                                           08981484
+       ELSE DO;                                                         08981584
+         MQ_COUNT_DET.NO_MQ_MSG_SUCCES   =                              08981684
+         MQ_COUNT_DET.NO_MQ_MSG_SUCCES + 1;                             08981784
+                                                                        08981884
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_SPEC_DATA_VIOL_SEO > 0       08981984
+         THEN DO;                                                       08982084
+           MQ_COUNT_DET.NO_CTRY_SPEC_REJ_SEO =                          08982184
+           MQ_COUNT_DET.NO_CTRY_SPEC_REJ_SEO +                          08982284
+           PARSER_RETURN_AREA.NO_REJ_CTRY_SPEC_DATA_VIOL_SEO;           08982384
+           END;                                                         08982484
+                                                                        08982584
+         IF PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG_SEO > 0      08982684
+         THEN                                                           08982784
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND_SEO =                    08982884
+            MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND_SEO +                    08982984
+            PARSER_RETURN_AREA.NO_REJ_CTRY_WW_DATA_NOT_REG_SEO;         08983084
+                                                                        08983184
+         IF PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG_SEO > 0      08983284
+         THEN DO;                                                       08983384
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND_SEO =                    08983484
+            MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND_SEO +                    08983584
+            PARSER_RETURN_AREA.NO_REJ_LANG_WW_DATA_NOT_REG_SEO;         08983684
+         END;                                                           08983784
+                                                                        08983884
+         IF PARSER_RETURN_AREA.NO_MSG_SKIP_CTRY_NOT_REQ_SEO > 0         08983984
+         THEN                                                           08984084
+           MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ_SEO =                       08984184
+           MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ_SEO +                       08984284
+           PARSER_RETURN_AREA.NO_MSG_SKIP_CTRY_NOT_REQ_SEO;             08984384
+                                                                        08984484
+         /* APPEND THE LIST COUNTRIES NOT REQUESTED TO MQ_COUNT_DET  */ 08984584
+         IF PARSER_RETURN_AREA.NO_CTRY_SKIP_CTRY_NOT_REQ_SEO > 0        08984684
+         THEN DO;                                                       08984784
+           IF MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO > 1                     08984884
+           THEN DO;                                                     08984984
+             J = MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO;                     08985084
+             J = J + 1;                                                 08985184
+             END;                                                       08985284
+           ELSE                                                         08985384
+             J = 1;                                                     08985484
+                                                                        08985584
+           DO K =1 TO  PARSER_RETURN_AREA.NO_CTRY_SKIP_CTRY_NOT_REQ_SEO;08985684
+              MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(J) =                   08985784
+              PARSER_RETURN_AREA.LIST_OF_CTRY_NOT_REQ_SEO(K);           08985884
+              J = J + 1;                                                08985984
+           END;                                                         08986084
+                                                                        08986184
+           /* SORT THE LIST OF COUNTRIES NOT REQUESTED */               08986284
+           R = J-1                                                      08986384
+                                                                        08986484
+           DO P =1 TO R;                                                08986584
+             DO  Q = 1 TO R-1;                                          08986684
+               IF   MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q) >             08986784
+                    MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q+1)             08986884
+               THEN DO;                                                 08986984
+                 WRK_TEMP3 = MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q);     08987084
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q) =                08987184
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q+1);               08987284
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(Q+1) = WRK_TEMP3;   08987384
+                 END;                                                   08987484
+             END;                                                       08987584
+           END;                                                         08987684
+                                                                        08987784
+           /* ELIMINATE DUPLICATES IN MQ_COUNT_DET.LIST_CTRY_NOT_REQ */ 08987884
+           K =1;                                                        08987984
+           WRK_TEMP3 =  MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(1);          08988084
+           DO S =1 TO J-1;                                              08988184
+             IF MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(S) ¬= WRK_TEMP3      08988284
+             THEN DO;                                                   08988384
+                  IC_CNTRY_NOT_REQ(K) = WRK_TEMP3;                      08988484
+                  WRK_TEMP3 = MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(S);    08988584
+                  K = K +1 ;                                            08988684
+               END;                                                     08988784
+           END;                                                         08988884
+           IC_CNTRY_NOT_REQ(K) = WRK_TEMP3;                             08988984
+           MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO = K;                       08989084
+                                                                        08989184
+           /* MOVE IC_CNTRY_NOT_REQ ARRAY TO  */                        08989284
+           /* MQ_COUNT_DET.LIST_CTRY_NOT_REQ  */                        08989384
+           MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO = '';                     08989484
+           DO I=1 TO MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO;                 08989584
+            MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(I) =IC_CNTRY_NOT_REQ(I); 08989684
+           END;                                                         08989784
+                                                                        08989884
+         END;/* END FOR NO_CTRY_SKIP_CTRY_NOT_REQ > 1 */                08989984
+      END; /* END FOR ELSE MSG_REJ_DATA_VIOLATION = 'Y' */              08990084
+                                                                        08990184
+               MQ_COUNT_DET.T693_INSERTS =                              08990284
+               MQ_COUNT_DET.T693_INSERTS +                              08990384
+               PARSER_RETURN_AREA.T693_INSERTS;                         08990484
+               WRK_SEO_IN_693 = WRK_SEO_IN_693 +                        08990584
+                           PARSER_RETURN_AREA.T693_INSERTS;             08990684
+                                                                        08990784
+               MQ_COUNT_DET.T693_UPDATES =                              08990884
+               MQ_COUNT_DET.T693_UPDATES +                              08990984
+               PARSER_RETURN_AREA.T693_UPDATES;                         08991084
+               WRK_SEO_UP_693 = WRK_SEO_UP_693 +                        08991184
+                           PARSER_RETURN_AREA.T693_UPDATES;             08991284
+                                                                        08991384
+               MQ_COUNT_DET.T694_INSERTS =                              08991484
+               MQ_COUNT_DET.T694_INSERTS +                              08991584
+               PARSER_RETURN_AREA.T694_INSERTS;                         08991684
+               WRK_SEO_IN_694 = WRK_SEO_IN_694 +                        08991784
+                           PARSER_RETURN_AREA.T694_INSERTS;             08991884
+                                                                        08991984
+               MQ_COUNT_DET.T694_UPDATES =                              08992084
+               MQ_COUNT_DET.T694_UPDATES +                              08992184
+               PARSER_RETURN_AREA.T694_UPDATES;                         08992284
+               WRK_SEO_UP_694 = WRK_SEO_UP_694 +                        08992384
+                           PARSER_RETURN_AREA.T694_UPDATES;             08992484
+                                                                        08992584
+               MQ_COUNT_DET.T696_INSERTS =                              08992684
+               MQ_COUNT_DET.T696_INSERTS +                              08992784
+               PARSER_RETURN_AREA.T696_INSERTS;                         08992884
+               WRK_SEO_IN_696 = WRK_SEO_IN_696 +                        08992996
+                           PARSER_RETURN_AREA.T696_INSERTS;             08993096
+                                                                        08993184
+               MQ_COUNT_DET.T696_UPDATES =                              08993284
+               MQ_COUNT_DET.T696_UPDATES +                              08993384
+               PARSER_RETURN_AREA.T696_UPDATES;                         08993484
+               WRK_SEO_UP_696 = WRK_SEO_UP_696 +                        08993596
+                           PARSER_RETURN_AREA.T696_UPDATES;             08993696
+           END;                                       /* EOC RB01342 */ 08993784
+                                                                        08993884
+   WHEN('REFOFER_UPDATE')                                               08993900
+     DO;                                                                08994000
+       MQ_COUNT_DET.NO_REFOFER_UP_MSG =                                 09000000
+                            MQ_COUNT_DET.NO_REFOFER_UP_MSG + 1;         09010000
+                                         /* CALL PARSER REFOFER      */ 09020000
+       CALL RCBXC3M( PTR_PARSER_INPUT,                                  09030000
+                     PTR_MQ_BUFFER,                                     09040000
+                     PTR_PARSER_RETURN,                                 09050000
+                     PTR_ERROR_RETURN,                                  09060000
+                                                  /* SOC CEDS00000578 */09070000
+              /*     PTR_INT_AREA); */                                  09071000
+                     PTR_INT_AREA,                                      09072000
+                     PTR_CCSID);                                        09073000
+                                                  /* EOC CEDS00000578 */09074000
+                                                                        09080000
+       IF MSG_REJ_DATA_VIOLATION = 'Y' THEN                             09090000
+         MQ_COUNT_DET.NO_MQ_MSG_REJ = MQ_COUNT_DET.NO_MQ_MSG_REJ + 1;   09100000
+       ELSE                                                             09110000
+         DO;                                                            09120000
+           MQ_COUNT_DET.NO_MQ_MSG_SUCCES =                              09130000
+                              MQ_COUNT_DET.NO_MQ_MSG_SUCCES + 1;        09140000
+           MQ_COUNT_DET.T693_INSERTS = MQ_COUNT_DET.T693_INSERTS +      09150000
+                                 PARSER_RETURN_AREA.T693_INSERTS;       09160000
+           MQ_COUNT_DET.T693_UPDATES = MQ_COUNT_DET.T693_UPDATES +      09170000
+                                 PARSER_RETURN_AREA.T693_UPDATES;       09180000
+           MQ_COUNT_DET.T694_INSERTS = MQ_COUNT_DET.T694_INSERTS +      09190000
+                                 PARSER_RETURN_AREA.T694_INSERTS;       09200000
+           MQ_COUNT_DET.T694_UPDATES = MQ_COUNT_DET.T694_UPDATES +      09210000
+                                 PARSER_RETURN_AREA.T694_UPDATES;       09220000
+           MQ_COUNT_DET.T695_INSERTS = MQ_COUNT_DET.T695_INSERTS +      09230000
+                                 PARSER_RETURN_AREA.T695_INSERTS;       09240000
+           MQ_COUNT_DET.T695_UPDATES = MQ_COUNT_DET.T695_UPDATES +      09250000
+                                 PARSER_RETURN_AREA.T695_UPDATES;       09260000
+           MQ_COUNT_DET.T696_INSERTS = MQ_COUNT_DET.T696_INSERTS +      09270000
+                                 PARSER_RETURN_AREA.T696_INSERTS;       09280000
+           MQ_COUNT_DET.T696_UPDATES = MQ_COUNT_DET.T696_UPDATES +      09290000
+                                 PARSER_RETURN_AREA.T696_UPDATES;       09300000
+         END;                                                           09310000
+    END;                                                                09320000
+   WHEN('GENERALAREA_UPDATE')                                           09330000
+     DO;                                                                09340000
+       MQ_COUNT_DET.NO_GENERALA_UP_MSG =                                09350000
+                            MQ_COUNT_DET.NO_GENERALA_UP_MSG + 1;        09360000
+       /* CHECK CNT_GEN_ELEMENT IN MESSAGE */                           09370000
+       IF PARSER_C1M_RETURN_AREA.CNT_GEN_ELEMENT <= 0 THEN DO;          09380000
+         MQ_COUNT_DET.NO_MQ_MSG_REJ = MQ_COUNT_DET.NO_MQ_MSG_REJ + 1    09390000
+         PARM_INT_AREA.MESSAGE_NUMBER   = '0280';                       09400000
+         PARM_INT_AREA.MSG_VAR_CODE_6   = 'MG';                         09410000
+         PARM_INT_AREA.MSG_VAR_VALUE_6  = 'GENERALAREA_UPDATE';         09420000
+         END;                                                           09430000
+       ELSE DO;                                                         09440000
+         CALL RCBXC4M( PTR_PARSER_INPUT, /* CALL PARSER GENAREA_UPD*/   09450000
+                       PTR_MQ_BUFFER,                                   09460000
+                       PTR_PARSER_RETURN,                               09470000
+                       PTR_ERROR_RETURN,                                09480000
+                                                  /* SOC CEDS00000578 */09490000
+                /*     PTR_INT_AREA); */                                09491000
+                       PTR_INT_AREA,                                    09492000
+                       PTR_CCSID);                                      09493000
+                                                  /* EOC CEDS00000578 */09494000
+                                                                        09500000
+         IF MSG_REJ_DATA_VIOLATION = 'Y'                                09510000
+         THEN DO;                                                       09520000
+           MQ_COUNT_DET.NO_MQ_MSG_REJ = MQ_COUNT_DET.NO_MQ_MSG_REJ + 1; 09530000
+             MQ_COUNT_DET.NO_INVALID_DATA_REJ =                         09540000
+             MQ_COUNT_DET.NO_INVALID_DATA_REJ +                         09550000
+                   PARSER_RETURN_AREA.NO_INVALID_DATA_REJ;              09560000
+           END;                                                         09570000
+         ELSE                                                           09580000
+           DO;                                                          09590000
+             MQ_COUNT_DET.NO_MQ_MSG_SUCCES =                            09600000
+                                MQ_COUNT_DET.NO_MQ_MSG_SUCCES + 1;      09610000
+             MQ_COUNT_DET.T693_INSERTS = MQ_COUNT_DET.T693_INSERTS +    09620000
+                                   PARSER_RETURN_AREA.T693_INSERTS;     09630000
+             MQ_COUNT_DET.T693_UPDATES = MQ_COUNT_DET.T693_UPDATES +    09640000
+                                   PARSER_RETURN_AREA.T693_UPDATES;     09650000
+             MQ_COUNT_DET.T694_INSERTS = MQ_COUNT_DET.T694_INSERTS +    09660000
+                                   PARSER_RETURN_AREA.T694_INSERTS;     09670000
+             MQ_COUNT_DET.T694_UPDATES = MQ_COUNT_DET.T694_UPDATES +    09680000
+                                   PARSER_RETURN_AREA.T694_UPDATES;     09690000
+             MQ_COUNT_DET.T695_INSERTS = MQ_COUNT_DET.T695_INSERTS +    09700000
+                                   PARSER_RETURN_AREA.T695_INSERTS;     09710000
+             MQ_COUNT_DET.T695_UPDATES = MQ_COUNT_DET.T695_UPDATES +    09720000
+                                   PARSER_RETURN_AREA.T695_UPDATES;     09730000
+             MQ_COUNT_DET.NO_INVALID_DATA_REJ =                         09740000
+             MQ_COUNT_DET.NO_INVALID_DATA_REJ +                         09750000
+                   PARSER_RETURN_AREA.NO_INVALID_DATA_REJ;              09760000
+             MQ_COUNT_DET.T696_INSERTS = MQ_COUNT_DET.T696_INSERTS +    09770000
+                                   PARSER_RETURN_AREA.T696_INSERTS;     09780000
+             MQ_COUNT_DET.T696_UPDATES = MQ_COUNT_DET.T696_UPDATES +    09790000
+                                   PARSER_RETURN_AREA.T696_UPDATES;     09800000
+             CALL RCBBEKM_LIST_COUNTRIES_IBMTOIC;                       09810000
+                                                                        09820000
+           END; /* END FOR ELSE MSG_REJ_DATA_VIOLATION */               09830000
+         END; /* END FOR ELSE CNT_GEN_ELEMENT */                        09840000
+    END;                                                                09850000
+   WHEN('RECONCILE_MSGS')                                               09860000
+     DO;                                                                09870000
+        MQ_COUNT_DET.NO_RECONCILE_MSG =                                 09880000
+        MQ_COUNT_DET.NO_RECONCILE_MSG + 1;                              09890000
+        MQ_COUNT_DET.NO_MQ_MSG_SUCCES =                                 09900000
+        MQ_COUNT_DET.NO_MQ_MSG_SUCCES + 1;                              09910000
+     END;                                                               09920000
+    OTHERWISE                                                           09930000
+     DO;                                                                09940000
+        MQ_COUNT_DET.NO_SKIP_TYPE_NOTREQ =                              09950000
+                MQ_COUNT_DET.NO_SKIP_TYPE_NOTREQ + 1;                   09960000
+     END;                                                               09970000
+  END; /* END FOR SELECT */                                             09980000
+                                                                        09990000
+ END EXTRACT_MSG_TYPE;                                                  10000000
+1/********************************************************************/ 10010000
+ /*                                                                  */ 10020000
+ /* MODULE NAME      : MQ_COMMIT_QUEUE                               */ 10030000
+ /*                                                                  */ 10040000
+ /* DESCRIPTION      : COMMIT MQ MESSAGE                             */ 10050000
+ /*                                                                  */ 10060000
+ /*                                                                  */ 10070000
+ /********************************************************************/ 10080000
+ MQ_COMMIT_QUEUE: PROC;                                                 10090000
+                                                                        10100000
+ /* COMMIT DB2 UPDATES */                                               10110000
+ EXEC SQL                                                               10120000
+   COMMIT                                                               10130000
+   ;                                                                    10140000
+ SELECT (SQLCA.SQLCODE);                                                10150000
+ WHEN (0);                                                              10160000
+ OTHERWISE                                                              10170000
+   CALL RCBBEKM_ERROR ( ADDR (SQLCA),                                   10180000
+                        'DB2',                                          10190000
+                        '#006');                                        10200000
+ END;                                                                   10210000
+                                                                        10220000
+ /* COMMIT MQ MESSAGE */                                                10230000
+ CALL MQCMIT(HCONN,                                                     10240000
+             COMPCODE,                                                  10250000
+             REASON);                                                   10260000
+                                                                        10270000
+ IF ((COMPCODE ¬= MQCC_OK) | (REASON ¬= MQRC_NONE)) THEN                10280000
+   DO;                                                                  10290000
+                                                                        10300000
+     PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                     10310000
+     PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0271';                   10320000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                      10330000
+     CALL RCB0M1M (PTR_INT_AREA);                                       10340000
+     CALL RCBBEKM_ERROR ( NULL,                                         10350000
+                         'OTHER',                                       10360000
+                         '#007');                                       10370063
+   END;                                                                 10380000
+                                                                        10390000
+ /* RESTORE ALL DETAILS WHICH ARE REQUIRED FOR RESTART */               10400000
+   RESTART_DET = MQ_COUNT_DET, BY NAME;                                 10410000
+                                                                        10420000
+ END MQ_COMMIT_QUEUE;                                                   10430000
+                                                                        10440000
+1/********************************************************************/ 10450000
+ /*                                                                  */ 10460000
+ /* MODULE NAME      : GENERATE_REPORT                               */ 10470000
+ /*                                                                  */ 10480000
+ /* DESCRIPTION      : GENERATE FINAL REPORT                         */ 10490000
+ /*                                                                  */ 10500000
+ /*                                                                  */ 10510000
+ /********************************************************************/ 10520000
+ GENERATE_REPORT: PROC;                                                 10530000
+                                                                        10540000
+ /* GENERATE FINAL REPORT */                                            10550000
+                                             /* ISSUE COUNT MESSAGES */ 10560000
+  PARM_INT_AREA.COUNTRY_NUMBER   = '';                                  10570000
+  PARM_INT_AREA.ID_SOURCE_PROG   = WRK_PGM_NAME;                        10580000
+  PARM_INT_AREA.ID_MOD_PATH(1)   = WRK_MOD_NAME;                        10590000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  10600000
+  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                10610000
+                                                                        10620000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0274';                              10630000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MQ';                                10640000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = SUBSTR(MQ_INPUT_QUEUE,1,25);         10650000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'ME';     /* TYPE OF MODE */         10660000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = MODE_OF_MQ;                          10670000
+  CALL RCB0M1M (PTR_INT_AREA);                                          10680000
+                                                                        10690000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  10691000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0275';                              10700000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MQ';                                10710000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = SUBSTR(MQ_INPUT_QUEUE,1,25);         10720000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'Q1';  /* NO OF MSG READ FROM MQ */  10730000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_MQ_MSG_READ;         10740000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         10750000
+                                                                        10760000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'MG';                                10770000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = 'MODEL_UPDATE';                      10780000
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'Q1';  /* NO OF MODEL UPDATE MSG */  10790000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_MODEL_UP_MSG;        10800000
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = WRK_CNT_PIC;                         10810000
+                                                                        10820000
+  PARM_INT_AREA.MSG_VAR_CODE_10  = 'MG';                                10830000
+  PARM_INT_AREA.MSG_VAR_VALUE_10 = 'REFOFER_UPDATE';                    10840000
+  PARM_INT_AREA.MSG_VAR_CODE_11  = 'Q1';  /* NO OF REFOFER UPDATE   */  10850000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_REFOFER_UP_MSG;      10860000
+  PARM_INT_AREA.MSG_VAR_VALUE_11 = WRK_CNT_PIC;                         10870000
+                                                                        10880000
+  PARM_INT_AREA.MSG_VAR_CODE_12  = 'MG';                                10890000
+  PARM_INT_AREA.MSG_VAR_VALUE_12 = 'GENERALAREA_UPDATE';                10900000
+  PARM_INT_AREA.MSG_VAR_CODE_13  = 'Q1';  /* NO OF GENERAL AREA MSG */  10910000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_GENERALA_UP_MSG;     10920000
+  PARM_INT_AREA.MSG_VAR_VALUE_13 = WRK_CNT_PIC;                         10930000
+                                                                        10940000
+  PARM_INT_AREA.MSG_VAR_CODE_14  = 'MG';                                10950000
+  PARM_INT_AREA.MSG_VAR_VALUE_14 = 'RECONCILE_MSGS';                    10960000
+  PARM_INT_AREA.MSG_VAR_CODE_15  = 'Q1';  /* NO OF RECONCILE MSG    */  10970000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_RECONCILE_MSG;       10980000
+  PARM_INT_AREA.MSG_VAR_VALUE_15 = WRK_CNT_PIC;                         10990000
+  CALL RCB0M1M (PTR_INT_AREA);                                          11000000
+                                                                        11001093
+  PARM_INT_AREA.MSG_VAR_CODES    = '';               /* SOC RB01342 */  11002098
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0275';                              11003098
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'MG';                                11009085
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = 'SEO_UPDATE';                        11009185
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'Q1';    /* NO OF SEO UPDATE MSG */  11009285
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_SEO_UP_MSG;          11009385
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = WRK_CNT_PIC;                         11009485
+  CALL RCB0M1M (PTR_INT_AREA);                                          11009594
+                                                     /* EOC RB01342 */  11010094
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11020000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0275';                              11030000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MQ';                                11040000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = SUBSTR(MQ_INPUT_QUEUE,1,25);         11050000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'Q2';  /* NO OF MSG PROCESSED        11060000
+                                                       SUCCESSFULLY */  11070000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_MQ_MSG_SUCCES;       11080000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11090000
+                                                                        11100000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'MQ';                                11110000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = SUBSTR(MQ_INPUT_QUEUE,1,25);         11120000
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'Q3';  /* NO OF MSG SKIPPED          11130000
+                                           AS IT NOT REQUESTED TYPE */  11140000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_SKIP_TYPE_NOTREQ;    11150000
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = WRK_CNT_PIC;                         11160000
+                                                                        11170000
+  PARM_INT_AREA.MSG_VAR_CODE_10  = 'MQ';                                11180000
+  PARM_INT_AREA.MSG_VAR_VALUE_10 = SUBSTR(MQ_INPUT_QUEUE,1,25);         11190000
+  PARM_INT_AREA.MSG_VAR_CODE_11  = 'Q4';  /* NO OF MSG SKIPPED          11200000
+                                         DUE TO STATUS IS NOT FINAL */  11210000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_SKIP_STATUSF;        11220000
+  PARM_INT_AREA.MSG_VAR_VALUE_11 = WRK_CNT_PIC;                         11230000
+                                                                        11240000
+  PARM_INT_AREA.MSG_VAR_CODE_12  = 'MQ';                                11250000
+  PARM_INT_AREA.MSG_VAR_VALUE_12 = SUBSTR(MQ_INPUT_QUEUE,1,25);         11260000
+  PARM_INT_AREA.MSG_VAR_CODE_13  = 'Q5';  /* NO OF MSG SKIPPED          11270000
+                                              DUE TO INVALID FORMAT */  11280000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_MQ_MSG_FORMAF;       11290000
+  PARM_INT_AREA.MSG_VAR_VALUE_13 = WRK_CNT_PIC;                         11300000
+                                                                        11310000
+  PARM_INT_AREA.MSG_VAR_CODE_14  = 'MQ';                                11320000
+  PARM_INT_AREA.MSG_VAR_VALUE_14 = SUBSTR(MQ_INPUT_QUEUE,1,25);         11330000
+  PARM_INT_AREA.MSG_VAR_CODE_15  = 'Q6';  /* NO OF MSG REJECTED         11340000
+                                             DUE TO DATA VIOLATION  */  11350000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_MQ_MSG_REJ;          11360000
+  PARM_INT_AREA.MSG_VAR_VALUE_15 = WRK_CNT_PIC;                         11370000
+  CALL RCB0M1M (PTR_INT_AREA);                                          11380000
+                                                                        11390000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11400000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0276';                              11410000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MG';                                11420000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'MODEL_UPDATE';                      11430000
+                                          /* NO OF COUNTRY SPECIFIC     11440000
+                                                      DATA REJECTED */  11450000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_CTRY_SPEC_REJ;       11460000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'CD';                                11470000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11480000
+                                                      /* SOC RB01342 */ 11481086
+  PARM_INT_AREA.MSG_VAR_CODE_8  = 'MG';                                 11482086
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = 'SEO_UPDATE';                        11483086
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_CTRY_SPEC_REJ_SEO;   11484086
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'CD';                                11485086
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = WRK_CNT_PIC;                         11486086
+                                                      /* EOC RB01342 */ 11487086
+  CALL RCB0M1M (PTR_INT_AREA);                                          11490000
+                                                                        11500000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11501000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0277';                              11510000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MG';                                11520000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'MODEL_UPDATE';                      11530000
+                                          /* NO OF MSG REJECTED WHICH   11540000
+                                                     HAS NO WW DATA */  11550000
+                                                     /* SOC RC01319 */  11550100
+  /*                                                                    11550200
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_REJ_WW_NOTFND;    */ 11551000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND;  11560000
+                                                     /* EOC RC01319 */  11561000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'CD'                                 11570000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11580000
+                                                     /* SOC RC01319 */  11580100
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND;  11581000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'CD'                                 11582000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         11583000
+                                                     /* EOC RC01319 */  11584000
+                                                     /* SOC RB01342 */  11585087
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'MG';                                11586087
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = 'SEO_UPDATE';                        11587087
+  WRK_CNT_PIC                    =                                      11588087
+                             MQ_COUNT_DET.NO_REJ_CTRY_WW_NOTFND_SEO;    11589087
+  PARM_INT_AREA.MSG_VAR_CODE_10  = 'CD'                                 11589187
+  PARM_INT_AREA.MSG_VAR_VALUE_10 = WRK_CNT_PIC;                         11589287
+                                                                        11589387
+  WRK_CNT_PIC                    =                                      11589487
+                             MQ_COUNT_DET.NO_REJ_LANG_WW_NOTFND_SEO;    11589587
+  PARM_INT_AREA.MSG_VAR_CODE_11  = 'CD'                                 11589687
+  PARM_INT_AREA.MSG_VAR_VALUE_11 = WRK_CNT_PIC;                         11589787
+                                                     /* EOC RB01342 */  11589887
+  CALL RCB0M1M (PTR_INT_AREA);                                          11590000
+                                                                        11600000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11610000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0278';                              11620000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MG';                                11630000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'MODEL_UPDATE';                      11640000
+                                          /* NO OF MSG SKIPPED AS       11650000
+          IT CONTAINS ONLY CONTRY DATA AND IS NOT REQUESTED COUNTRY */  11660000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ;    11670000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'CD'                                 11680000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11690000
+                                                     /* SOC RB01342 */  11691087
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'MG';                                11692087
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = 'SEO_UPDATE';                        11693087
+  WRK_CNT_PIC                    =                                      11694087
+                                 MQ_COUNT_DET.NO_SKIP_CTRY_NOTREQ_SEO;  11695087
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'CD'                                 11696087
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = WRK_CNT_PIC;                         11697087
+                                                     /* EOC RB01342 */  11698087
+  CALL RCB0M1M (PTR_INT_AREA);                                          11700000
+                                                                        11710000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11720000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0212';                              11730000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                11740000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBT0693_TYPE_MOD_WW_LVL';          11750000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'IN';  /* NO OF RECORDS INSERT   */  11760000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T693_INSERTS;           11770000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11780000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'UP';  /* NO OF RECORDS UPDATE   */  11850000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T693_UPDATES;           11860000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         11870000
+  CALL RCB0M1M (PTR_INT_AREA);                                          11880000
+                                                                        11890000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11900000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0212';                              11910000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                11920000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBT0694_TYPE_MOD_CTRY_LVL';        11930000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'IN';  /* NO OF RECORDS INSERT   */  11940000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T694_INSERTS;           11950000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11960000
+                                                                        11980000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'UP';  /* NO OF RECORDS UPDATE   */  12030000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T694_UPDATES;           12040000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         12050000
+  CALL RCB0M1M (PTR_INT_AREA);                                          12060000
+                                                                        12070000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  12080000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0212';                              12090000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                12100000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBT0695_TRANS_INT_ISO_CTRY';       12110000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'IN';  /* NO OF RECORDS INSERT   */  12120000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T695_INSERTS;           12130000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         12140000
+                                                                        12160000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'UP';  /* NO OF RECORDS UPDATE   */  12210000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T695_UPDATES;           12220000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         12230000
+  CALL RCB0M1M (PTR_INT_AREA);                                          12240000
+                                                                        12250000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  12260000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0212';                              12270000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                12280000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBT0696_TYPE_MOD_DESC';            12290000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'IN';  /* NO OF RECORDS INSERT   */  12300000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T696_INSERTS;           12310000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         12320000
+                                                                        12340000
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'UP';  /* NO OF RECORDS UPDATE   */  12390000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T696_UPDATES;           12400000
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         12410000
+  CALL RCB0M1M (PTR_INT_AREA);                                          12420000
+                                                                        12430000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  12440000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0279';                              12450000
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'MG';                                12460000
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'GENERALAREA_UPDATE';                12470000
+                                          /* NO OF RECORDS REJECTS  */  12480000
+  WRK_CNT_PIC                    = MQ_COUNT_DET.NO_INVALID_DATA_REJ;    12490000
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'CD'                                 12500000
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         12510000
+  CALL RCB0M1M (PTR_INT_AREA);                                          12520000
+                                                                        12530000
+                                                                        12540000
+  DO J = 1 TO MQ_COUNT_DET.NO_CNTRY_NOT_REQ; /* LIST OF CONTRIES NOT    12550000
+                                                          REQUESTED */  12560000
+    PARM_INT_AREA.MSG_VAR_CODES    = '';                                12570000
+    PARM_INT_AREA.MESSAGE_NUMBER   = '0181';                            12580000
+    PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';                              12590000
+    PARM_INT_AREA.MSG_VAR_VALUE_6  = MQ_COUNT_DET.LIST_CTRY_NOT_REQ(J); 12600000
+    PARM_INT_AREA.MSG_VAR_CODE_7   = '';                                12610000
+    PARM_INT_AREA.MSG_VAR_VALUE_7  = '';                                12620000
+    CALL RCB0M1M (PTR_INT_AREA);                                        12630000
+  END;                                                                  12640000
+                                                      /* SOC RB01342 */ 12641087
+  DO J = 1 TO MQ_COUNT_DET.NO_CNTRY_NOT_REQ_SEO; /* LIST OF CONTRIES NOT12642087
+                                                   REQUESTED FOR SEO */ 12643099
+    PARM_INT_AREA.MSG_VAR_CODES    = '';                                12644087
+    PARM_INT_AREA.MESSAGE_NUMBER   = '0181';                            12645087
+    PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';                              12646087
+    PARM_INT_AREA.MSG_VAR_VALUE_6  =                                    12647087
+                 MQ_COUNT_DET.LIST_CTRY_NOT_REQ_SEO(J);                 12648087
+    PARM_INT_AREA.MSG_VAR_CODE_7   = 'MG';                              12649087
+    PARM_INT_AREA.MSG_VAR_VALUE_7  = 'SEO_UPDATE';                      12649187
+    CALL RCB0M1M (PTR_INT_AREA);                                        12649287
+  END;                                                                  12649399
+  /* SEO_UPDATE ROWS INSERTED OR UPDATED */                             12649499
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  12649599
+  PARM_INT_AREA.MESSAGE_TYPE     = 'BU';                                12649699
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0328';                              12649799
+  /* T693 */                                                            12649899
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                12649999
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBT0693_TYPE_MOD_WW_LVL';          12650099
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'IN';  /* NO OF RECORDS INSERT   */  12650199
+  WRK_CNT_PIC                    = WRK_SEO_IN_693;                      12650299
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         12650399
+  PARM_INT_AREA.MSG_VAR_CODE_8   = 'UP';  /* NO OF RECORDS UPDATE   */  12650499
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T693_UPDATES_SEO +      12650599
+                                   WRK_SEO_UP_693;                      12650699
+  PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_CNT_PIC;                         12650799
+  /* T694 */                                                            12650899
+  PARM_INT_AREA.MSG_VAR_CODE_9   = 'DB';                                12650999
+  PARM_INT_AREA.MSG_VAR_VALUE_9  = 'RCBT0694_TYPE_MOD_CTRY_LVL';        12651099
+  PARM_INT_AREA.MSG_VAR_CODE_10  = 'IN';  /* NO OF RECORDS INSERT   */  12651199
+  WRK_CNT_PIC                    = WRK_SEO_IN_694;                      12651299
+  PARM_INT_AREA.MSG_VAR_VALUE_10 = WRK_CNT_PIC;                         12651399
+  PARM_INT_AREA.MSG_VAR_CODE_11  = 'UP';  /* NO OF RECORDS UPDATE   */  12651499
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T694_UPDATES_SEO +      12651599
+                                   WRK_SEO_UP_694;                      12651699
+  PARM_INT_AREA.MSG_VAR_VALUE_11 = WRK_CNT_PIC;                         12651799
+  /* T696 */                                                            12651899
+  PARM_INT_AREA.MSG_VAR_CODE_12  = 'DB';                                12651999
+  PARM_INT_AREA.MSG_VAR_VALUE_12 = 'RCBT0696_TYPE_MOD_DESC';            12652099
+  PARM_INT_AREA.MSG_VAR_CODE_13  = 'IN';  /* NO OF RECORDS INSERT   */  12652199
+  WRK_CNT_PIC                    = WRK_SEO_IN_696;                      12652299
+  PARM_INT_AREA.MSG_VAR_VALUE_13 = WRK_CNT_PIC;                         12652399
+  PARM_INT_AREA.MSG_VAR_CODE_14  = 'UP';  /* NO OF RECORDS UPDATE   */  12652499
+  WRK_CNT_PIC                    = MQ_COUNT_DET.T694_UPDATES_SEO +      12652599
+                                   WRK_SEO_UP_696;                      12652699
+  PARM_INT_AREA.MSG_VAR_VALUE_14 = WRK_CNT_PIC;                         12652799
+  CALL RCB0M1M (PTR_INT_AREA);                       /* EOC RB01342 */  12652899
+                                                                        12653000
+ END GENERATE_REPORT;                                                   12660000
+1/********************************************************************/ 12670000
+ /*                                                                  */ 12680000
+ /* MODULE NAME      : MQ_CLOSE_QUEUE                                */ 12690000
+ /*                                                                  */ 12700000
+ /* DESCRIPTION      : CLOSE MQ QUEUE                                */ 12710000
+ /*                                                                  */ 12720000
+ /*                                                                  */ 12730000
+ /********************************************************************/ 12740000
+ MQ_CLOSE_QUEUE: PROC;                                                  12750000
+  /* CLOSE MQUEUE                                                    */ 12760000
+                                                                        12770000
+ CALL MQDISC(HCONN,                                                     12780000
+             COMPCODE,                                                  12790000
+             REASON);                                                   12800000
+                                                                        12810000
+ IF ((COMPCODE ¬= MQCC_OK) | (REASON ¬= MQRC_NONE)) THEN                12820000
+   DO;                                                                  12830000
+      PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                    12840000
+      PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0272';                  12850000
+      PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                     12860000
+      CALL RCB0M1M (PTR_INT_AREA);                                      12870000
+      CALL RCBBEKM_ERROR ( NULL,                                        12880000
+                          'OTHER',                                      12890000
+                          '#008');                                      12900000
+   END;                                                                 12910000
+                                                                        12920000
+ END MQ_CLOSE_QUEUE;                                                    12930060
+                                                     /* SOC RC01345  */ 12930172
+ /********************************************************************/ 12931060
+ /*                                                                  */ 12932052
+ /* MODULE NAME      : OPEN_RCBV0769_REFRESH                         */ 12933052
+ /*                                                                  */ 12934052
+ /* DESCRIPTION      : OPEN THE CURSOR WHEN THE COUNT IN TABLE DOES  */ 12935052
+ /*                    NOT MATCH WITH THE COUNT IN THE XML FOR       */ 12936052
+ /*                    REFRESH                                       */ 12937052
+ /*                                                                  */ 12938052
+ /********************************************************************/ 12939052
+ OPEN_RCBV0769_REFRESH: PROC;                                           12939152
+                                                                        12939252
+  EXEC SQL                                                              12939352
+    OPEN CURS_RCBV0769_REFRESH;                                         12939452
+                                                                        12939552
+  SELECT(SQLCODE);                                                      12939652
+    WHEN (0);                                                           12939752
+    OTHERWISE                                                           12939852
+    DO;                                                                 12939952
+      ERROR_CODE_DET.PTR_ERROR = ADDR(SQLCA);                           12940052
+      ERROR_CODE_DET.ERR_TYPE  ='DB2';                                  12940152
+       ERROR_CODE_DET.CALL_ID   ='#014';                                12940260
+       SIGNAL ERROR;                                                    12940352
+     END;                                                               12940452
+   END;                                                                 12940552
+                                                                        12940652
+  END OPEN_RCBV0769_REFRESH;                                            12940752
+ /********************************************************************/ 12940852
+ /*                                                                  */ 12940952
+ /* MODULE NAME      : FETCH_CUR_RCBV0769_REFRESH                    */ 12941052
+ /*                                                                  */ 12941152
+ /* DESCRIPTION      : FETCH THE CURSOR FOR CURS_RCBV0769_REFRESH    */ 12941252
+ /*                                                                  */ 12941352
+ /********************************************************************/ 12941452
+ FETCH_CUR_RCBV0769_REFRESH: PROC;                                      12941552
+                                                                        12941652
+   EXEC SQL                                                             12941752
+     FETCH CURS_RCBV0769_REFRESH                                        12941852
+       INTO  :TB_MSG_CREATE_DATE,                                       12941952
+             :TB_MSG_ENTITY_ID,                                         12942061
+             :WRK_MSG_TYPE                                              12942161
+   ;                                                                    12942252
+                                                                        12942366
+   SELECT (SQLCODE);                                                    12942652
+     WHEN(0)                                                            12942752
+       DO;                                                              12942852
+          /* 0290: RECORD NOT PRESENT IN XML FILE */                    12942952
+                                                                        12943052
+        PARM_INT_AREA.MSG_VAR_CODES    = '';                            12943199
+        PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                          12943277
+        PARM_INT_AREA.MESSAGE_NUMBER   = '0290';                        12943377
+        PARM_INT_AREA.MSG_VAR_CODE_6   = 'TP';                          12943477
+        PARM_INT_AREA.MSG_VAR_VALUE_6  = TB_MSG_CREATE_DATE;            12943577
+        PARM_INT_AREA.MSG_VAR_CODE_7   = 'EI';                          12943677
+        PARM_INT_AREA.MSG_VAR_VALUE_7  = TB_MSG_ENTITY_ID;              12943777
+        PARM_INT_AREA.MSG_VAR_CODE_8   = 'ET';                          12943877
+                                                                        12943952
+        PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_MSG_TYPE;                  12944077
+        CALL RCB0M1M (PTR_INT_AREA);                                    12944177
+       END;                                                             12944252
+                                                                        12944352
+     WHEN(100)                                                          12944452
+       SWITCH_END_OF_CURS_REF = TRUE;                                   12944552
+     OTHERWISE                                                          12944652
+      DO;                                                               12944752
+         ERROR_CODE_DET.PTR_ERROR = ADDR(SQLCA);                        12944852
+         ERROR_CODE_DET.ERR_TYPE  ='DB2';                               12944952
+         ERROR_CODE_DET.CALL_ID   ='#015';                              12945060
+             SIGNAL ERROR;                                              12945152
+      END;                                                              12945278
+   END;                                                                 12945378
+  END FETCH_CUR_RCBV0769_REFRESH;                                       12945452
+ /********************************************************************/ 12945552
+ /*                                                                  */ 12946052
+ /* MODULE NAME      : CLOSE_RCBV0769_REFRESH                        */ 12950052
+ /*                                                                  */ 12960052
+ /* DESCRIPTION      : CLOSE CURSOR CURS_RCBV0769_REFRESH            */ 12970052
+ /*                                                                  */ 12980052
+ /********************************************************************/ 12990052
+ CLOSE_RCBV0769_REFRESH: PROC;                                          13000052
+                                                                        13001052
+  EXEC SQL                                                              13002052
+    CLOSE CURS_RCBV0769_REFRESH;                                        13003052
+                                                                        13004052
+  SELECT (SQLCA.SQLCODE);                                               13005052
+    WHEN (0);                                                           13006052
+    OTHERWISE                                                           13007052
+      DO;                                                               13008052
+         ERROR_CODE_DET.PTR_ERROR = ADDR(SQLCA);                        13009052
+         ERROR_CODE_DET.ERR_TYPE  ='DB2';                               13009152
+         ERROR_CODE_DET.CALL_ID   ='#016';                              13009260
+         SIGNAL ERROR;                                                  13009352
+      END;                                                              13009452
+  END;                                                                  13009552
+                                                                        13009652
+ END CLOSE_RCBV0769_REFRESH;                         /* EOC RC01345  */ 13009772
+1/********************************************************************/ 13009852
+ /*                                                                  */ 13009952
+ /* MODULE NAME      : CLEANUP_T769_PROCESS                          */ 13010052
+ /*                                                                  */ 13010152
+ /* DESCRIPTION      : DELETE OLDER RECORDS FROM TABLE T769          */ 13010252
+ /*                                                                  */ 13010352
+ /********************************************************************/ 13010452
+ CLEANUP_T769_PROCESS :PROC;                                            13011000
+                                                                        13020000
+ IF T769_DEL_DAYS = 0 THEN                                              13030000
+    WRK_TIMESTAMP_D = CALC_DATE (WRK_CREATION_DATE,'D',15) ||           13040000
+                                           '-00.00.00.000000';          13050000
+ ELSE                                                                   13060000
+    WRK_TIMESTAMP_D = CALC_DATE (WRK_CREATION_DATE,'D',T769_DEL_DAYS) ||13070000
+                                           '-00.00.00.000000';          13080000
+                                                                        13080135
+ IF T769_DEL_WEEKS = 0 THEN                                             13100000
+    WRK_TIMESTAMP_W = CALC_DATE (WRK_CREATION_DATE,'W',8) ||            13110000
+                                           '-00.00.00.000000';          13120000
+ ELSE                                                                   13130000
+    WRK_TIMESTAMP_W= CALC_DATE (WRK_CREATION_DATE,'W',T769_DEL_WEEKS)|| 13140000
+                                           '-00.00.00.000000';          13150000
+                                                                        13160000
+    CALL DELETE_T769_OIMS_LOG;                                          13170000
+                                                                        13180000
+ END CLEANUP_T769_PROCESS;                                              13190000
+ /********************************************************************/ 13200000
+ /*                                                                  */ 13210000
+ /* MODULE NAME      : CALC_DATE                                     */ 13220000
+ /*                                                                  */ 13230000
+ /* DESCRIPTION      : PROCESS DATE USING RCB004M                    */ 13240000
+ /*                                                                  */ 13250000
+ /********************************************************************/ 13260000
+ CALC_DATE: PROC   (IN_DATE,                                            13270000
+                    CALC_TYPE,                                          13280000
+                    CALC_VALUE) RETURNS(CHAR(10));                      13290000
+                                                                        13300000
+ DCL IN_DATE      CHAR(10);                                             13310000
+ DCL CALC_TYPE    CHAR(1);                                              13320000
+ DCL CALC_VALUE   FIXED DEC(3,0);                                       13330000
+                                                                        13340000
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';                                      13350000
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';                                      13360000
+ DATE_AREA.WD_FUNCTION    = 'C';                                        13370000
+ DATE_AREA.WD_PERIOD_TYPE = CALC_TYPE;                                  13380000
+ DATE_AREA.WD_PERIOD      = (-1) * CALC_VALUE;                          13390000
+ DATE_AREA.WD_IN_DATE     = IN_DATE;                                    13400000
+                                                                        13410000
+ CALL RCB004M (ADDR (DATE_AREA));;                                      13420000
+                                                                        13430000
+ IF DATE_AREA.WD_STATUS  ¬= ' '                                         13440000
+ THEN                                                                   13450000
+     CALL RCBBEKM_ERROR ( NULL,                                         13460000
+                          'OTHER',                                      13470000
+                          '#009' );                                     13480000
+                                                                        13490000
+ RETURN(DATE_AREA.WD_OUT_DATE);                                         13500000
+                                                                        13510000
+ END CALC_DATE;                                                         13520000
+                                                                        13530000
+1/********************************************************************/ 13540000
+ /*                                                                  */ 13550000
+ /* MODULE NAME      : DELETE_T769_OIMS_LOG                          */ 13560000
+ /*                                                                  */ 13570000
+ /* DESCRIPTION      : DELETE RECORDS FROM TABLE T769 OLDER THAN     */ 13580000
+ /*                    DEFAULT DAYS (15) /NO OF DAYS PASSED FROM PARM*/ 13590000
+ /*                    AND RECONCILE_FLAG IS 'Y' OR                  */ 13600000
+ /*                    DEFAULT WEEKS(8) /NO OF WEEKS PASSED FROM PARM*/ 13610000
+ /********************************************************************/ 13620000
+ DELETE_T769_OIMS_LOG: PROC;                                            13630000
+                                                                        13640000
+   EXEC SQL                                                             13650000
+        DELETE FROM RCBV0769_OIMS_MSG_LOG                               13660000
+        WHERE MSG_CREATE_DATE <=:WRK_TIMESTAMP_W                        13670000
+          OR (MSG_CREATE_DATE <=:WRK_TIMESTAMP_D                        13680000
+          AND RECONCILED_FLAG_OK = 'Y');                                13690000
+                                                                        13700000
+   SELECT (SQLCA.SQLCODE);                                              13710000
+     WHEN (0)                                                           13720000
+        DO;                                                             13730000
+          PARM_INT_AREA.MSG_VAR_CODES        = '';                      13740000
+          WRK_NR_OF_DELETIONS                = SQLCA.SQLERRD(3);        13750000
+          PARM_INT_AREA.MESSAGE_TYPE         = 'IS';                    13760000
+          PARM_INT_AREA.MESSAGE_NUMBER       = '0176';                  13770000
+          PARM_INT_AREA.MSG_VAR_CODE_6       = 'DB';                    13780000
+          PARM_INT_AREA.MSG_VAR_VALUE_6      = 'RCBT0769_OIMS_MSG_LOG'; 13790000
+          PARM_INT_AREA.MSG_VAR_CODE_7       = 'C7';                    13800000
+          WRK_PIC_10 = WRK_NR_OF_DELETIONS;                             13810000
+          PARM_INT_AREA.MSG_VAR_VALUE_7      = WRK_PIC_10;              13820000
+          CALL RCB0M1M (PTR_INT_AREA);                                  13830000
+        END;                                                            13840000
+     WHEN (+100)                                                        13850000
+        DO;                                                             13860000
+          PARM_INT_AREA.MSG_VAR_CODES        = '';                      13870000
+          WRK_NR_OF_DELETIONS                = SQLCA.SQLERRD(3);        13880000
+          PARM_INT_AREA.MESSAGE_TYPE         = 'IS';                    13890000
+          PARM_INT_AREA.MESSAGE_NUMBER       = '0176';                  13900000
+          PARM_INT_AREA.MSG_VAR_CODE_6       = 'DB';                    13910000
+          PARM_INT_AREA.MSG_VAR_VALUE_6      = 'RCBT0769_OIMS_MSG_LOG'; 13920000
+          PARM_INT_AREA.MSG_VAR_CODE_7       = 'C7';                    13930000
+          WRK_PIC_10                         = WRK_NR_OF_DELETIONS;     13940000
+          PARM_INT_AREA.MSG_VAR_VALUE_7      = WRK_PIC_10;              13950000
+          CALL RCB0M1M (PTR_INT_AREA);                                  13960000
+        END;                                                            13970000
+     OTHERWISE                                                          13980000
+          CALL RCBBEKM_ERROR ( ADDR (SQLCA),                            13990000
+                               'DB2',                                   14000000
+                               '#010');                                 14010000
+   END;                                                                 14020000
+ END DELETE_T769_OIMS_LOG;                                              14030000
+1/********************************************************************/ 14040000
+ /*                                                                  */ 14050000
+ /* MODULE NAME      : MQ_ROLLBACK                                   */ 14060000
+ /*                                                                  */ 14070000
+ /* DESCRIPTION      : THIS FUNCTION BACKS OUT ALL MQ SERIES MESSAGES*/ 14080000
+ /*                                                                  */ 14090000
+ /*********************************************************************/14100000
+ MQ_ROLLBACK : PROC;                                                    14110000
+                                                                        14120000
+   CALL MQBACK(HCONN,                                                   14130000
+               COMPCODE,                                                14140000
+               REASON);                                /* MQ BACKOUT */ 14150000
+                                                                        14160000
+   IF ((COMPCODE ¬= MQCC_OK) | (REASON ¬= MQRC_NONE)) THEN              14170000
+     DO;                                                                14180000
+        PARM_INT_AREA.MESSAGE_TYPE             = 'IS';                  14190000
+        PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0273';                14200000
+        PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                   14210000
+        CALL RCB0M1M (PTR_INT_AREA);                                    14220000
+        CALL RCBBEKM_ERROR ( NULL,                                      14230000
+                            'OTHER',                                    14240000
+                            '#011');                                    14250000
+     END;                                                               14260000
+                                                                        14270000
+ END MQ_ROLLBACK;                                                       14280000
+1/********************************************************************/ 14290000
+ /*                                                                  */ 14300000
+ /* MODULE NAME      : RCBBEKM_END_PROG                              */ 14310000
+ /*                                                                  */ 14320000
+ /* DESCRIPTION      : ENDING ACTIONS FOR THE PROGRAM                */ 14330000
+ /*                                                                  */ 14340000
+ /********************************************************************/ 14350000
+ RCBBEKM_END_PROG : PROC;                                               14360000
+                                                                        14370000
+  CLOSE FILE(RCBBEK0);                                                  14380000
+                                                                        14390000
+  PARM_INT_AREA.COUNTRY_NUMBER   = '';                                  14400000
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  14410000
+  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                14420000
+                                                                        14430000
+  PARM_INT_AREA.MSG_VAR_CODES    = ' ';                                 14440000
+  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                14450000
+  PARM_INT_AREA.MESSAGE_NUMBER   = '9999';                              14460000
+  CALL RCB0M1M (PTR_INT_AREA);                                          14470000
+                                                                        14480000
+  PARM_INT_AREA.MSG_REQUEST      = 'C';                                 14490000
+  CALL RCB0M1M(PTR_INT_AREA);                                           14500000
+                                                                        14510000
+  IF MQ_COUNT_DET.NO_MQ_MSG_REJ  > 0 THEN                               14520000
+     CALL PLIRETC (3);                                                  14530000
+                                                                        14540000
+ END RCBBEKM_END_PROG;                                                  14550000
+1/********************************************************************/ 14560000
+ /*                                                                  */ 14570000
+ /* MODULE NAME      : RCBBEKM_ERROR                                 */ 14580000
+ /*                                                                  */ 14590000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 14600000
+ /*                    THE INPUT VARIABLES                           */ 14610000
+ /*                                                                  */ 14620000
+ /********************************************************************/ 14630000
+0RCBBEKM_ERROR: PROC     (PTR_ERROR1,                                   14640000
+                          ERR_TYPE1,                                    14650000
+                          CALL_ID1);                                    14660000
+ DCL PTR_ERROR1    PTR;                                                 14670000
+ DCL ERR_TYPE1     CHAR(8);                                             14680000
+ DCL CALL_ID1      CHAR(4);                                             14690000
+                                                                        14700000
+ ERROR_CODE_DET.PTR_ERROR     = PTR_ERROR1;                             14710000
+ ERROR_CODE_DET.ERR_TYPE      = ERR_TYPE1;                              14720000
+ ERROR_CODE_DET.CALL_ID       = CALL_ID1;                               14730000
+                                                                        14740000
+ PARM_INT_AREA.PTR_ERROR      = NULL();         /* SOC CEDS00000582 */  14740100
+ PARM_INT_AREA.PTR_ERROR      = ERROR_CODE_DET.PTR_ERROR;               14740200
+ PARM_INT_AREA.ERR_TYPE       = ERROR_CODE_DET.ERR_TYPE;                14740300
+ PARM_INT_AREA.CALL_ID        = ERROR_CODE_DET.CALL_ID;                 14740400
+ CALL RCB0E1M (ADDR(PARM_INT_AREA));            /* EOC CEDS00000582 */  14741000
+                                                                        14743000
+ SIGNAL ERROR;                                                          14750000
+                                                                        14760000
+0END RCBBEKM_ERROR;                                                     14770000
+                                                                        14780000
+1/*******************************************************************/  14790000
+ /*  DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                   */  14800000
+ /*******************************************************************/  14810000
+0%INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  14820000
+ $DAIMOD (RCBBEKM);                      /* MODULE TO BE COMPILED   */  14830000
+0/*******************************************************************/  14840000
+ /* END OF ABR BLOCK                                                */  14850000
+ /*******************************************************************/  14860000
+ END RCBBEKM;                                                           14870000

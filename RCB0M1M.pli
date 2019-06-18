@@ -1,0 +1,705 @@
+ /* RCB0M1M - COMMON MESSAGE ROUTINE                                 */ 00020021
+ /********************************************************************/ 00021021
+ /*                                                                  */ 00030000
+ /* MODULE NAME      : RCB0M1M                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* LANGUAGE         : PLI                                           */ 00060000
+ /*                                                                  */ 00070000
+ /* TYPE             : LINKABLE MODULE                               */ 00080000
+ /*                                                                  */ 00090000
+ /* DESCRIPTION      : THE COMMON MESSAGE ROUTINE HANDLES ALL        */ 00100000
+ /*                    MESSAGES TO BE SEND                           */ 00110000
+ /*                                                                  */ 00120000
+ /* INPUT            : - PARAMETER INTERFACE (FROM CALLING MODULE)   */ 00130000
+ /*                    - DB2  : RCBT0510_MSG_DESCR                   */ 00140000
+ /*                                                                  */ 00150000
+ /* OUTPUT           : - IMS  : ALTERNATE PCB                        */ 00160000
+ /*                    - FILE : RCB0M10                              */ 00170000
+ /*                             SYSPRINT                             */ 00180000
+ /*                                                                  */ 00190000
+ /* SEC TRANSACTIONS : ----                                          */ 00200000
+ /*                                                                  */ 00210000
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00220000
+ /*                    - RCB0M2M   RETRIEVE MESSAGE DESCRIPTION      */ 00230000
+ /*                    - RCB0M3M   RETRIEVE MESSAGE PRIORITY         */ 00240000
+ /*                    - RCB0M4M   RETRIEVE COUNTRY LANGUAGE         */ 00250000
+ /*                    - RCB0M5M   WRITE TO ALT PCB                  */ 00260000
+ /*                    - RCB0M6M   INSERT MESSAGE ISSUED             */ 00270000
+ /*                                                                  */ 00280000
+ /* SCREENS          : ----                                          */ 00290000
+ /*                                                                  */ 00300000
+ /* MESSAGES         : M001,M002                                     */ 00310000
+ /*                                                                  */ 00320000
+ /* DEPENDENCIES     : ----                                          */ 00330000
+ /*                                                                  */ 00340000
+ /* FREQUENCY        : ----                                          */ 00350000
+ /*                                                                  */ 00360000
+ /* NOTE: REQUEST IS  'O'  - OPEN MESSAGE FILE                       */ 00370000
+ /*                   'P'  - SEND MESSAGE                            */ 00380000
+ /*                   'C'  - CLOSE MESSAGE FILE                      */ 00390000
+ /*       TARGET IS   'A'  - ALTERNATE PCB(ONLINE)                   */ 00400000
+ /*                   'F'  - MESSAGE FILE(BATCH)                     */ 00410000
+ /*                   'S'  - SYSPRINT(BATCH)                         */ 00420000
+ /*                   'T'  - MESSAGE TABLE(ONLINE)                   */ 00430000
+ /*                                                                  */ 00440000
+ /*       TARGET IS DEFINED BOTH IN PROGRAM AND IN MESSAGE TABLE     */ 00450000
+ /*       TARGET CAN BE CHANGED IN THE MESSAGE TABLE:                */ 00460000
+ /*       ONLINE:     'A'         - TO ALT PCB                       */ 00470000
+ /*                   'B'         - TO ALT PCB AND TO TABLE          */ 00480000
+ /*                   'X'         - SUPPRESS MESSAGE (PRIORITY ¬= 1) */ 00490000
+ /*       BATCH:      'Y'         - SEND TO SYSPRINT AND TO FILE     */ 00500000
+ /*                   'X'         - SUPPRESS MESSAGE (PRIORITY ¬= 1) */ 00510000
+ /*                   ' '         - SUPPRESS OR SEND TO FILE         */ 00520000
+ /*                                  (DEPENDS ON PROGRAM DESTINATION)*/ 00530000
+ /*                                                                  */ 00540000
+ /*  MAINTENANCE LOG :                                               */ 00550000
+ /*  ---------------                                                 */ 00560000
+ /*                                                                  */ 00570000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00580000
+ /*  --------------------------------------------------------------  */ 00590000
+ /*  05021992 | ----         | CEDS INITIAL DEVELOPMENT              */ 00600000
+ /*  14-05-93 | CEDS 2.0     | NAME CHANGE PLINCL POINTERS ETC.      */ 00610000
+ /*  20-09-93 | CED0009      | MONITOR FUNCTION OPTION Z REMOVED FROM*/ 00620000
+ /*           |              | TARGET CAN BE CHANGED LIST            */ 00630000
+ /*  10-03-94 | CED0014      | WRITE TO TABLES IN BATCH DISABLED     */ 00640000
+ /*  11-12-95 | PTM 0890     | SEE PTM DESCRIPTION                   */ 00650000
+ /*           |              |                                       */ 00660000
+ /*                                                                  */ 00670000
+ /********************************************************************/ 00680000
+1RCB0M1M: PROC    (PTR_INT_AREA)                                        00690000
+          REORDER;                                                      00700000
+0DEFAULT RANGE(*) STATIC;                                               00710000
+1/********************************************************************/ 00720000
+ /*  PARAMETERS                                                      */ 00730000
+ /********************************************************************/ 00740000
+0DCL PTR_INT_AREA            PTR;                                       00750000
+1/********************************************************************/ 00760000
+ /* FILE DECLARATIONS (NON GSAM)                                     */ 00770000
+ /********************************************************************/ 00780000
+0DCL RCB0M10  FILE RECORD OUTPUT;                                       00790000
+1/********************************************************************/ 00800000
+ /* EXTERNAL ENTRIES                                                 */ 00810000
+ /********************************************************************/ 00820000
+0DCL RCB0E1M   ENTRY  EXTERNAL;                                         00830000
+0DCL RCB0M2M   ENTRY  EXTERNAL;                                         00840000
+ DCL RCB0M3M   ENTRY  EXTERNAL;                                         00850000
+ DCL RCB0M4M   ENTRY  EXTERNAL;                                         00860000
+ DCL RCB0M5M   ENTRY  EXTERNAL;                                         00870000
+ DCL RCB0M6M   ENTRY  EXTERNAL;                                         00880000
+0/********************************************************************/ 00890000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00900000
+ /********************************************************************/ 00910000
+0DCL 1 PARM_INT_AREA      BASED(PTR_INT_AREA),                          00920000
+       %INCLUDE (RCBZ01S);;                                             00930000
+0DCL 1 PARM_RET_AREA_BB,                                                00940000
+       %INCLUDE (RCBZ02S);;                                             00950000
+0DCL 1 PARM_DATE_CALC,                                                  00960000
+      %INCLUDE (RCBZ03S);;                                              00970000
+1/********************************************************************/ 00980000
+ /* DB2 TABLE STRUCTURES                                             */ 00990000
+ /********************************************************************/ 01000000
+0DCL 1 TB_RCBV510,                                                      01010000
+       %INCLUDE (RCB510S);;                                             01020000
+ DCL 1 TB_RCBV510_I,                                                    01030000
+       %INCLUDE (RCB510SI);;                                            01040000
+0DCL 1 TB_RCBV520,                                                      01050000
+       %INCLUDE (RCB520S);;                                             01060000
+ DCL 1 TB_RCBV520_I,                                                    01070000
+       %INCLUDE (RCB520SI);;                                            01080000
+0DCL 1 TB_RCBV540,                                                      01090000
+       %INCLUDE (RCB540S);;                                             01100000
+ DCL 1 TB_RCBV540_I,                                                    01110000
+       %INCLUDE (RCB540SI);;                                            01120000
+0DCL 1 TB_RCBV550,                                                      01130000
+       %INCLUDE (RCB550S);;                                             01140000
+ DCL 1 TB_RCBV550_I,                                                    01150000
+       %INCLUDE (RCB550SI);;                                            01160000
+0/********************************************************************/ 01170000
+ /*  RECORD STRUCTURES FOR OUTPUT FILES                              */ 01180000
+ /********************************************************************/ 01190000
+0DCL 1 FILE_RCB0M10,                                                    01200000
+       %INCLUDE (RCB540S1);;                                            01210000
+0/********************************************************************/ 01220000
+ /*  BIT SWITCHES                                                    */ 01230000
+ /********************************************************************/ 01240000
+0DCL SWITCH_BATCH           BIT (1) INIT ('1'B);                        01250000
+ DCL SWITCH_FIRST           BIT (1) INIT ('1'B);                        01260000
+ DCL TRUE                   BIT (1) INIT ('1'B);                        01270000
+ DCL FALSE                  BIT (1) INIT ('0'B);                        01280000
+0/********************************************************************/ 01290000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01300000
+ /********************************************************************/ 01310000
+0DCL WRK_LEVEL              FIXED BIN (15);                             01320000
+0DCL WRK_TARGET_PGM         CHAR (1);                                   01330000
+ DCL WRK_TARGET_TAB         CHAR (1);                                   01340000
+0DCL WRK_TIME               CHAR (9) INIT (' ');                        01350000
+ DCL WRK_COUNT              FIXED BIN (15);                             01360000
+ DCL WRK_COUNT_HELP         FIXED BIN (15);                             01370000
+0DCL 1 WRK_MSG_VAR (15)     BASED (ADDR(PARM_INT_AREA.MSG_VAR_CODES)),  01380000
+       3 WRK_CODE           CHAR (2),                                   01390000
+       3 WRK_VALUE          CHAR (25);                                  01400000
+0DCL 1 WRK_NULL_IND (15)    BASED (ADDR(FILE_RCB0M10.MSG_VAR_CODE_1)),  01410000
+       3 WRK_CODE           CHAR (2),                                   01420000
+       3 NULL_IND_1         CHAR (1),                                   01430000
+       3 WRK_VALUE          CHAR (25),                                  01440000
+       3 NULL_IND_2         CHAR (1);                                   01450000
+0DCL 1 WRK_TIMESTAMP,                                                   01460000
+       3 DATE               CHAR (10),                                  01470000
+       3 FILLER_1           CHAR (01) INIT ('-'),                       01480000
+       3 HOURS              CHAR (02),                                  01490000
+       3 FILLER_2           CHAR (01) INIT ('.'),                       01500000
+       3 MINUTES            CHAR (02),                                  01510000
+       3 FILLER_3           CHAR (01) INIT ('.'),                       01520000
+       3 SECONDS            CHAR (02),                                  01530000
+       3 FILLER_4           CHAR (01) INIT ('.'),                       01540000
+       3 MILLI_SECONDS      CHAR (03),                                  01550000
+       3 FILLER_5           CHAR (03) INIT ('000');                     01560000
+0DCL 1 MSG_SYSTEM,                                                      01570000
+       %INCLUDE (RCB0M0S);;                                             01580000
+0DCL 1 MSG_SYST_DSCR,                                                   01590000
+       3 MSG_DSCR_SHORT      CHAR(60);                                  01600000
+0DCL 1 MSG_SYST_VAR,                                                    01610000
+       3 MSG_DSCR_CODE       CHAR(10) INIT ('MSG_CODE: '),              01620000
+       3 MSG_VAR_CODE        CHAR(02),                                  01630000
+       3 MSG_DSCR_VALUE      CHAR(14) INIT (' - MSG_VALUE: '),          01640000
+       3 MSG_VAR_VALUE       CHAR(25);                                  01650000
+0DCL 1 MSG_SYST_AST          CHAR(80) INIT ((80)'*');                   01660000
+0DCL 1 MSG_SYST_HEADER1,                                                01670000
+       2 TEXT1               CHAR(44)                                   01680000
+         INIT ('**   CE DATA SERVER MESSAGE REPORT'),                   01690000
+       2 TEXT2               CHAR(06) INIT ('DATE: '),                  01700000
+       2 DATE                CHAR(08),                                  01710000
+       2 TEXT3               CHAR(08) INIT ('  TIME: '),                01720000
+       2 TIME                CHAR(12),                                  01730000
+       2 TEXT4               CHAR(02) INIT ('**');                      01740000
+0DCL 1 MSG_SYST_HEADER2,                                                01750000
+       2 TEXT1               CHAR(07)  INIT ('TYPE/'),                  01760000
+       2 TEXT2               CHAR(09)  INIT ('MODULE'),                 01770000
+       2 TEXT3               CHAR(04)  INIT ('PRI'),                    01780000
+       2 TEXT4               CHAR(60)  INIT ('DESCRIPTION / VALUES');   01790000
+0DCL 1 MSG_SYST_HEADER3,                                                01800000
+       2 TEXT1               CHAR(06)  INIT ('NUMBER'),                 01810000
+       2 FILLER1             CHAR(74)  INIT ('');                       01820000
+0DCL 1 MSG_SYST_HEADER4,                                                01830000
+       2 TEXT1               CHAR(06)  INIT ('------'),                 01840000
+       2 FILLER1             CHAR(01)  INIT (''),                       01850000
+       2 TEXT2               CHAR(08)  INIT ('--------'),               01860000
+       2 FILLER2             CHAR(01)  INIT (''),                       01870000
+       2 TEXT3               CHAR(03)  INIT ('---'),                    01880000
+       2 FILLER3             CHAR(01)  INIT (''),                       01890000
+       2 TEXT4               CHAR(60)  INIT ((60)'-');                  01900000
+1/********************************************************************/ 01910000
+ /*  BUILTIN FUNCTIONS                                               */ 01920000
+ /********************************************************************/ 01930000
+0DCL (ADDR,                                                             01940000
+      DATE,                                                             01950000
+      NULL,                                                             01960000
+      STRING,                                                           01970000
+      SUBSTR,                                                           01980000
+      TIME,                                                             01990000
+      TRANSLATE)    BUILTIN;                                            02000000
+1/********************************************************************/ 02010000
+ /*                 S T A R T   P R O C E S S I N G                  */ 02020000
+ /********************************************************************/ 02030000
+0CALL RCB0M1M_INIT_COMMON;                                              02040000
+ WRK_TARGET_PGM = PARM_INT_AREA.MSG_TARGET;                             02050000
+0IF SWITCH_BATCH                                                        02060000
+ THEN                                                                   02070000
+   DO;                                                                  02080000
+0    SELECT (PARM_INT_AREA.MSG_REQUEST);                                02090000
+                                    /* PRINT BATCH MSG */               02100000
+     WHEN ('P')                                                         02110000
+       DO;                                                              02120000
+         CALL RCB0M1M_MSG_COUNTRY;              /* FIND MSG OPTIONS*/   02130000
+         IF WRK_TARGET_PGM = 'F' &                                      02140000
+            WRK_TARGET_TAB ¬= 'X'                                       02150000
+         THEN                                                           02160000
+0          CALL RCB0M1M_MSG_SEND_BATCH ('F');   /* TO MSG FILE */       02170000
+         IF WRK_TARGET_TAB = 'Y'   |                                    02180000
+            WRK_TARGET_PGM = 'S'   |                                    02190000
+            WRK_TARGET_TAB = 'S'   |                                    02200000
+            TB_RCBV520.PRIORITY = '1'                                   02210000
+         THEN                                                           02220000
+           DO;                                                          02230000
+             CALL RCB0M1M_MSG_SEARCH;        /* FIND FULL TEXT */       02240000
+             CALL RCB0M1M_MSG_SEND_BATCH ('S'); /* TO SYSPRINT */       02250000
+           END;                                                         02260000
+       END;                                                             02270000
+                                    /* OPEN MSG FILE */                 02280000
+     WHEN ('O')                                                         02290000
+       DO;                                                              02300000
+         PARM_INT_AREA.MSG_REQUEST = 'P';                               02310000
+0        SELECT (PARM_INT_AREA.MSG_TARGET);                             02320000
+         WHEN ('F')                                                     02330000
+           OPEN FILE (RCB0M10);                                         02340000
+         WHEN ('S');                                                    02350000
+         OTHERWISE                                                      02360000
+           DO;                                                          02370000
+0            MSG_SYSTEM.MESSAGE_NUMBER = 'M001';                        02380000
+             MSG_SYSTEM.MSG_PRIORITY   = '1';                           02390000
+             PUT SKIP EDIT(MSG_SYSTEM) (A);                             02400000
+0            MSG_SYST_DSCR.MSG_DSCR_SHORT =                             02410000
+                 'INVALID MSG DESTINATION '|| PARM_INT_AREA.MSG_TARGET; 02420000
+             PUT EDIT(MSG_SYST_DSCR) (A);                               02430000
+0            CALL RCB0M1M_ERROR (NULL,                                  02440000
+                                 'OTHER',                               02450000
+                                 '#002');                               02460000
+           END;                                                         02470000
+         END;                                                           02480000
+       END;                                                             02490000
+                                    /* CLOSE MSG FILE */                02500000
+     WHEN ('C')                                                         02510000
+       DO;                                                              02520000
+         PARM_INT_AREA.MSG_REQUEST = ' ';                               02530000
+0        SELECT (PARM_INT_AREA.MSG_TARGET);                             02540000
+         WHEN ('F')                                                     02550000
+           CLOSE FILE (RCB0M10);                                        02560000
+         WHEN ('S');                                                    02570000
+         OTHERWISE                                                      02580000
+           DO;                                                          02590000
+0            MSG_SYSTEM.MESSAGE_NUMBER = 'M001';                        02600000
+             MSG_SYSTEM.MSG_PRIORITY   = '1';                           02610000
+0            PUT SKIP EDIT(MSG_SYSTEM) (A);                             02620000
+             MSG_SYST_DSCR.MSG_DSCR_SHORT =                             02630000
+                 'INVALID MSG DESTINATION '|| PARM_INT_AREA.MSG_TARGET; 02640000
+             PUT EDIT(MSG_SYST_DSCR) (A);                               02650000
+0            CALL RCB0M1M_ERROR (NULL,                                  02660000
+                                 'OTHER',                               02670000
+                                 '#003');                               02680000
+           END;                                                         02690000
+         END;                                                           02700000
+       END;                                                             02710000
+                                     /* INVALID REQUEST IN BATCH */     02720000
+     OTHERWISE                                                          02730000
+       DO;                                                              02740000
+0        MSG_SYSTEM.MESSAGE_NUMBER = 'M002';                            02750000
+         MSG_SYSTEM.MSG_PRIORITY   = '1';                               02760000
+         PUT SKIP EDIT(MSG_SYSTEM) (A);                                 02770000
+0        MSG_SYST_DSCR.MSG_DSCR_SHORT =                                 02780000
+              'INVALID OPERATION CODE '|| PARM_INT_AREA.MSG_REQUEST;    02790000
+    PUT SKIP LIST ('MSG_REQUEST', PARM_INT_AREA.MSG_REQUEST);           02791022
+         PUT EDIT(MSG_SYST_DSCR) (A);                                   02800000
+0        CALL RCB0M1M_ERROR (NULL,                                      02810000
+                             'OTHER',                                   02820000
+                             '#004');                                   02830000
+       END;                                                             02840000
+     END;                                                               02850000
+   END;                                                                 02860000
+ ELSE                                                                   02870000
+   DO;                                                                  02880000
+     SELECT (PARM_INT_AREA.MSG_REQUEST);                                02890000
+                                     /* ONLINE GIVE MSG */              02900000
+                                     /* ONLY ALT PCB MSGS APPLY */      02910000
+     WHEN ('P')                                                         02920000
+       DO;                                                              02930000
+         CALL RCB0M1M_MSG_COUNTRY;       /* FIND MSG OPTIONS */         02940000
+         IF WRK_TARGET_TAB ¬= 'X' &                                     02950000
+            WRK_TARGET_PGM = 'T'                                        02960000
+         THEN                                                           02970000
+           CALL RCB0M1M_MSG_TABLE;               /* TO TABLE */         02980000
+0        IF WRK_TARGET_PGM = 'A' |                                      02990000
+            WRK_TARGET_TAB = 'A' |                                      03000000
+            WRK_TARGET_TAB = 'B' |                                      03010000
+            TB_RCBV520.PRIORITY = '1'                                   03020000
+         THEN                                                           03030000
+           DO;                                                          03040000
+             CALL RCB0M1M_MSG_SEARCH;              /* FIND FULL TEXT */ 03050000
+0            CALL RCB0M1M_MSG_SEND_ONLINE ('A');   /* TO ALT PCB */     03060000
+           END;                                                         03070000
+       END;                                                             03080000
+     OTHERWISE                /* GOTO  ALT PCB : INVALID      */        03090000
+       DO;                                                              03100000
+         CALL RCB0M1M_MSG_ALT;                                          03110000
+       END;                                                             03120000
+     END;                                                               03130000
+   END;                                                                 03140000
+0CALL RCB0M1M_COMMON_END;                                               03150000
+1/********************************************************************/ 03160000
+ /*                                                                  */ 03170000
+ /* MODULE NAME      : RCB0M1M_INIT_COMMON                           */ 03180000
+ /*                                                                  */ 03190000
+ /* DESCRIPTION      : INITIALIZE VARIABLES                          */ 03200000
+ /*                                                                  */ 03210000
+ /********************************************************************/ 03220000
+0RCB0M1M_INIT_COMMON: PROC;                                             03230000
+0                                        /* SET LEVEL AND MOD NAME   */ 03240000
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            03250000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     03260000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCB0M1M';                     03270000
+0                                        /* SET TIME STAMP           */ 03280000
+0DO WHILE (TIME = WRK_TIME);                                            03290000
+ END;                                                                   03300000
+ WRK_TIME = TIME;                                                       03310000
+0WRK_TIMESTAMP.DATE          = PARM_INT_AREA.SYSTEM_DATE;               03320000
+ WRK_TIMESTAMP.HOURS         = SUBSTR (WRK_TIME,1,2);                   03330000
+ WRK_TIMESTAMP.MINUTES       = SUBSTR (WRK_TIME,3,2);                   03340000
+ WRK_TIMESTAMP.SECONDS       = SUBSTR (WRK_TIME,5,2);                   03350000
+ WRK_TIMESTAMP.MILLI_SECONDS = SUBSTR (WRK_TIME,7,3);                   03360000
+0PARM_INT_AREA.RUN_NUMBER    = STRING(WRK_TIMESTAMP);                   03370000
+0MSG_SYSTEM                  = '';                                      03380000
+ MSG_SYSTEM.MESSAGE_TYPE     = 'IS';                                    03390000
+ MSG_SYSTEM.MSG_MOD_NAME     = 'RCB0M1M';                               03400000
+ MSG_SYSTEM.TEXT_G3          = ' : ';                                   03410000
+0                                        /* DETERMINE BATCH OR NOT   */ 03420000
+0IF PARM_INT_AREA.TXN_CODE    = ''   |                                  03430000
+    PARM_INT_AREA.PTR_PCB_IO  = NULL |                                  03440000
+    PARM_INT_AREA.PTR_PCB_ALT = NULL |                                  03450000
+    PARM_INT_AREA.SYSTEM_TYPE = 'C'      /* FOR CSP TSO TEST PURPOSE */ 03460000
+ THEN                                                                   03470000
+   SWITCH_BATCH = TRUE;                                                 03480000
+ ELSE                                                                   03490000
+   SWITCH_BATCH = FALSE;                                                03500000
+0END RCB0M1M_INIT_COMMON;                                               03510000
+1/********************************************************************/ 03520000
+ /*                                                                  */ 03530000
+ /* MODULE NAME      : RCB0M1M_MSG_SEND_BATCH                        */ 03540000
+ /*                                                                  */ 03550000
+ /* DESCRIPTION      : SEND THE MESSAGE TO CORRECT TARGET (BATCH)    */ 03560000
+ /*                                                                  */ 03570000
+ /********************************************************************/ 03580000
+0RCB0M1M_MSG_SEND_BATCH: PROC (TARGET);                                 03590000
+0DCL TARGET  CHAR (1);                                                  03600000
+0SELECT (TARGET);                                                       03610000
+ WHEN ('X');                                                            03620000
+ WHEN ('F')                                                             03630000
+   DO;                                                                  03640000
+     CALL RCB0M1M_MSG_FILE;                                             03650000
+   END;                                                                 03660000
+ WHEN ('S')                                                             03670000
+   DO;                                                                  03680000
+     CALL RCB0M1M_MSG_SYST;                                             03690000
+   END;                                                                 03700000
+ WHEN ('T');                                                            03710000
+ OTHERWISE                                                              03720000
+   DO;                    /* FOR SYSPRINT: INVALID */                   03730000
+0    MSG_SYSTEM.MESSAGE_NUMBER = 'M001';                                03740000
+     MSG_SYSTEM.MSG_PRIORITY   = '1';                                   03750000
+     PUT SKIP EDIT(MSG_SYSTEM) (A);                                     03760000
+0    MSG_SYST_DSCR.MSG_DSCR_SHORT =                                     03770000
+        'INVALID MSG DESTINATION '|| PARM_INT_AREA.MSG_TARGET;          03780000
+     PUT EDIT(MSG_SYST_DSCR) (A);                                       03790000
+0    CALL RCB0M1M_ERROR (NULL,                                          03800000
+                         'OTHER',                                       03810000
+                         '#001');                                       03820000
+   END;                                                                 03830000
+ END;                                                                   03840000
+0END RCB0M1M_MSG_SEND_BATCH;                                            03850000
+1/********************************************************************/ 03860000
+ /*                                                                  */ 03870000
+ /* MODULE NAME      : RCB0M1M_MSG_SEND_ONLINE                       */ 03880000
+ /*                                                                  */ 03890000
+ /* DESCRIPTION      : SEND THE MESSAGE TO CORRECT TARGET (ONLINE)   */ 03900000
+ /*                                                                  */ 03910000
+ /********************************************************************/ 03920000
+0RCB0M1M_MSG_SEND_ONLINE: PROC (TARGET);                                03930000
+0DCL TARGET  CHAR (1);                                                  03940000
+0SELECT (TARGET);                                                       03950000
+ WHEN ('X');                                                            03960000
+ WHEN ('T')                                                             03970000
+     CALL RCB0M1M_MSG_TABLE;                                            03980000
+ WHEN ('A')                       /* FOR ALT PCB */                     03990000
+   DO;                                                                  04000000
+     CALL RCB0M1M_MSG_ALT;                                              04010000
+   END;                                                                 04020000
+ OTHERWISE                       /* FOR ALT PCB: INVALID */             04030000
+   DO;                                                                  04040000
+     CALL RCB0M1M_MSG_ALT;                                              04050000
+   END;                                                                 04060000
+ END;                                                                   04070000
+0END RCB0M1M_MSG_SEND_ONLINE;                                           04080000
+1/********************************************************************/ 04090000
+ /*                                                                  */ 04100000
+ /* MODULE NAME      : RCB0M1M_MSG_ALT                               */ 04110000
+ /*                                                                  */ 04120000
+ /* DESCRIPTION      : CALL THE PART OF THE COMMON MESSAGE           */ 04130000
+ /*                    ROUTINE TO CONSTRUCT AND INSERT A MESSAGE     */ 04140000
+ /*                    TO: - ALTERNATE PSB                           */ 04150000
+ /*                                                                  */ 04160000
+ /********************************************************************/ 04170000
+0RCB0M1M_MSG_ALT: PROC;                                                 04180000
+0CALL RCB0M5M (ADDR(TB_RCBV510),                                        04190000
+               PTR_INT_AREA);                                           04200000
+0END RCB0M1M_MSG_ALT;                                                   04210000
+1/********************************************************************/ 04220000
+ /*                                                                  */ 04230000
+ /* MODULE NAME      : RCB0M1M_MSG_FILE                              */ 04240000
+ /*                                                                  */ 04250000
+ /* DESCRIPTION      : CONSTRUCT AND WRITE THE MESSAGE TO THE        */ 04260000
+ /*                    MESSAGE FILE                                  */ 04270000
+ /*                                                                  */ 04280000
+ /********************************************************************/ 04290000
+0RCB0M1M_MSG_FILE: PROC;                                                04300000
+0FILE_RCB0M10 = '';                                                     04310000
+0FILE_RCB0M10 = PARM_INT_AREA.MSG_AREA, BY NAME;                        04320000
+ FILE_RCB0M10 = PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES, BY NAME;          04330000
+0FILE_RCB0M10.ID_SOURCE_MOD = PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL-1);  04340000
+0DO WRK_COUNT = 1 TO 15;                                                04350000
+0  IF WRK_MSG_VAR(WRK_COUNT).WRK_CODE = ''                              04360000
+   THEN                                                                 04370000
+     DO;                                                                04380000
+       WRK_NULL_IND.NULL_IND_1 (WRK_COUNT)       = '?';                 04390000
+       WRK_NULL_IND.NULL_IND_2 (WRK_COUNT)       = '?';                 04400000
+     END;                                                               04410000
+ END;                                                                   04420000
+0WRITE FILE (RCB0M10) FROM (FILE_RCB0M10);                              04430000
+0END RCB0M1M_MSG_FILE;                                                  04440000
+1/********************************************************************/ 04450000
+ /*                                                                  */ 04460000
+ /* MODULE NAME      : RCB0M1M_MSG_SYST                              */ 04470000
+ /*                                                                  */ 04480000
+ /* DESCRIPTION      : CONSTRUCT AND WRITE THE MESSAGE TO THE        */ 04490000
+ /*                    SYSTEM                                        */ 04500000
+ /*                                                                  */ 04510000
+ /********************************************************************/ 04520000
+0RCB0M1M_MSG_SYST: PROC;                                                04530000
+0IF SWITCH_FIRST                                                        04540000
+ THEN                                                                   04550000
+   DO;                                                                  04560000
+     SWITCH_FIRST          = FALSE;                                     04570000
+     MSG_SYST_HEADER1.DATE = TRANSLATE ('YR-MN-DA',DATE,'YRMNDA');      04580000
+     MSG_SYST_HEADER1.TIME = TRANSLATE ('HO.MI.SC',TIME,'HOMISCTXY');   04590000
+     PUT SKIP EDIT(MSG_SYST_AST)     (A);                               04600000
+     PUT SKIP EDIT(MSG_SYST_HEADER1) (A);                               04610000
+     PUT SKIP EDIT(MSG_SYST_AST)     (A);                               04620000
+     PUT SKIP LIST(' ');                                                04630000
+     PUT SKIP EDIT(MSG_SYST_HEADER2) (A);                               04640000
+     PUT SKIP EDIT(MSG_SYST_HEADER3) (A);                               04650000
+     PUT SKIP EDIT(MSG_SYST_HEADER4) (A);                               04660000
+     PUT SKIP LIST(' ');                                                04670000
+   END;                                                                 04680000
+0MSG_SYSTEM.MESSAGE_TYPE   = PARM_INT_AREA.MESSAGE_TYPE;                04690000
+ MSG_SYSTEM.MESSAGE_NUMBER = PARM_INT_AREA.MESSAGE_NUMBER;              04700000
+ MSG_SYSTEM.MSG_MOD_NAME   = PARM_INT_AREA.ID_MOD_PATH(WRK_LEVEL-1);    04710000
+ MSG_SYSTEM.MSG_PRIORITY   = TB_RCBV520.PRIORITY;                       04720000
+ PUT SKIP EDIT(MSG_SYSTEM) (A);                                         04730000
+0                                                 /* SET DESCRIPTION */ 04740000
+ MSG_SYST_DSCR.MSG_DSCR_SHORT = TB_RCBV510.DESCRIPTION_SHORT;           04750000
+ PUT EDIT(MSG_SYST_DSCR) (A);                                           04760000
+0                                                 /* SET VALUES      */ 04770000
+ DO WRK_COUNT = 1 TO 15;                                                04780000
+   IF WRK_MSG_VAR (WRK_COUNT).WRK_CODE ¬= ' '                           04790000
+   THEN                                                                 04800000
+     DO;                                                                04810000
+       MSG_SYST_VAR.MSG_VAR_CODE  = WRK_MSG_VAR (WRK_COUNT).WRK_CODE;   04820000
+       MSG_SYST_VAR.MSG_VAR_VALUE = WRK_MSG_VAR (WRK_COUNT).WRK_VALUE;  04830000
+       PUT SKIP EDIT(MSG_SYSTEM) (A);                                   04840000
+       PUT EDIT(MSG_SYST_VAR) (A);                                      04850000
+     END;                                                               04860000
+ END;                                                                   04870000
+0END RCB0M1M_MSG_SYST;                                                  04880000
+1/********************************************************************/ 04890000
+ /*                                                                  */ 04900000
+ /* MODULE NAME      : RCB0M1M_MSG_TABLE                             */ 04910000
+ /*                                                                  */ 04920000
+ /* DESCRIPTION      : CONSTRUCT AND WRITE THE MESSAGE TO THE        */ 04930000
+ /*                    MESSAGE TABLE                                 */ 04940000
+ /*                                                                  */ 04950000
+ /********************************************************************/ 04960000
+0RCB0M1M_MSG_TABLE:  PROC;                                              04970000
+0TB_RCBV540   = '';                                                     04980000
+ TB_RCBV540_I = '';                                                     04990000
+0TB_RCBV540   = PARM_INT_AREA.MSG_AREA, BY NAME;                        05000000
+ TB_RCBV540   = PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES, BY NAME;          05010000
+ TB_RCBV540.PROC_ID = '    ';                                           05020000
+0TB_RCBV540.ID_SOURCE_MOD = PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL-1);    05030000
+0DO WRK_COUNT = 1 TO 15;                                                05040000
+   WRK_COUNT_HELP = 7 + 2*WRK_COUNT;                                    05050000
+0  IF WRK_MSG_VAR(WRK_COUNT).WRK_CODE ¬= ''                             05060000
+   THEN                                                                 05070000
+     DO;                                                                05080000
+       TB_RCBV540_I.INDNULL (WRK_COUNT_HELP)     = 0;                   05090000
+       TB_RCBV540_I.INDNULL (WRK_COUNT_HELP + 1) = 0;                   05100000
+     END;                                                               05110000
+   ELSE                                                                 05120000
+     DO;                                                                05130000
+       TB_RCBV540_I.INDNULL (WRK_COUNT_HELP)     = -1;                  05140000
+       TB_RCBV540_I.INDNULL (WRK_COUNT_HELP + 1) = -1;                  05150000
+     END;                                                               05160000
+ END;                                                                   05170000
+0CALL RCB0M6M (ADDR(TB_RCBV540),                                        05180000
+               ADDR(TB_RCBV540_I),                                      05190000
+               ADDR(PARM_RET_AREA_BB),                                  05200000
+               PTR_INT_AREA);                                           05210000
+0SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 05220000
+ WHEN (0);                                                              05230000
+ OTHERWISE                                                              05240000
+   DO;                                                                  05250000
+0    CALL RCB0M1M_ERROR (ADDR(PARM_RET_AREA_BB.RETURN_SQL),             05260000
+                         'DB2',                                         05270000
+                         '#005');                                       05280000
+   END;                                                                 05290000
+ END;                                                                   05300000
+0END RCB0M1M_MSG_TABLE;                                                 05310000
+1/********************************************************************/ 05320000
+ /*                                                                  */ 05330000
+ /* MODULE NAME      : RCB0M1M_MSG_SEARCH                            */ 05340000
+ /*                                                                  */ 05350000
+ /* DESCRIPTION      : CALLS THE COMMON REFERENCE BUILDING BLOCK TO  */ 05360000
+ /*                    CHECK IF THE MESSAGE EXISTS, AND TO OBTAIN    */ 05370000
+ /*                    THE MESSAGE DESCRIPTION                       */ 05380000
+ /*                                                                  */ 05390000
+ /********************************************************************/ 05400000
+0RCB0M1M_MSG_SEARCH: PROC;                                              05410000
+0/**************************/                                           05420000
+ /* RETRIEVE LANGUAGE CODE */                                           05430000
+ /**************************/                                           05440000
+0PARM_RET_AREA_BB = '';                                                 05450000
+ TB_RCBV550       = '';                                                 05460000
+ TB_RCBV550_I     = '';                                                 05470000
+0TB_RCBV550.COUNTRY_NUMBER = PARM_INT_AREA.COUNTRY_NUMBER;              05480000
+0CALL RCB0M4M (ADDR(TB_RCBV550),                                        05490000
+               ADDR(TB_RCBV550_I),                                      05500000
+               ADDR(PARM_RET_AREA_BB),                                  05510000
+               PTR_INT_AREA);                                           05520000
+0SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 05530000
+ WHEN (0)                                                               05540000
+   DO;                                                                  05550000
+0    /*************************************/                            05560000
+     /* DEFAULT MSG LANGUAGE IF NECESSARY */                            05570000
+     /*************************************/                            05580000
+0    IF TB_RCBV550.LANGUAGE_CODE = '  '                                 05590000
+     THEN                                                               05600000
+0      TB_RCBV550.LANGUAGE_CODE = 'EN';                                 05610000
+   END;                                                                 05620000
+ WHEN (4)                                                               05630000
+0  TB_RCBV550.LANGUAGE_CODE = 'EN';                                     05640000
+ OTHERWISE                                                              05650000
+   DO;                                                                  05660000
+0    CALL RCB0M1M_ERROR (ADDR(PARM_RET_AREA_BB.RETURN_SQL),             05670000
+                         'DB2',                                         05680000
+                         '#006');                                       05690000
+   END;                                                                 05700000
+ END;                                                                   05710000
+0/********************************/                                     05720000
+ /* RETRIEVE MESSAGE DESCRIPTION */                                     05730000
+ /********************************/                                     05740000
+0PARM_RET_AREA_BB = '';                                                 05750000
+ TB_RCBV510       = '';                                                 05760000
+ TB_RCBV510_I     = '';                                                 05770000
+0TB_RCBV510.MESSAGE_TYPE   = PARM_INT_AREA.MESSAGE_TYPE;                05780000
+ TB_RCBV510.MESSAGE_NUMBER = PARM_INT_AREA.MESSAGE_NUMBER;              05790000
+ TB_RCBV510.LANGUAGE_CODE  = TB_RCBV550.LANGUAGE_CODE;                  05800000
+0CALL RCB0M2M (ADDR(TB_RCBV510),                                        05810000
+               ADDR(TB_RCBV510_I),                                      05820000
+               ADDR(PARM_RET_AREA_BB),                                  05830000
+               PTR_INT_AREA);                                           05840000
+0SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 05850000
+ WHEN (0)                                                               05860000
+   DO;                                                                  05870000
+     CALL RCB0M1M_MSG_EXTEND;                                           05880000
+   END;                                                                 05890000
+ WHEN (4)                                                               05900000
+   DO;                                                                  05910000
+     TB_RCBV510.DESCRIPTION_SHORT = 'THIS MESSAGE_ID '||                05920000
+                                    'HAS NOT BEEN FOUND';               05930000
+     TB_RCBV510.DESCRIPTION_LONG  = '';                                 05940000
+   END;                                                                 05950000
+ OTHERWISE                                                              05960000
+   DO;                                                                  05970000
+0    CALL RCB0M1M_ERROR (ADDR(PARM_RET_AREA_BB.RETURN_SQL),             05980000
+                         'DB2',                                         05990000
+                         '#007');                                       06000000
+   END;                                                                 06010000
+ END;                                                                   06020000
+0END RCB0M1M_MSG_SEARCH;                                                06030000
+1/********************************************************************/ 06040000
+ /*                                                                  */ 06050000
+ /* MODULE NAME      : RCB0M1M_MSG_COUNTRY                           */ 06060000
+ /*                                                                  */ 06070000
+ /* DESCRIPTION      : RETRIEVE THE COUNTRY DEPENDENT MESSAGE        */ 06080000
+ /*                    INFORMATION                                   */ 06090000
+ /*                                                                  */ 06100000
+ /********************************************************************/ 06110000
+0RCB0M1M_MSG_COUNTRY: PROC;                                             06120000
+0PARM_RET_AREA_BB = '';                                                 06130000
+ TB_RCBV520       = '';                                                 06140000
+ TB_RCBV520_I     = '';                                                 06150000
+0TB_RCBV520.MESSAGE_TYPE   = PARM_INT_AREA.MESSAGE_TYPE;                06160000
+0TB_RCBV520.MESSAGE_NUMBER = PARM_INT_AREA.MESSAGE_NUMBER;              06170000
+0TB_RCBV520.COUNTRY_NUMBER = PARM_INT_AREA.COUNTRY_NUMBER;              06180000
+0CALL RCB0M3M (ADDR(TB_RCBV520),                                        06190000
+               ADDR(TB_RCBV520_I),                                      06200000
+               ADDR(PARM_RET_AREA_BB),                                  06210000
+               PTR_INT_AREA);                                           06220000
+0SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 06230000
+ WHEN (0)                                                               06240000
+   DO;                                                                  06250000
+0    /*************************************/                            06260000
+     /* DEFAULT MSG PRIORITY IF NECESSARY */                            06270000
+     /*************************************/                            06280000
+0    IF TB_RCBV520.PRIORITY = ' '                                       06290000
+     THEN                                                               06300000
+0      TB_RCBV520.PRIORITY = '1';                                       06310000
+     WRK_TARGET_TAB = TB_RCBV520.MSG_TARGET;                            06320000
+   END;                                                                 06330000
+ WHEN (4)                                                               06340000
+0  TB_RCBV520.PRIORITY = '1';                                           06350000
+ OTHERWISE                                                              06360000
+   DO;                                                                  06370000
+0    CALL RCB0M1M_ERROR (ADDR(PARM_RET_AREA_BB.RETURN_SQL),             06380000
+                         'DB2',                                         06390000
+                         '#008');                                       06400000
+   END;                                                                 06410000
+ END;                                                                   06420000
+0END RCB0M1M_MSG_COUNTRY;                                               06430000
+1/********************************************************************/ 06440000
+ /*                                                                  */ 06450000
+ /* MODULE NAME      : RCB0M1M_MSG_EXTEND                            */ 06460000
+ /*                                                                  */ 06470000
+ /* DESCRIPTION      : EXTENDS THE MESSAGE DESCRIPTIONS TO A         */ 06480000
+ /*                    READABLE TEXT                                 */ 06490000
+ /*                                                                  */ 06500000
+ /********************************************************************/ 06510000
+0RCB0M1M_MSG_EXTEND: PROC;                                              06520000
+0/************************************/                                 06530000
+ /* NOW THE MESSAGE WILL BE EXTENDED */                                 06540000
+ /************************************/                                 06550000
+0END RCB0M1M_MSG_EXTEND;                                                06560000
+1/********************************************************************/ 06570000
+ /*                                                                  */ 06580000
+ /* MODULE NAME      : RCB0M1M_COMMON_END                            */ 06590000
+ /*                                                                  */ 06600000
+ /* DESCRIPTION      : FINAL PROCESSING                              */ 06610000
+ /*                                                                  */ 06620000
+ /********************************************************************/ 06630000
+0RCB0M1M_COMMON_END: PROC;                                              06640000
+0                                        /* RESET LEVEL              */ 06650000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            06660000
+0END RCB0M1M_COMMON_END;                                                06670000
+1/********************************************************************/ 06680000
+ /*                                                                  */ 06690000
+ /* MODULE NAME      : RCB0M1M_ERROR                                 */ 06700000
+ /*                                                                  */ 06710000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 06720000
+ /*                    THE INPUT VARIABLES                           */ 06730000
+ /*                                                                  */ 06740000
+ /********************************************************************/ 06750000
+0RCB0M1M_ERROR: PROC     (PTR_ERROR,                                    06760000
+                          ERR_TYPE,                                     06770000
+                          CALL_ID);                                     06780000
+0DCL PTR_ERROR    PTR;                                                  06790000
+ DCL ERR_TYPE     CHAR(8);                                              06800000
+ DCL CALL_ID      CHAR(4);                                              06810000
+0PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;                              06820000
+ PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;                               06830000
+ PARM_INT_AREA.CALL_ID        = CALL_ID;                                06840000
+1/*******************************************************************/  06850000
+ /*DO NOT ABEND IN ONLINE MODE, BECAUSE MSG FROM BUILDING BLOCK     */  06860000
+ /* IS NOT OK                                                       */  06870000
+ /*******************************************************************/  06880000
+ IF SWITCH_BATCH                                                        06890000
+ THEN                                                                   06900000
+0  CALL RCB0E1M (PTR_INT_AREA);                                         06910000
+0END RCB0M1M_ERROR;                                                     06920000
+1/*******************************************************************/  06930000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  06940000
+ /*******************************************************************/  06950000
+1/*******************************************************************/  06960000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  06970000
+ /*******************************************************************/  06980000
+0%INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  06990000
+ $DAIMOD (RCB0M1M);                      /* MODULE TO BE COMPILED   */  07000000
+0/*******************************************************************/  07010000
+ /* END OF ABR BLOCK                                                */  07020000
+ /*******************************************************************/  07030000
+0END RCB0M1M;                                                           07040000

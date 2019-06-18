@@ -1,0 +1,905 @@
+1/* RCBEAAM - E-SERVICE EXTRACT                                      */ 00019414
+ /********************************************************************/ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /********************************************************************/ 00060000
+ /* PROGRAM          : RCBEAAM                                       */ 00070000
+ /*                                                                  */ 00080000
+ /* LANGUAGE         : PLISQL                                        */ 00090000
+ /*                                                                  */ 00100000
+ /* TYPE             : INSTALLED PROCEDURE                           */ 00110000
+ /*                                                                  */ 00120000
+ /* DESCRIPTION      : THE EXTRACTION OF E-SERVICE RELATED DATA      */ 00130000
+ /*                                                                  */ 00140000
+ /* INPUT            : - DB2   : RCBV0010_CUSTOMER                   */ 00150000
+ /*                              RCBV0011_PI_CUST                    */ 00160000
+ /*                              RCBV0051_PI_HW_PR                   */ 00170000
+ /*                              RCBV0190_HW_CUST                    */ 00180000
+ /*                              RCBV0220_SUPPL_CTR                  */ 00190000
+ /*                              RCBV0240_SERV_CTR                   */ 00200000
+ /*                              RCBV0241_PI_CTR                     */ 00210000
+ /*                              RCBV0470_SERV_COND                  */ 00220000
+ /*                                                                  */ 00230000
+ /* EXTERNAL MODULES : RCB0T1M - SYSTEM DATE                         */ 00240000
+ /*                                                                  */ 00250000
+ /* MESSAGES         :                                               */ 00260000
+ /*                                                                  */ 00270000
+ /* DEPENDENCIES     : NONE                                          */ 00280000
+ /*                                                                  */ 00290000
+ /* FREQUENCY        : USER DEPENDENT                                */ 00300000
+ /*                                                                  */ 00310000
+ /* MAINTENANCE LOG  :                                               */ 00320000
+ /* ---------------                                                  */ 00330000
+ /*                                                                  */ 00340000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00350000
+ /*------------------------------------------------------------------*/ 00360000
+ /*2000-02-15 | RA01222      | NEW INTERFACE TO E-SERVICE            */ 00370000
+ /*2000-06-07 | PTM1326      | PROBLEM WITH INTERNAL & RENTAL M/C'S  */ 00380000
+ /*2004-06-07 | RB01242      | INCREASE LENGTH OF SERIAL NUMBER      */ 00390000
+ /*           |              |                                       */ 00400000
+ /********************************************************************/ 00410000
+1RCBEAAM: PROC (RTYPE, RSERIAL, RCNTRY, RCODE, SCODE, RBLOCK)           00420000
+          OPTIONS (MAIN NOEXECOPS REENTRANT)                            00430000
+          REORDER;                                                      00440000
+ DEFAULT RANGE (*) AUTOMATIC;                                           00450000
+                                                                        00460000
+ /********************************************************************/ 00470000
+ /* EXTERNAL ENTRIES                                                 */ 00480000
+ /********************************************************************/ 00490000
+ DCL RCB0T1M          EXT ENTRY;                      /* SYSTEM DATE */ 00500000
+ DCL PTR_INT_AREA     PTR;                         /* INTERFACE AREA */ 00510000
+1/********************************************************************/ 00520000
+ /* DB2 TABLE STRUCTURES                                             */ 00530000
+ /********************************************************************/ 00540000
+ DCL 1 TB_RCBV010,                                                      00550000
+       %INCLUDE (RCB010S);;                                             00560000
+                                                                        00570000
+ DCL 1 TB_RCBV011,                                                      00580000
+       %INCLUDE (RCB011S);;                                             00590000
+                                                                        00600000
+ DCL 1 TB_RCBV051,                                                      00610000
+       %INCLUDE (RCB051S);;                                             00620000
+                                                                        00630000
+ DCL 1 TB_RCBV190,                                                      00640000
+       %INCLUDE (RCB190S);;                                             00650000
+                                                                        00660000
+ DCL 1 TB_RCBV220,                                                      00670000
+       %INCLUDE (RCB220S);;                                             00680000
+                                                                        00690000
+ DCL 1 TB_RCBV240,                                                      00700000
+       %INCLUDE (RCB240S);;                                             00710000
+                                                                        00720000
+ DCL 1 TB_RCBV241,                                                      00730000
+       %INCLUDE (RCB241S);;                                             00740000
+                                                                        00750000
+ DCL 1 TB_RCBV470,                                                      00760000
+       %INCLUDE (RCB470S);;                                             00770000
+                                                                        00780000
+1/********************************************************************/ 00790000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00800000
+ /********************************************************************/ 00810000
+ DCL 1 PARM_INT_AREA,                              /* INTERFACE AREA */ 00820000
+       %INCLUDE (RCBZ01S);;                                             00830000
+                                                                        00840000
+ DCL 1 VALID_TPMNT,                                        /* TPMNTS */ 00850000
+       %INCLUDE (RCBZ99S);;                                             00860000
+ /********************************************************************/ 00870000
+ /*  BIT SWITCHES                                                    */ 00880000
+ /********************************************************************/ 00890000
+ DCL 1 SWITCHES,                                                        00900000
+       3 ERR_IND                     BIT (1)  INIT ('0'B),              00910000
+       3 NOM_IND                     BIT (1)  INIT ('0'B),              00920000
+       3 PI_IND                      BIT (1)  INIT ('0'B),              00930000
+       3 TRUE                        BIT (1)  INIT ('1'B),              00940000
+       3 FALSE                       BIT (1)  INIT ('0'B);              00950000
+ /********************************************************************/ 00960000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 00970000
+ /********************************************************************/ 00980000
+ DCL RTYPE              CHAR(04);                                       00990000
+ DCL RSERIAL            CHAR(07);                                       01000000
+ DCL RCNTRY             CHAR(03);                                       01010000
+ DCL RCODE              CHAR(04);                                       01020000
+ DCL SCODE              CHAR(04);                                       01030000
+ DCL RBLOCK             CHAR(94);                                       01040000
+ DCL ALPHANUM           CHAR(36)                                        01050000
+                        INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');   01060000
+ DCL NUMERIC            CHAR(10)  INIT('0123456789');                   01070000
+ DCL SCODE_PIC          PIC'---9' BASED(ADDR(SCODE));                   01080000
+ DCL SERIAL             CHAR(28)  INIT('');                             01090000
+ DCL ORIGIN             CHAR(02);                                       01100000
+ DCL WRK_INDNULL        FIXED BIN(15);                                  01110000
+ DCL WRK_SLC_NULL       FIXED BIN(15);                                  01120000
+ DCL WRK_TOM_NULL       FIXED BIN(15);                                  01130000
+ DCL WRK_TOW_NULL       FIXED BIN(15);                                  01140000
+ DCL WRK_CUS_NULL       FIXED BIN(15);                                  01150000
+ DCL WRK_ENT_NULL       FIXED BIN(15);                                  01160000
+                                                                        01170000
+ DCL WRK_RBLOCK         CHAR (94);                                      01180000
+ DCL 1 WORK_RBLOCK         BASED(ADDR(WRK_RBLOCK)),                     01190000
+       3 WRK_CUSTNO        CHAR (07),                                   01200000
+       3 WRK_CUSTNAME      CHAR (52),                                   01210000
+       3 WRK_ENTNO         CHAR (07),                                   01220000
+       3 WRK_INDCODE       CHAR (02),                                   01230000
+       3 WRK_SUBICODE      CHAR (04),                                   01240000
+       3 WRK_ENTSTAT       CHAR (01),                                   01250000
+       3 WRK_EFFDATE       CHAR (10),                                   01260000
+       3 WRK_EXPDATE       CHAR (10),                                   01270000
+       3 WRK_COVHOURS      CHAR (01);                                   01280000
+                                                                        01290000
+ DCL WRK_COVERAGE_START_1  FIXED BIN(31);                               01300000
+ DCL WRK_COVERAGE_END_1    FIXED BIN(31);                               01310000
+ DCL WRK_COVERAGE_START_2  FIXED BIN(31);                               01320000
+ DCL WRK_COVERAGE_END_2    FIXED BIN(31);                               01330000
+ DCL WRK_COVERAGE_START_3  FIXED BIN(31);                               01340000
+ DCL WRK_COVERAGE_END_3    FIXED BIN(31);                               01350000
+ DCL WRK_COVERAGE_START_4  FIXED BIN(31);                               01360000
+ DCL WRK_COVERAGE_END_4    FIXED BIN(31);                               01370000
+ DCL WRK_COVERAGE_START_5  FIXED BIN(31);                               01380000
+ DCL WRK_COVERAGE_END_5    FIXED BIN(31);                               01390000
+ DCL WRK_COVERAGE_START_6  FIXED BIN(31);                               01400000
+ DCL WRK_COVERAGE_END_6    FIXED BIN(31);                               01410000
+ DCL WRK_COVERAGE_START_7  FIXED BIN(31);                               01420000
+ DCL WRK_COVERAGE_END_7    FIXED BIN(31);                               01430000
+1/********************************************************************/ 01440000
+ /*  BUILTIN FUNCTIONS                                               */ 01450000
+ /********************************************************************/ 01460000
+ DCL (ADDR,                                                             01470000
+      CSTG,                                                             01480000
+      DATE,                                                             01490000
+      INDEX,                                                            01500000
+      NULL,                                                             01510000
+      VERIFY,                                                           01520000
+      SUBSTR)  BUILTIN;                                                 01530000
+1/********************************************************************/ 01540000
+ /* DB2/SQL SQLCA                                                    */ 01550000
+ /********************************************************************/ 01560000
+  EXEC SQL                                                              01570000
+   INCLUDE SQLCA                                                        01580000
+   ;                                                                    01590000
+ /********************************************************************/ 01600000
+ /*                        ON ERROR BLOCK                            */ 01610000
+ /********************************************************************/ 01620000
+ ON ERROR                                                               01630000
+    BEGIN;                                                              01640000
+       ON ERROR SNAP SYSTEM;                                            01650000
+    END;                                                                01660000
+1/********************************************************************/ 01670000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01680000
+ /********************************************************************/ 01690000
+                                                                        01700000
+ WRK_RBLOCK = '';                                                       01710000
+ RCODE      = '0000';                                                   01720000
+ SCODE      = '0000';                                                   01730000
+                                                                        01740000
+ CALL R002_VERIFY_INPUT;                                                01750000
+ IF ERR_IND = TRUE THEN RETURN;                                         01760000
+                                                                        01770000
+ CALL R003_GET_DATE;                                                    01780000
+ IF ERR_IND = TRUE THEN RETURN;                                         01790000
+                                                                        01800000
+ ORIGIN   = SUBSTR(RSERIAL,1,2);                                        01810000
+ SERIAL   = '00' || SUBSTR(RSERIAL,3,5);                                01820000
+ WRK_COVHOURS = '1';                                                    01830000
+                                                                        01840000
+ CALL R010_GET_T220;                                                    01850000
+ IF ERR_IND = TRUE THEN RETURN;                                         01860000
+                                                                        01870000
+ IF PI_IND = FALSE THEN                                                 01880000
+ DO;                                                                    01890000
+   IF WRK_ENTSTAT = 'M' THEN                                            01900000
+   DO;                                                                  01910000
+      CALL R020_GET_T240;                                               01920000
+      IF ERR_IND = TRUE THEN RETURN;                                    01930000
+     END;                                                               01940000
+   ELSE                                                                 01950000
+   DO;                                                                  01960000
+     IF WRK_SLC_NULL ¬= -1 THEN                                         01970000
+        CALL R030_GET_T470;                                             01980000
+     IF ERR_IND = TRUE THEN RETURN;                                     01990000
+     END;                                                               02000000
+                                                                        02010000
+   CALL R040_GET_T190;                                                  02020000
+   IF ERR_IND = TRUE THEN RETURN;                                       02030000
+                                                                        02040000
+   CALL R050_GET_T010;                                                  02050000
+   END;                                                                 02060000
+                                                                        02070000
+ ELSE                                                                   02080000
+ DO;                                                                    02090000
+   CALL R060_GET_T051;                                                  02100000
+                                                                        02110000
+   IF ERR_IND = TRUE THEN RETURN;                                       02120000
+   CALL R070_GET_T241;                                                  02130000
+                                                                        02140000
+   IF ERR_IND = TRUE THEN RETURN;                                       02150000
+   CALL R050_GET_T010;                                                  02160000
+   END;                                                                 02170000
+                                                                        02180000
+ IF ERR_IND = TRUE THEN RETURN;                                         02190000
+ RBLOCK = WRK_RBLOCK;                                                   02200000
+                                                                        02210000
+1/********************************************************************/ 02220000
+ /*                                                                  */ 02230000
+ /* MODULE NAME      : R002_VERIFY INPUT                             */ 02240000
+ /*                                                                  */ 02250000
+ /* DESCRIPTION      : CHECK INPUT FIELDS ARE VALID VALUES           */ 02260000
+ /*                                                                  */ 02270000
+ /********************************************************************/ 02280000
+ R002_VERIFY_INPUT: PROC;                                               02290000
+                                                                        02300000
+ /*------------------------------------------------------------------*/ 02310000
+ /* VERIFY THAT THE REQUEST TYPE IS ALPHANUMERIC ...                 */ 02320000
+ /*------------------------------------------------------------------*/ 02330000
+ IF VERIFY(RTYPE,ALPHANUM) > 0 THEN                                     02340000
+ DO;                                                                    02350000
+   RCODE  = '1001';                                                     02360000
+   SCODE  = '0000';                                                     02370000
+   RBLOCK = 'REQUEST TYPE NOT ALPHANUMERIC';                            02380000
+   ERR_IND = TRUE;                                                      02390000
+   RETURN;                                                              02400000
+   END;                                                                 02410000
+ /*------------------------------------------------------------------*/ 02420000
+ /* VERIFY THAT THE REQUEST SERIAL IS ALPHANUMERIC ...               */ 02430000
+ /*------------------------------------------------------------------*/ 02440000
+ IF VERIFY(RSERIAL,ALPHANUM) > 0 THEN                                   02450000
+ DO;                                                                    02460000
+   RCODE  = '1002';                                                     02470000
+   SCODE  = '0000';                                                     02480000
+   RBLOCK = 'REQUEST SERIAL NOT ALPHANUMERIC';                          02490000
+   ERR_IND = TRUE;                                                      02500000
+   RETURN;                                                              02510000
+   END;                                                                 02520000
+                                                                        02530000
+ /*------------------------------------------------------------------*/ 02540000
+ /* VERIFY THAT THE REQUEST COUNTRY IS NUMERIC ...                   */ 02550000
+ /*------------------------------------------------------------------*/ 02560000
+ IF VERIFY(RCNTRY,NUMERIC) > 0 THEN                                     02570000
+ DO;                                                                    02580000
+   RCODE  = '1005';                                                     02590000
+   SCODE  = '0000';                                                     02600000
+   RBLOCK = 'REQUEST COUNTRY NOT NUMERIC';                              02610000
+   ERR_IND = TRUE;                                                      02620000
+   RETURN;                                                              02630000
+   END;                                                                 02640000
+                                                                        02650000
+ END R002_VERIFY_INPUT;                                                 02660000
+1/********************************************************************/ 02670000
+ /*                                                                  */ 02680000
+ /* MODULE NAME      : R003_GET_SDATE                                */ 02690000
+ /*                                                                  */ 02700000
+ /* DESCRIPTION      : GET CURRENT SYSTEM DATE                       */ 02710000
+ /*                                                                  */ 02720000
+ /********************************************************************/ 02730000
+ R003_GET_DATE: PROC;                                                   02740000
+                                                                        02750000
+ PTR_INT_AREA        = ADDR(PARM_INT_AREA);                             02760000
+ PARM_INT_AREA.MSG_VAR_VALUE_7  = '';                                   02770000
+ CALL RCB0T1M (PTR_INT_AREA);                                           02780000
+ IF PARM_INT_AREA.MSG_VAR_VALUE_7  ¬= '' THEN                           02790000
+ DO;                                                                    02800000
+   RCODE  = '0000';                                                     02810000
+   SCODE  = PARM_INT_AREA.MSG_VAR_VALUE_7;                              02820000
+   RBLOCK = 'SYSTEM DATE COULD NOT BE RETRIEVED';                       02830000
+   ERR_IND = TRUE;                                                      02840000
+   RETURN;                                                              02850000
+   END;                                                                 02860000
+                                                                        02870000
+ END R003_GET_DATE;                                                     02880000
+1/********************************************************************/ 02890000
+ /*                                                                  */ 02900000
+ /* MODULE NAME      : R010_GET_T220                                 */ 02910000
+ /*                                                                  */ 02920000
+ /********************************************************************/ 02930000
+ R010_GET_T220: PROC;                                                   02940000
+                                                                        02950000
+  EXEC SQL                                                              02960000
+  SELECT TYPE_OF_MAINT                                                  02970000
+        ,TYPE_OF_WARRANTY                                               02980000
+        ,SERVICE_LVL_CODE                                               02990000
+        ,EFFECTIVE_DATE                                                 03000000
+        ,END_DATE                                                       03010000
+  INTO  :TB_RCBV220.TYPE_OF_MAINT     :WRK_TOM_NULL                     03020000
+       ,:TB_RCBV220.TYPE_OF_WARRANTY  :WRK_TOW_NULL                     03030000
+       ,:TB_RCBV220.SERVICE_LVL_CODE  :WRK_SLC_NULL                     03040000
+       ,:TB_RCBV220.EFFECTIVE_DATE                                      03050000
+       ,:TB_RCBV220.END_DATE                                            03060000
+  FROM RCBV0220_SUPPL_CTR                                               03070000
+  WHERE PRODUCT_TYPE     = :RTYPE                                       03080000
+    AND ORIGIN           = :ORIGIN                                      03090000
+    AND SEQUENCE_NUMBER  = :SERIAL                                      03100000
+    AND COUNTRY_NUMBER   = :RCNTRY                                      03110000
+    AND :PARM_INT_AREA.SYSTEM_DATE BETWEEN EFFECTIVE_DATE               03120000
+                                      AND END_DATE                      03130000
+  WITH UR;                                                              03140000
+                                                                        03150000
+  SELECT (SQLCODE);                                                     03160000
+    WHEN (0)                                                            03170000
+    DO;                                                                 03180000
+      IF (WRK_TOM_NULL = -1                                             03190000
+        & WRK_TOW_NULL = -1)                                            03200000
+       | (WRK_TOW_NULL = -1                                             03210000
+        & VERIFY(TB_RCBV220.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_MA)¬='0'    03220000
+      & VERIFY(TB_RCBV220.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_INTERNAL)¬='0'03230000
+        & VERIFY(TB_RCBV220.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_RENT)¬='0') 03240000
+      THEN DO;                                                          03250000
+        NOM_IND = TRUE;                                                 03260000
+        PI_IND = TRUE;                                                  03270000
+        END;                                                            03280000
+                                                                        03290000
+      ELSE DO;                                                          03300000
+        IF WRK_TOM_NULL ¬= -1 THEN                                      03310000
+        DO;                                                             03320000
+          WRK_ENTSTAT = 'M';                                            03330000
+          END;                                                          03340000
+                                                                        03350000
+        ELSE                                                            03360000
+        DO;                                                             03370000
+        IF WRK_TOW_NULL ¬= -1                                           03380000
+         & VERIFY(TB_RCBV220.TYPE_OF_WARRANTY,VALID_TPMNT.TPMNT_WAR)='0'03390000
+        THEN DO;                                                        03400000
+          WRK_ENTSTAT = 'W';                                            03410000
+          END;                                                          03420000
+        ELSE DO;                                                        03430000
+          PI_IND = TRUE;                                                03440000
+          END;                                                          03450000
+        END;                                                            03460000
+        WRK_EFFDATE = TB_RCBV220.EFFECTIVE_DATE;                        03470000
+        WRK_EXPDATE = TB_RCBV220.END_DATE;                              03480000
+        END;                                                            03490000
+      END;                                                              03500000
+                                                                        03510000
+    WHEN (100)                                                          03520000
+    DO;                                                                 03530000
+      PI_IND = TRUE;                                                    03540000
+      END;                                                              03550000
+                                                                        03560000
+    OTHERWISE                                                           03570000
+    DO;                                                                 03580000
+      RCODE  = '0000';                                                  03590000
+      SCODE_PIC = SQLCODE;                                              03600000
+      RBLOCK = 'SQL ERROR';                                             03610000
+      ERR_IND = TRUE;                                                   03620000
+      RETURN;                                                           03630000
+      END;                                                              03640000
+  END;                                                                  03650000
+ END R010_GET_T220;                                                     03660000
+1/********************************************************************/ 03670000
+ /*                                                                  */ 03680000
+ /* MODULE NAME      : R020_GET_T240                                 */ 03690000
+ /*                                                                  */ 03700000
+ /********************************************************************/ 03710000
+ R020_GET_T240: PROC;                                                   03720000
+                                                                        03730000
+  EXEC SQL                                                              03740000
+  SELECT COVERAGE_START_1                                               03750000
+        ,COVERAGE_END_1                                                 03760000
+        ,COVERAGE_START_2                                               03770000
+        ,COVERAGE_END_2                                                 03780000
+        ,COVERAGE_START_3                                               03790000
+        ,COVERAGE_END_3                                                 03800000
+        ,COVERAGE_START_4                                               03810000
+        ,COVERAGE_END_4                                                 03820000
+        ,COVERAGE_START_5                                               03830000
+        ,COVERAGE_END_5                                                 03840000
+        ,COVERAGE_START_6                                               03850000
+        ,COVERAGE_END_6                                                 03860000
+        ,COVERAGE_START_7                                               03870000
+        ,COVERAGE_END_7                                                 03880000
+  INTO  :TB_RCBV240.COVERAGE_START_1    :WRK_INDNULL                    03890000
+       ,:TB_RCBV240.COVERAGE_END_1      :WRK_INDNULL                    03900000
+       ,:TB_RCBV240.COVERAGE_START_2    :WRK_INDNULL                    03910000
+       ,:TB_RCBV240.COVERAGE_END_2      :WRK_INDNULL                    03920000
+       ,:TB_RCBV240.COVERAGE_START_3    :WRK_INDNULL                    03930000
+       ,:TB_RCBV240.COVERAGE_END_3      :WRK_INDNULL                    03940000
+       ,:TB_RCBV240.COVERAGE_START_4    :WRK_INDNULL                    03950000
+       ,:TB_RCBV240.COVERAGE_END_4      :WRK_INDNULL                    03960000
+       ,:TB_RCBV240.COVERAGE_START_5    :WRK_INDNULL                    03970000
+       ,:TB_RCBV240.COVERAGE_END_5      :WRK_INDNULL                    03980000
+       ,:TB_RCBV240.COVERAGE_START_6    :WRK_INDNULL                    03990000
+       ,:TB_RCBV240.COVERAGE_END_6      :WRK_INDNULL                    04000000
+       ,:TB_RCBV240.COVERAGE_START_7    :WRK_INDNULL                    04010000
+       ,:TB_RCBV240.COVERAGE_END_7      :WRK_INDNULL                    04020000
+  FROM RCBV0240_SERV_CTR                                                04030000
+  WHERE PRODUCT_TYPE     = :RTYPE                                       04040000
+    AND ORIGIN           = :ORIGIN                                      04050000
+    AND SEQUENCE_NUMBER  = :SERIAL                                      04060000
+    AND COUNTRY_NUMBER   = :RCNTRY                                      04070000
+    AND :PARM_INT_AREA.SYSTEM_DATE BETWEEN EFFECTIVE_DATE               04080000
+                                       AND END_DATE                     04090000
+  WITH UR;                                                              04100000
+                                                                        04110000
+  SELECT (SQLCODE);                                                     04120000
+    WHEN (0)                                                            04130000
+    DO;                                                                 04140000
+      WRK_COVERAGE_START_1 =                                            04150000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_1);     04160000
+      WRK_COVERAGE_END_1   =                                            04170000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_1);       04180000
+      WRK_COVERAGE_START_2 =                                            04190000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_2);     04200000
+      WRK_COVERAGE_END_2   =                                            04210000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_2);       04220000
+      WRK_COVERAGE_START_3 =                                            04230000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_3);     04240000
+      WRK_COVERAGE_END_3   =                                            04250000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_3);       04260000
+      WRK_COVERAGE_START_4 =                                            04270000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_4);     04280000
+      WRK_COVERAGE_END_4   =                                            04290000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_4);       04300000
+      WRK_COVERAGE_START_5 =                                            04310000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_5);     04320000
+      WRK_COVERAGE_END_5   =                                            04330000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_5);       04340000
+      WRK_COVERAGE_START_6 =                                            04350000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_6);     04360000
+      WRK_COVERAGE_END_6   =                                            04370000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_6);       04380000
+      WRK_COVERAGE_START_7 =                                            04390000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_START_7);     04400000
+      WRK_COVERAGE_END_7   =                                            04410000
+                 R101_ISOTIME2MINUTES(TB_RCBV240.COVERAGE_END_7);       04420000
+      CALL R100_CHECK_HOURS;                                            04430000
+      END;                                                              04440000
+                                                                        04450000
+                                                       /* SOC PTM1326 */04460000
+    WHEN (100)                                                          04470000
+    DO;                                                                 04480000
+      IF VERIFY(TB_RCBV220.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_INTERNAL)='0'04490000
+       | VERIFY(TB_RCBV220.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_RENT)='0'    04500000
+      THEN DO;                                                          04510000
+        WRK_COVHOURS = '3';                                             04520000
+        END;                                                            04530000
+                                                                        04540000
+      ELSE DO;                                                          04550000
+        RCODE  = '0000';                                                04560000
+        SCODE_PIC = SQLCODE;                                            04570000
+        RBLOCK = 'SQL ERROR';                                           04580000
+        ERR_IND = TRUE;                                                 04590000
+        RETURN;                                                         04600000
+        END;                                                            04610000
+      END;                                                              04620000
+                                                       /* EOC PTM1326 */04630000
+                                                                        04640000
+    OTHERWISE                                                           04650000
+    DO;                                                                 04660000
+      RCODE  = '0000';                                                  04670000
+      SCODE_PIC = SQLCODE;                                              04680000
+      RBLOCK = 'SQL ERROR';                                             04690000
+      ERR_IND = TRUE;                                                   04700000
+      RETURN;                                                           04710000
+      END;                                                              04720000
+    END;                                                                04730000
+ END R020_GET_T240;                                                     04740000
+1/********************************************************************/ 04750000
+ /*                                                                  */ 04760000
+ /* MODULE NAME      : R030_GET_T470                                 */ 04770000
+ /*                                                                  */ 04780000
+ /********************************************************************/ 04790000
+ R030_GET_T470: PROC;                                                   04800000
+                                                                        04810000
+  EXEC SQL                                                              04820000
+  SELECT COVERAGE_START_1                                               04830000
+        ,COVERAGE_END_1                                                 04840000
+        ,COVERAGE_START_2                                               04850000
+        ,COVERAGE_END_2                                                 04860000
+        ,COVERAGE_START_3                                               04870000
+        ,COVERAGE_END_3                                                 04880000
+        ,COVERAGE_START_4                                               04890000
+        ,COVERAGE_END_4                                                 04900000
+        ,COVERAGE_START_5                                               04910000
+        ,COVERAGE_END_5                                                 04920000
+        ,COVERAGE_START_6                                               04930000
+        ,COVERAGE_END_6                                                 04940000
+        ,COVERAGE_START_7                                               04950000
+        ,COVERAGE_END_7                                                 04960000
+  INTO  :TB_RCBV470.COVERAGE_START_1      :WRK_INDNULL                  04970000
+       ,:TB_RCBV470.COVERAGE_END_1        :WRK_INDNULL                  04980000
+       ,:TB_RCBV470.COVERAGE_START_2      :WRK_INDNULL                  04990000
+       ,:TB_RCBV470.COVERAGE_END_2        :WRK_INDNULL                  05000000
+       ,:TB_RCBV470.COVERAGE_START_3      :WRK_INDNULL                  05010000
+       ,:TB_RCBV470.COVERAGE_END_3        :WRK_INDNULL                  05020000
+       ,:TB_RCBV470.COVERAGE_START_4      :WRK_INDNULL                  05030000
+       ,:TB_RCBV470.COVERAGE_END_4        :WRK_INDNULL                  05040000
+       ,:TB_RCBV470.COVERAGE_START_5      :WRK_INDNULL                  05050000
+       ,:TB_RCBV470.COVERAGE_END_5        :WRK_INDNULL                  05060000
+       ,:TB_RCBV470.COVERAGE_START_6      :WRK_INDNULL                  05070000
+       ,:TB_RCBV470.COVERAGE_END_6        :WRK_INDNULL                  05080000
+       ,:TB_RCBV470.COVERAGE_START_7      :WRK_INDNULL                  05090000
+       ,:TB_RCBV470.COVERAGE_END_7        :WRK_INDNULL                  05100000
+  FROM RCBV0470_SERV_COND                                               05110000
+  WHERE SERVICE_LVL_CODE = :TB_RCBV220.SERVICE_LVL_CODE                 05120000
+  WITH UR;                                                              05130000
+                                                                        05140000
+  SELECT (SQLCODE);                                                     05150000
+    WHEN (0)                                                            05160000
+    DO;                                                                 05170000
+      WRK_COVERAGE_START_1 =                                            05180000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_1);     05190000
+      WRK_COVERAGE_END_1   =                                            05200000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_1);       05210000
+      WRK_COVERAGE_START_2 =                                            05220000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_2);     05230000
+      WRK_COVERAGE_END_2   =                                            05240000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_2);       05250000
+      WRK_COVERAGE_START_3 =                                            05260000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_3);     05270000
+      WRK_COVERAGE_END_3   =                                            05280000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_3);       05290000
+      WRK_COVERAGE_START_4 =                                            05300000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_4);     05310000
+      WRK_COVERAGE_END_4   =                                            05320000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_4);       05330000
+      WRK_COVERAGE_START_5 =                                            05340000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_5);     05350000
+      WRK_COVERAGE_END_5   =                                            05360000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_5);       05370000
+      WRK_COVERAGE_START_6 =                                            05380000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_6);     05390000
+      WRK_COVERAGE_END_6   =                                            05400000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_6);       05410000
+      WRK_COVERAGE_START_7 =                                            05420000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_START_7);     05430000
+      WRK_COVERAGE_END_7   =                                            05440000
+                 R101_ISOTIME2MINUTES(TB_RCBV470.COVERAGE_END_7);       05450000
+      CALL R100_CHECK_HOURS;                                            05460000
+      END;                                                              05470000
+                                                                        05480000
+    OTHERWISE                                                           05490000
+    DO;                                                                 05500000
+      RCODE  = '0000';                                                  05510000
+      SCODE_PIC = SQLCODE;                                              05520000
+      RBLOCK = 'SQL ERROR';                                             05530000
+      ERR_IND = TRUE;                                                   05540000
+      RETURN;                                                           05550000
+      END;                                                              05560000
+    END;                                                                05570000
+ END R030_GET_T470;                                                     05580000
+1/********************************************************************/ 05590000
+ /*                                                                  */ 05600000
+ /* MODULE NAME      : R040_GET_T190                                 */ 05610000
+ /*                                                                  */ 05620000
+ /********************************************************************/ 05630000
+ R040_GET_T190: PROC;                                                   05640000
+                                                                        05650000
+  EXEC SQL                                                              05660000
+  SELECT CUSTOMER_NUMBER                                                05670000
+  INTO  :TB_RCBV190.CUSTOMER_NUMBER                                     05680000
+  FROM RCBV0190_HW_CUST                                                 05690000
+  WHERE PRODUCT_TYPE     = :RTYPE                                       05700000
+    AND ORIGIN           = :ORIGIN                                      05710000
+    AND SEQUENCE_NUMBER  = :SERIAL                                      05720000
+    AND COUNTRY_NUMBER   = :RCNTRY                                      05730000
+    AND TYPE_OF_RELATION = 'U'                                          05740000
+    AND :PARM_INT_AREA.SYSTEM_DATE BETWEEN EFFECTIVE_DATE               05750000
+                                       AND END_DATE                     05760000
+  WITH UR;                                                              05770000
+                                                                        05780000
+  SELECT (SQLCODE);                                                     05790000
+    WHEN (0)                                                            05800000
+    DO;                                                                 05810000
+      WRK_CUSTNO = SUBSTR(TB_RCBV190.CUSTOMER_NUMBER,2,7);              05820000
+    END;                                                                05830000
+                                                                        05840000
+    OTHERWISE                                                           05850000
+    DO;                                                                 05860000
+      RCODE  = '0000';                                                  05870000
+      SCODE_PIC = SQLCODE;                                              05880000
+      RBLOCK = 'SQL ERROR';                                             05890000
+      ERR_IND = TRUE;                                                   05900000
+      RETURN;                                                           05910000
+      END;                                                              05920000
+    END;                                                                05930000
+ END R040_GET_T190;                                                     05940000
+1/********************************************************************/ 05950000
+ /*                                                                  */ 05960000
+ /* MODULE NAME      : R050_GET_T010                                 */ 05970000
+ /*                                                                  */ 05980000
+ /********************************************************************/ 05990000
+ R050_GET_T010: PROC;                                                   06000000
+                                                                        06010000
+  EXEC SQL                                                              06020000
+  SELECT CUSTOMER_NAME                                                  06030000
+        ,ENTERPRISE_NUMBER                                              06040000
+  INTO  :WRK_CUSTNAME                                                   06050000
+       ,:TB_RCBV010.ENTERPRISE_NUMBER   :WRK_ENT_NULL                   06060000
+  FROM RCBV0010_CUSTOMER                                                06070000
+  WHERE COUNTRY_NUMBER   = :RCNTRY                                      06080000
+    AND CUSTOMER_NUMBER  = :TB_RCBV190.CUSTOMER_NUMBER                  06090000
+    AND :PARM_INT_AREA.SYSTEM_DATE BETWEEN EFFECTIVE_DATE               06100000
+                                       AND END_DATE                     06110000
+  WITH UR;                                                              06120000
+                                                                        06130000
+  SELECT (SQLCODE);                                                     06140000
+    WHEN (0)                                                            06150000
+    DO;                                                                 06160000
+      IF WRK_ENT_NULL ¬= -1 THEN                                        06170000
+      DO;                                                               06180000
+        WRK_ENTNO = SUBSTR(TB_RCBV010.ENTERPRISE_NUMBER,2,7);           06190000
+        END;                                                            06200000
+      END;                                                              06210000
+                                                                        06220000
+    WHEN (100)                                                          06230000
+    DO;                                                                 06240000
+      IF PI_IND = TRUE THEN                                             06250000
+      DO;                                                               06260000
+        CALL R080_GET_T011;                                             06270000
+        END;                                                            06280000
+      END;                                                              06290000
+                                                                        06300000
+    OTHERWISE                                                           06310000
+    DO;                                                                 06320000
+      RCODE  = '0000';                                                  06330000
+      SCODE_PIC = SQLCODE;                                              06340000
+      RBLOCK = 'SQL ERROR';                                             06350000
+      ERR_IND = TRUE;                                                   06360000
+      RETURN;                                                           06370000
+      END;                                                              06380000
+    END;                                                                06390000
+ END R050_GET_T010;                                                     06400000
+1/********************************************************************/ 06410000
+ /*                                                                  */ 06420000
+ /* MODULE NAME      : R060_GET_T051                                 */ 06430000
+ /*                                                                  */ 06440000
+ /********************************************************************/ 06450000
+ R060_GET_T051: PROC;                                                   06460000
+                                                                        06470000
+  EXEC SQL                                                              06480000
+  SELECT TYPE_OF_MAINT                                                  06490000
+        ,TYPE_OF_WARRANTY                                               06500000
+        ,CUSTOMER_NUMBER                                                06510000
+  INTO  :TB_RCBV051.TYPE_OF_MAINT        :WRK_TOM_NULL                  06520000
+       ,:TB_RCBV051.TYPE_OF_WARRANTY     :WRK_TOW_NULL                  06530000
+       ,:TB_RCBV051.CUSTOMER_NUMBER                                     06540000
+  FROM RCBV0051_PI_HW_PR                                                06550000
+  WHERE PRODUCT_TYPE     = :RTYPE                                       06560000
+    AND ORIGIN           = :ORIGIN                                      06570000
+    AND SEQUENCE_NUMBER  = :SERIAL                                      06580000
+    AND COUNTRY_NUMBER   = :RCNTRY                                      06590000
+  WITH UR;                                                              06600000
+                                                                        06610000
+  SELECT (SQLCODE);                                                     06620000
+    WHEN (0)                                                            06630000
+    DO;                                                                 06640000
+      WRK_CUSTNO = SUBSTR(TB_RCBV051.CUSTOMER_NUMBER,2,7);              06650000
+      IF WRK_TOW_NULL ¬= -1                                             06660000
+       & VERIFY(TB_RCBV051.TYPE_OF_WARRANTY,VALID_TPMNT.TPMNT_WAR)='0'  06670000
+      THEN DO;                                                          06680000
+        WRK_ENTSTAT = 'W';                                              06690000
+        RETURN;                                                         06700000
+        END;                                                            06710000
+                                                                        06720000
+      IF (WRK_TOM_NULL ¬= -1                                            06730000
+       & VERIFY(TB_RCBV051.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_MA)='0'      06740000
+       | VERIFY(TB_RCBV051.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_INTERNAL)='0'06750000
+       | VERIFY(TB_RCBV051.TYPE_OF_MAINT,VALID_TPMNT.TPMNT_RENT)='0')   06760000
+      THEN DO;                                                          06770000
+        WRK_ENTSTAT = 'M';                                              06780000
+        RETURN;                                                         06790000
+        END;                                                            06800000
+                                                                        06810000
+      RCODE  = '1004';                                                  06820000
+      SCODE  = '0000';                                                  06830000
+      RBLOCK = 'TYPE/SERIAL NOT ON MA/WARRANTY';                        06840000
+      ERR_IND = TRUE;                                                   06850000
+                                                                        06860000
+      END;                                                              06870000
+                                                                        06880000
+    WHEN (100)                                                          06890000
+    IF NOM_IND = TRUE THEN                                              06900000
+    DO;                                                                 06910000
+      RCODE  = '1004';                                                  06920000
+      SCODE  = '0000';                                                  06930000
+      RBLOCK = 'TYPE/SERIAL NOT ON MA/WARRANTY';                        06940000
+      ERR_IND = TRUE;                                                   06950000
+      RETURN;                                                           06960000
+      END;                                                              06970000
+    ELSE DO;                                                            06980000
+      RCODE  = '1003';                                                  06990000
+      SCODE  = '0000';                                                  07000000
+      RBLOCK = 'TYPE/SERIAL NOT FOUND';                                 07010000
+      ERR_IND = TRUE;                                                   07020000
+      RETURN;                                                           07030000
+      END;                                                              07040000
+                                                                        07050000
+    OTHERWISE                                                           07060000
+    DO;                                                                 07070000
+      RCODE  = '0000';                                                  07080000
+      SCODE_PIC = SQLCODE;                                              07090000
+      RBLOCK = 'SQL ERROR';                                             07100000
+      ERR_IND = TRUE;                                                   07110000
+      RETURN;                                                           07120000
+      END;                                                              07130000
+  END;                                                                  07140000
+ END R060_GET_T051;                                                     07150000
+1/********************************************************************/ 07160000
+ /*                                                                  */ 07170000
+ /* MODULE NAME      : R070_GET_T241                                 */ 07180000
+ /*                                                                  */ 07190000
+ /********************************************************************/ 07200000
+ R070_GET_T241: PROC;                                                   07210000
+                                                                        07220000
+  EXEC SQL                                                              07230000
+  SELECT COVERAGE_START_1                                               07240000
+        ,COVERAGE_END_1                                                 07250000
+        ,COVERAGE_START_2                                               07260000
+        ,COVERAGE_END_2                                                 07270000
+        ,COVERAGE_START_3                                               07280000
+        ,COVERAGE_END_3                                                 07290000
+        ,COVERAGE_START_4                                               07300000
+        ,COVERAGE_END_4                                                 07310000
+        ,COVERAGE_START_5                                               07320000
+        ,COVERAGE_END_5                                                 07330000
+        ,COVERAGE_START_6                                               07340000
+        ,COVERAGE_END_6                                                 07350000
+        ,COVERAGE_START_7                                               07360000
+        ,COVERAGE_END_7                                                 07370000
+  INTO  :TB_RCBV241.COVERAGE_START_1      :WRK_INDNULL                  07380000
+       ,:TB_RCBV241.COVERAGE_END_1        :WRK_INDNULL                  07390000
+       ,:TB_RCBV241.COVERAGE_START_2      :WRK_INDNULL                  07400000
+       ,:TB_RCBV241.COVERAGE_END_2        :WRK_INDNULL                  07410000
+       ,:TB_RCBV241.COVERAGE_START_3      :WRK_INDNULL                  07420000
+       ,:TB_RCBV241.COVERAGE_END_3        :WRK_INDNULL                  07430000
+       ,:TB_RCBV241.COVERAGE_START_4      :WRK_INDNULL                  07440000
+       ,:TB_RCBV241.COVERAGE_END_4        :WRK_INDNULL                  07450000
+       ,:TB_RCBV241.COVERAGE_START_5      :WRK_INDNULL                  07460000
+       ,:TB_RCBV241.COVERAGE_END_5        :WRK_INDNULL                  07470000
+       ,:TB_RCBV241.COVERAGE_START_6      :WRK_INDNULL                  07480000
+       ,:TB_RCBV241.COVERAGE_END_6        :WRK_INDNULL                  07490000
+       ,:TB_RCBV241.COVERAGE_START_7      :WRK_INDNULL                  07500000
+       ,:TB_RCBV241.COVERAGE_END_7        :WRK_INDNULL                  07510000
+  FROM RCBV0241_PI_CTR                                                  07520000
+  WHERE PRODUCT_TYPE     = :RTYPE                                       07530000
+    AND ORIGIN           = :ORIGIN                                      07540000
+    AND SEQUENCE_NUMBER  = :SERIAL                                      07550000
+    AND COUNTRY_NUMBER   = :RCNTRY                                      07560000
+    AND :PARM_INT_AREA.SYSTEM_DATE BETWEEN EFFECTIVE_DATE               07570000
+                                       AND END_DATE                     07580000
+  WITH UR;                                                              07590000
+                                                                        07600000
+  SELECT (SQLCODE);                                                     07610000
+    WHEN (0)                                                            07620000
+    DO;                                                                 07630000
+      WRK_COVERAGE_START_1 =                                            07640000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_1);     07650000
+      WRK_COVERAGE_END_1   =                                            07660000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_1);       07670000
+      WRK_COVERAGE_START_2 =                                            07680000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_2);     07690000
+      WRK_COVERAGE_END_2   =                                            07700000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_2);       07710000
+      WRK_COVERAGE_START_3 =                                            07720000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_3);     07730000
+      WRK_COVERAGE_END_3   =                                            07740000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_3);       07750000
+      WRK_COVERAGE_START_4 =                                            07760000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_4);     07770000
+      WRK_COVERAGE_END_4   =                                            07780000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_4);       07790000
+      WRK_COVERAGE_START_5 =                                            07800000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_5);     07810000
+      WRK_COVERAGE_END_5   =                                            07820000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_5);       07830000
+      WRK_COVERAGE_START_6 =                                            07840000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_6);     07850000
+      WRK_COVERAGE_END_6   =                                            07860000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_6);       07870000
+      WRK_COVERAGE_START_7 =                                            07880000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_START_7);     07890000
+      WRK_COVERAGE_END_7   =                                            07900000
+                 R101_ISOTIME2MINUTES(TB_RCBV241.COVERAGE_END_7);       07910000
+      CALL R100_CHECK_HOURS;                                            07920000
+      END;                                                              07930000
+                                                                        07940000
+    WHEN (100);                                                         07950000
+                                                                        07960000
+    OTHERWISE                                                           07970000
+    DO;                                                                 07980000
+      RCODE  = '0000';                                                  07990000
+      SCODE_PIC = SQLCODE;                                              08000000
+      RBLOCK = 'SQL ERROR';                                             08010000
+      ERR_IND = TRUE;                                                   08020000
+      RETURN;                                                           08030000
+      END;                                                              08040000
+    END;                                                                08050000
+ END R070_GET_T241;                                                     08060000
+1/********************************************************************/ 08070000
+ /*                                                                  */ 08080000
+ /* MODULE NAME      : R080_GET_T011                                 */ 08090000
+ /*                                                                  */ 08100000
+ /********************************************************************/ 08110000
+ R080_GET_T011: PROC;                                                   08120000
+                                                                        08130000
+  EXEC SQL                                                              08140000
+  SELECT CUSTOMER_NAME                                                  08150000
+  INTO  :TB_RCBV011.CUSTOMER_NAME   :WRK_CUS_NULL                       08160000
+  FROM RCBV0011_PI_CUST                                                 08170000
+  WHERE COUNTRY_NUMBER   = :RCNTRY                                      08180000
+    AND CUSTOMER_NUMBER  = :TB_RCBV051.CUSTOMER_NUMBER                  08190000
+  WITH UR;                                                              08200000
+                                                                        08210000
+  SELECT (SQLCODE);                                                     08220000
+    WHEN (0)                                                            08230000
+    DO;                                                                 08240000
+      IF WRK_CUS_NULL ¬= -1 THEN                                        08250000
+      DO;                                                               08260000
+        WRK_CUSTNAME = TB_RCBV011.CUSTOMER_NAME;                        08270000
+        END;                                                            08280000
+      END;                                                              08290000
+                                                                        08300000
+    WHEN (100);                                                         08310000
+                                                                        08320000
+    OTHERWISE                                                           08330000
+    DO;                                                                 08340000
+      RCODE  = '0000';                                                  08350000
+      SCODE_PIC = SQLCODE;                                              08360000
+      RBLOCK = 'SQL ERROR';                                             08370000
+      ERR_IND = TRUE;                                                   08380000
+      RETURN;                                                           08390000
+      END;                                                              08400000
+    END;                                                                08410000
+ END R080_GET_T011;                                                     08420000
+1/********************************************************************/ 08430000
+ /*                                                                  */ 08440000
+ /* MODULE NAME      : R100_CHECK_HOURS     CHECK ENTITLEMENT        */ 08450000
+ /*                                                                  */ 08460000
+ /********************************************************************/ 08470000
+ R100_CHECK_HOURS: PROC;                                                08480000
+                                                                        08490000
+ IF (WRK_COVERAGE_END_1 - WRK_COVERAGE_START_1 < 0                      08500000
+   | WRK_COVERAGE_END_1 - WRK_COVERAGE_START_1 > 1380)                  08510000
+  & (WRK_COVERAGE_END_2 - WRK_COVERAGE_START_2 < 0                      08520000
+   | WRK_COVERAGE_END_2 - WRK_COVERAGE_START_2 > 1380)                  08530000
+  & (WRK_COVERAGE_END_3 - WRK_COVERAGE_START_3 < 0                      08540000
+   | WRK_COVERAGE_END_3 - WRK_COVERAGE_START_3 > 1380)                  08550000
+  & (WRK_COVERAGE_END_4 - WRK_COVERAGE_START_4 < 0                      08560000
+   | WRK_COVERAGE_END_4 - WRK_COVERAGE_START_4 > 1380)                  08570000
+  & (WRK_COVERAGE_END_5 - WRK_COVERAGE_START_5 < 0                      08580000
+   | WRK_COVERAGE_END_5 - WRK_COVERAGE_START_5 > 1380)                  08590000
+  & (WRK_COVERAGE_END_6 - WRK_COVERAGE_START_6 < 0                      08600000
+   | WRK_COVERAGE_END_6 - WRK_COVERAGE_START_6 > 1380)                  08610000
+  & (WRK_COVERAGE_END_7 - WRK_COVERAGE_START_7 < 0                      08620000
+   | WRK_COVERAGE_END_7 - WRK_COVERAGE_START_7 > 1380)                  08630000
+ THEN                                                                   08640000
+ DO;                                                                    08650000
+   WRK_COVHOURS = '3';                                                  08660000
+   END;                                                                 08670000
+ ELSE                                                                   08680000
+ DO;                                                                    08690000
+   WRK_COVHOURS = '1';                                                  08700000
+   END;                                                                 08710000
+                                                                        08720000
+ END R100_CHECK_HOURS;                                                  08730000
+1/********************************************************************/ 08740000
+ /*                                                                  */ 08750000
+ /* MODULE NAME      : R101_ISOTIME2MINUTES                          */ 08760000
+ /*                                                                  */ 08770000
+ /* DESCRIPTION      : CONVERT ISO TIME HH.MM.SS TO MINUTES AFTER    */ 08780000
+ /*                    MIDNIGHT. SECONDS ARE DISCARDED.              */ 08790000
+ /* ARGUMENT         : CHAR      (08) ISOTIME  'HH.MM.SS'            */ 08800000
+ /* RETURNS          : FIXED BIN (31)                                */ 08810000
+ /*                                                                  */ 08820000
+ /********************************************************************/ 08830000
+ R101_ISOTIME2MINUTES: PROC(ISOTIME) RETURNS(FIXED BIN(31));            08840000
+                                                                        08850000
+ DCL ISOTIME     CHAR(08);                                              08860000
+ DCL 1 P_ISOTIME BASED(ADDR(ISOTIME)),                                  08870000
+     3 HOUR      PIC '99',                                              08880000
+     3 FILLER1   CHAR(01),                                              08890000
+     3 MINUTE    PIC '99',                                              08900000
+     3 FILLER2   CHAR(03);                                              08910000
+                                                                        08920000
+ RETURN ((60*P_ISOTIME.HOUR) + P_ISOTIME.MINUTE);                       08930000
+                                                                        08940000
+ END R101_ISOTIME2MINUTES;                                              08950000
+                                                                        08960000
+1/*******************************************************************/  08970000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  08980000
+ /*******************************************************************/  08990000
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  09000000
+ $DAIMOD (RCBEAAM);                      /* MODULE TO BE COMPILED   */  09010000
+ /*******************************************************************/  09020000
+ /* END OF ABR BLOCK                                                */  09030000
+ /*******************************************************************/  09040000
+ END RCBEAAM;                                                           09050000

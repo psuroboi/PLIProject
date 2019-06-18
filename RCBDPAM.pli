@@ -1,0 +1,1766 @@
+1/* RCBDPAM - CPP/S HW: DETERMINE CHANGED KEYS                       */ 00010000
+ /********************************************************************/ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /********************************************************************/ 00060000
+ /* PROGRAM          : RCBDPAM                                       */ 00070000
+ /*                                                                  */ 00080000
+ /* LANGUAGE         : PLISQL                                        */ 00090000
+ /*                                                                  */ 00100000
+ /* TYPE             : BATCH                                         */ 00110000
+ /*                                                                  */ 00120000
+ /* DESCRIPTION      : THE EXTRACT OF KEYS OF INTEREST FOR THE       */ 00130000
+ /*                    PICOS/REOLS HW EXTRACT, WHICH HAVE CHANGED    */ 00140000
+ /*                    SINCE THE LAST BMICS HW EXTRACT.              */ 00150000
+ /*                                                                  */ 00160000
+ /* INPUT            : - DB2   : RCBV0040_OU                         */ 00170000
+ /*                              RCBV0051_PI_HW_PR           RB01237 */ 00180000
+ /*                              RCBV0070_HW_PO                      */ 00190000
+ /*                              RCBV0110_HW_STATUS                  */ 00200000
+ /*                              RCBV0125_DMMY_REAL          RB01320 */ 00210000
+ /*                              RCBV0150_CUST_ADDR (RA01138)        */ 00220000
+ /*                              RCBV0170_OU_HW                      */ 00230000
+ /*                              RCBV0190_HW_CUST                    */ 00240000
+ /*                              RCBV0220_SUPPL_CTR                  */ 00250000
+ /*                              RCBV0240_SERV_CTR      CEDS00000330 */ 00260000
+ /*                              RCBV0241_PI_CTR             RB01237 */ 00270000
+ /*                              RCBV0260_HW_IN_ORD                  */ 00280000
+ /*                              RCBV0300_HW_REAL                    */ 00290000
+ /*                              RCBV0340_HW_ADDR (RA01138)          */ 00300000
+ /*                              RCBV0500_PARM                       */ 00310000
+ /*                                                                  */ 00320000
+ /* OUTPUT           : - DB2   : RCBT0725_PICOS_HW           RC01219 */ 00330000
+ /*                    - FILE  : RCB0M10                             */ 00340000
+ /*                                                                  */ 00350000
+ /* TEMPORARY        : - DB2   : RCBT0735_PICOS_TP           RC01219 */ 00360000
+ /*                                                                  */ 00370000
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */ 00380000
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */ 00390000
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */ 00400000
+ /*                    RCB004M   DATE CALCULATION                    */ 00410000
+ /*                    RCB019M   RETRIEVE COUNTRY NUMBERS            */ 00420000
+ /*                    RCB020M   RETRIEVE RUN DATE                   */ 00430000
+ /*                    RCBI50M   RETRIEVE PARAMETER                  */ 00440000
+ /*                    RCB024M   LOCK DB2 TABLE PARTITIONS   RC01219 */ 00450000
+ /*                                                                  */ 00460000
+ /* MESSAGES         :                                               */ 00470000
+ /*                                                                  */ 00480000
+ /* DEPENDENCIES     : NONE                                          */ 00490000
+ /*                                                                  */ 00500000
+ /* FREQUENCY        : USER DEPENDENT                                */ 00510000
+ /*                                                                  */ 00520000
+ /* MAINTENANCE LOG  :                                               */ 00530000
+ /* ---------------                                                  */ 00540000
+ /*                                                                  */ 00550000
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00560000
+ /*           |              |                                       */ 00570000
+ /* 1993-04-01| ----         | CEDS INITIAL DEVELOPMENT              */ 00580000
+ /* 1995-06-13| ----         | CHANGE OF TEMPORARY TABLE             */ 00590000
+ /* 1995-09-26| RA01138      | CPP/S INTERFACE                       */ 00600000
+ /*           | RB01140      | TABLE CHANGES                         */ 00610000
+ /* 1996-05-12| PTM 924      | TOO MANY DUPLICATES                   */ 00620000
+ /* 1997-04-11| PTM1036      | CORRECTED PROLOG                      */ 00630000
+ /* 1998-10-15| PTM1214      | PERFORMANCE                           */ 00640000
+ /* 1999-07-06| RC01219      | DORO                                  */ 00650000
+ /* 2000-11-30| PTM1339      | ADD COMMITS FOR TEMP TABLES           */ 00660000
+ /* 2001-12-13| RB01232      | REMOVE MES PROCESSING                 */ 00670000
+ /* 2004-07-30| RB01237      | PRIME INPUT DATA IN PARTS INTERFACE   */ 00680000
+ /* 2004-07-30| RB01260      | MULTIPLE PEW RUNS PER DAY             */ 00690000
+ /* 2004-07-30| PTM1417      | WHEN FUTURE BECOMES CURRENT           */ 00700000
+ /* 2008-02-04| CEDS00000330 | FIX FOR IDENTIFYING COMMITTED MACHINES*/ 00710000
+ /*           |              | FROM TABLE RCBT0240                   */ 00720000
+ /* 2009-01-23| RB01298      | SELECTION OF CHANGED KEYS TO CONSIDER */ 00730000
+ /*           |              | SPLIT DATE IN T220 FOR TREC-049       */ 00740000
+ /* 2012-02-29| RB01320      | CEDS 3.3 A17 RELEASE                  */ 00750000
+ /*           |              | UPDATE DUMMY_SERIAL_NUMBER INTO       */ 00760000
+ /*           |              | CHANGED KEYS TABLE FROM T125 FOR      */ 00770000
+ /*           |              | NON-IBM BRAND MACHINES                */ 00780000
+ /* 2015-02-03| CEDS00000728 | TREC 2121 : T125 DATA RETRIEVED ONLY  */ 00790000
+ /*           |              | FOR COUNTRY REQUESTED IN RCB000       */ 00800000
+ /* 2015-04-24| CEDS00000738 | T081567 : PERFORMANCE ISSUE FOR DP01  */ 00801000
+ /*           |              | AND DC01 REAL_ORIGIN, REAL_SEQ_NUM ARE*/ 00802000
+ /*           |              | ADDED TO T724 AND T734                */ 00803000
+ /* 2019-03-07| S1776367     | PERFORMANCE IMPROVEMENT IN DP01       */ 00810026
+ /*           |              |                                       */ 00811000
+ /********************************************************************/ 00820000
+1RCBDPAM: PROC                                                          00830000
+          OPTIONS (MAIN)                                                00840000
+          REORDER;                                                      00850000
+ DEFAULT RANGE (*)        STATIC;                                       00860000
+1/********************************************************************/ 00870000
+ /*  PARAMETERS                                                      */ 00880000
+ /********************************************************************/ 00890000
+ DCL PTR_INT_AREA        PTR;          /* INTERFACE AREA             */ 00900000
+ DCL PTR_RETURN_AREA_BB  PTR;          /* RETURN AREA FROM BB        */ 00910000
+ DCL PTR_COUNTRY_AREA    PTR;          /* INTERFACE RCB019M          */ 00920000
+ DCL PTR_RUN_DATE_AREA   PTR;          /* INTERFACE RCB020M          */ 00930000
+                                                                        00940000
+ DCL 1 PARM_INT_AREA,                          /* INTERFACE AREA     */ 00950000
+       %INCLUDE (RCBZ01S);;                                             00960000
+ DCL 1 RETURN_AREA_BB,                         /* RETURN AREA        */ 00970000
+       %INCLUDE (RCBZ02S);;                                             00980000
+ DCL 1 COUNTRY_AREA,                           /* COUNTRY AREA       */ 00990000
+       %INCLUDE (RCBZ26S);;                                             01000000
+ DCL 1 RUN_DATE_AREA,                          /* RUN DATE AREA      */ 01010000
+       %INCLUDE (RCBZ28S);;                                             01020000
+ DCL 1 PARM_DATE_CALC,                         /* DATE CALC AREA     */ 01030000
+      %INCLUDE (RCBZ03S);;                                              01040000
+                                                      /* SOC RB01237 */ 01050000
+ DCL 1 PARM_RCB005,                            /* PI EXTR PARM       */ 01060000
+      %INCLUDE (RCBP05S);;                                              01070000
+                                                      /* EOC RB01237 */ 01080000
+ DCL 1 PARM_RCB024M,                           /* RCB024M PARM       */ 01090000
+      %INCLUDE (RCBZ33S);;                                              01100000
+1/********************************************************************/ 01110000
+ /* EXTERNAL ENTRIES                                                 */ 01120000
+ /********************************************************************/ 01130000
+                                                                        01140000
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */ 01150000
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGES ROUT     */ 01160000
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* RETRIEVE SYSTEM DATE     */ 01170000
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* RETRIEVE PARAMETER       */ 01180000
+ DCL RCB004M   ENTRY  EXTERNAL;          /* DATE CALCULATION         */ 01190000
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */ 01200000
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */ 01210000
+ DCL RCB024M   ENTRY  EXTERNAL;          /* LOCK DB2 TABLE PARTITION */ 01220000
+                                                                        01230000
+1/********************************************************************/ 01240000
+ /* DB2 TABLE STRUCTURES                                             */ 01250000
+ /********************************************************************/ 01260000
+ DCL 1 TB_RCBV125,                                    /* SOC RB01320 */ 01270000
+      %INCLUDE (RCB125S);;                            /* EOC RB01320 */ 01280000
+ DCL 1 TB_RCBV500,                                                      01290000
+      %INCLUDE (RCB500S);;                                              01300000
+ DCL 1 TB_RCBV500_I,                                                    01310000
+      %INCLUDE (RCB500SI);;                                             01320000
+                                                      /* SOC RB01237 */ 01330000
+ DCL 1 TB_RCBP05S            BASED (ADDR(TB_RCBV500)),                  01340000
+      %INCLUDE (RCBP05S);;                                              01350000
+                                                      /* SOC RB01237 */ 01360000
+ DCL 1 TB_RCBP37S            BASED (ADDR(TB_RCBV500)),                  01370000
+      %INCLUDE (RCBP37S);;                                              01380000
+ /********************************************************************/ 01390000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01400000
+ /********************************************************************/ 01410000
+ DCL 1 WORK_FIELDS,                                                     01420000
+    3 WRK_MOD_NAME                      CHAR (08)  INIT ('RCBDPAM'),    01430000
+    3 WRK_PRG_NAME                      CHAR (08)  INIT ('RCBDPAP'),    01440000
+    3 WRK_SYSTEM_TYPE                   CHAR (01)  INIT ('B'),          01450000
+    3 WRK_LAST_EXTR_DATE                CHAR (10),                      01460000
+    3 WRK_START_CHANGE_PERIOD           CHAR (10),                      01470000
+    3 WRK_RUN_DATE                      CHAR (10),                      01480000
+    3 WRK_CTRYNO                        CHAR (03),                      01490000
+    3 WRK_CTRYNO_NO                     FIXED BIN(15) INIT(1),          01500000
+    3 WRK_PGR_TYPE                      CHAR (03);                      01510000
+                                                                        01520000
+1/********************************************************************/ 01530000
+ /*  BUILTIN FUNCTIONS                                               */ 01540000
+ /********************************************************************/ 01550000
+ DCL (ADDR,                                                             01560000
+     DATE,                                                              01570000
+     TIME,                                                              01580000
+     NULL,                                                              01590000
+     STRING,                                                            01600000
+     SUBSTR)                 BUILTIN;                                   01610000
+1/********************************************************************/ 01620000
+ /* ON ERROR CONDITIONS                                              */ 01630000
+ /********************************************************************/ 01640000
+ %INCLUDE (RCB0E0M);                                                    01650000
+  END;                                                                  01660000
+1/********************************************************************/ 01670000
+ /* DB2/SQL SQLCA                                                    */ 01680000
+ /********************************************************************/ 01690000
+  EXEC SQL                                                              01700000
+   INCLUDE SQLCA                                                        01710000
+   ;                                                                    01720000
+                                                      /* SOC RB01320 */ 01730000
+ /********************************************************************/ 01740000
+ /* DB2/SQL CURSORS                                                  */ 01750000
+ /********************************************************************/ 01760000
+ EXEC SQL                                                               01770000
+   DECLARE CURSOR_LONG_SER CURSOR FOR                                   01780000
+   SELECT *                                                             01790000
+   FROM RCBT0125_DMMY_REAL A,                                           01800000
+        RCBT0735_PICOS_TP  B                                            01810000
+   WHERE A.PRODUCT_TYPE       = B.PRODUCT_TYPE                          01820000
+   AND   A.COUNTRY_NUMBER     = B.COUNTRY_NUMBER                        01830000
+   AND   A.REAL_SERIAL_NUMBER = B.ORIGIN||B.SEQUENCE_NUMBER             01840000
+   AND   A.COUNTRY_NUMBER     = :WRK_CTRYNO          /* CEDS00000728 */ 01850000
+   FOR FETCH ONLY                                                       01860000
+ ;                                                                      01870000
+                                                      /* EOC RB01320 */ 01880000
+1/********************************************************************/ 01890000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01900000
+ /********************************************************************/ 01910000
+ CALL R900_INIT_PROGRAM;                                                01920000
+                                                                        01930000
+ DO WHILE (WRK_CTRYNO_NO <= COUNTRY_AREA.COUNT_CTRY);                   01940000
+                                                                        01950000
+   CALL R700_INIT_COUNTRY;                                              01960000
+                                                                        01970000
+   CALL R701_RETR_INSERT_FROM_RCBV0040;                                 01980000
+   CALL R703_RETR_INSERT_FROM_RCBV0070;                                 01990000
+   CALL R705_RETR_INSERT_FROM_RCBV0110;                                 02000000
+   CALL R706_RETR_INSERT_FROM_RCBV0150;                   /* RA01138 */ 02010018
+   CALL R707_RETR_INSERT_FROM_RCBV0170;                                 02020000
+   CALL R709_RETR_INSERT_FROM_RCBV0190;                                 02030000
+   CALL R711_RETR_INSERT_FROM_RCBV0220;                                 02040000
+   CALL R715_RETR_INSERT_FROM_RCBV0240;              /* CEDS00000330 */ 02050018
+   CALL R717_RETR_INSERT_FROM_RCBV0260;                                 02060000
+   CALL R719_RETR_INSERT_FROM_RCBV0300;                                 02070000
+   CALL R722_RETR_INSERT_FROM_RCBV0340;                   /* RA01138 */ 02080000
+                                                      /* SOC RB01237 */ 02090000
+   IF PARM_RCB005.PI_TO_CEREOLS = 'Y'              /* SELECT PI PARM */ 02100000
+   THEN DO;                                                             02110000
+     CALL R730_RETR_INSERT_FROM_RCBV0051;          /* PI HW PRODUCT  */ 02120000
+     CALL R735_RETR_INSERT_FROM_RCBV0241;          /* PI CONTRACT    */ 02130000
+   END;                                                                 02140000
+                                                      /* EOC RB01237 */ 02150000
+   CALL R820_DISTINCT_COPY_RCBV0725;                      /* RC01219 */ 02160000
+                                                                        02170000
+   CALL R799_END_COUNTRY;                                               02180000
+                                                                        02190000
+ END;                                                                   02200000
+                                                                        02210000
+ CALL R999_END_PROGRAM;                                                 02220000
+1/********************************************************************/ 02230000
+ /*                                                                  */ 02240000
+ /* MODULE NAME      : R001_LOCK_TABLES                              */ 02250000
+ /*                                                                  */ 02260000
+ /* DESCRIPTION      :                                               */ 02270000
+ /*                                                                  */ 02280000
+ /********************************************************************/ 02290000
+ R001_LOCK_TABLES: PROC;                                                02300000
+                                                                        02310000
+ PARM_RCB024M.COUNTRY_NUMBER = WRK_CTRYNO;            /* SOC RC01219 */ 02320000
+                                                                        02330000
+ /********************************************************************/ 02340000
+                                                                        02350000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0040_OU';                           02360000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 02370000
+                                                                        02380000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      02390000
+               PTR_RETURN_AREA_BB,                                      02400000
+               PTR_INT_AREA);                                           02410000
+                                                                        02420000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    02430000
+   WHEN (0);                                                            02440000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 02450018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#001');                        02460000
+   OTHERWISE                                                            02470000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              02480000
+                          'DB2', '#002');                               02490000
+ END;                                                                   02500000
+                                                      /* SOC RB01237 */ 02510000
+ /********************************************************************/ 02520000
+                                                                        02530000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0051_PI_HW_PR';                     02540000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 02550000
+                                                                        02560000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      02570000
+               PTR_RETURN_AREA_BB,                                      02580000
+               PTR_INT_AREA);                                           02590000
+                                                                        02600000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    02610000
+   WHEN (0);                                                            02620000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 02630018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#003');                        02640000
+   OTHERWISE                                                            02650000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              02660000
+                         'DB2','#004');                                 02670000
+ END;                                                                   02680000
+                                                      /* EOC RB01237 */ 02690000
+ /********************************************************************/ 02700000
+                                                                        02710000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0070_HW_PO';                        02720000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 02730000
+                                                                        02740000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      02750000
+               PTR_RETURN_AREA_BB,                                      02760000
+               PTR_INT_AREA);                                           02770000
+                                                                        02780000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    02790000
+   WHEN (0);                                                            02800000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 02810018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#005');                        02820000
+   OTHERWISE                                                            02830000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              02840000
+                         'DB2','#006');                                 02850000
+ END;                                                                   02860000
+                                                                        02870000
+ /********************************************************************/ 02880000
+                                                                        02890000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0110_HW_STATUS';                    02900000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 02910000
+                                                                        02920000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      02930000
+               PTR_RETURN_AREA_BB,                                      02940000
+               PTR_INT_AREA);                                           02950000
+                                                                        02960000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    02970000
+   WHEN (0);                                                            02980000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 02990018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#007');                        03000000
+   OTHERWISE                                                            03010000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03020000
+                         'DB2','#008');                                 03030000
+ END;                                                                   03040000
+                                                                        03050000
+ /********************************************************************/ 03060000
+                                                      /* SOC RB01320 */ 03070000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0125_DMMY_REAL';                    03080000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03090000
+                                                                        03100000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03110000
+               PTR_RETURN_AREA_BB,                                      03120000
+               PTR_INT_AREA);                                           03130000
+                                                                        03140000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03150000
+   WHEN (0);                                                            03160000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03170018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#001');                        03180000
+   OTHERWISE                                                            03190000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03200000
+                          'DB2', '#002');                               03210000
+ END;                                                                   03220000
+                                                      /* EOC RB01320 */ 03230000
+ /********************************************************************/ 03240000
+                                                                        03250000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0150_CUST_ADDR';                    03260000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03270000
+                                                                        03280000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03290000
+               PTR_RETURN_AREA_BB,                                      03300000
+               PTR_INT_AREA);                                           03310000
+                                                                        03320000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03330000
+   WHEN (0);                                                            03340000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03350018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#009');                        03360000
+   OTHERWISE                                                            03370000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03380000
+                         'DB2','#010');                                 03390000
+ END;                                                                   03400000
+                                                                        03410000
+ /********************************************************************/ 03420000
+                                                                        03430000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0170_OU_HW';                        03440000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03450000
+                                                                        03460000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03470000
+               PTR_RETURN_AREA_BB,                                      03480000
+               PTR_INT_AREA);                                           03490000
+                                                                        03500000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03510000
+   WHEN (0);                                                            03520000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03530018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#011');                        03540000
+   OTHERWISE                                                            03550000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03560000
+                         'DB2','#012');                                 03570000
+ END;                                                                   03580000
+                                                                        03590000
+ /********************************************************************/ 03600000
+                                                                        03610000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0190_HW_CUST';                      03620000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03630000
+                                                                        03640000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03650000
+               PTR_RETURN_AREA_BB,                                      03660000
+               PTR_INT_AREA);                                           03670000
+                                                                        03680000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03690000
+   WHEN (0);                                                            03700000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03710018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#013');                        03720000
+   OTHERWISE                                                            03730000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03740000
+                        'DB2', '#014');                                 03750000
+ END;                                                                   03760000
+                                                                        03770000
+ /********************************************************************/ 03780000
+                                                                        03790000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0220_SUPPL_CTR';                    03800000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 03810000
+                                                                        03820000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      03830000
+               PTR_RETURN_AREA_BB,                                      03840000
+               PTR_INT_AREA);                                           03850000
+                                                                        03860000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    03870000
+   WHEN (0);                                                            03880000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 03890018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#015');                        03900000
+   OTHERWISE                                                            03910000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              03920000
+                         'DB2','#016');                                 03930000
+ END;                                                                   03940000
+                                                                        03950000
+                                                 /* SOC CEDS00000330 */ 03960000
+ /********************************************************************/ 03970000
+                                                                        03980000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0240_SERV_CTR';                     03990000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 04000000
+                                                                        04010000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04020000
+               PTR_RETURN_AREA_BB,                                      04030000
+               PTR_INT_AREA);                                           04040000
+                                                                        04050000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04060000
+   WHEN (0);                                                            04070000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 04080018
+     DO;                                                                04090000
+       CALL RCBDPAM_ERROR (NULL, 'OTHER', '#052');                      04100000
+     END;                                                               04110000
+   OTHERWISE                                                            04120000
+     DO;                                                                04130000
+       CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),            04140000
+                                 'DB2',                                 04150000
+                                 '#053');                               04160000
+     END;                                                               04170000
+ END;                                                                   04180000
+                                                 /* EOC CEDS00000330 */ 04190000
+                                                                        04200000
+                                                      /* SOC RB01237 */ 04210000
+ /********************************************************************/ 04220000
+                                                                        04230000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0241_PI_CTR';                       04240000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 04250000
+                                                                        04260000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04270000
+               PTR_RETURN_AREA_BB,                                      04280000
+               PTR_INT_AREA);                                           04290000
+                                                                        04300000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04310000
+   WHEN (0);                                                            04320000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 04330018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#017');                        04340000
+   OTHERWISE                                                            04350000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              04360000
+                         'DB2',  '#018');                               04370000
+ END;                                                                   04380000
+                                                      /* EOC RB01237 */ 04390000
+ /********************************************************************/ 04400000
+                                                                        04410000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0260_HW_IN_ORD';                    04420000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 04430000
+                                                                        04440000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04450000
+               PTR_RETURN_AREA_BB,                                      04460000
+               PTR_INT_AREA);                                           04470000
+                                                                        04480000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04490000
+   WHEN (0);                                                            04500000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 04510018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#019');                        04520000
+   OTHERWISE                                                            04530000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              04540000
+                         'DB2','#020');                                 04550000
+ END;                                                                   04560000
+                                                                        04570000
+ /********************************************************************/ 04580000
+                                                                        04590000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0300_HW_REAL';                      04600000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 04610000
+                                                                        04620000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04630000
+               PTR_RETURN_AREA_BB,                                      04640000
+               PTR_INT_AREA);                                           04650000
+                                                                        04660000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04670000
+   WHEN (0);                                                            04680000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 04690018
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#021');                        04700000
+   OTHERWISE                                                            04710000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              04720000
+                        'DB2', '#022');                                 04730000
+ END;                                                                   04740000
+                                                                        04750000
+ /********************************************************************/ 04760000
+                                                                        04770000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0340_HW_ADDR';                      04780000
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */ 04790000
+                                                                        04800000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04810000
+               PTR_RETURN_AREA_BB,                                      04820000
+               PTR_INT_AREA);                                           04830000
+                                                                        04840000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    04850000
+   WHEN (0);                                                            04860000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 04870000
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#023');                        04880000
+   OTHERWISE                                                            04890000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              04900000
+                         'DB2','#024');                                 04910000
+ END;                                                                   04920000
+                                                                        04930000
+ /********************************************************************/ 04940000
+                                                                        04950000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0725_PICOS_HW';                     04960000
+ PARM_RCB024M.LOCK_MODE      = 'E';                /* EXCLUSIVE MODE */ 04970000
+                                                                        04980000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      04990000
+               PTR_RETURN_AREA_BB,                                      05000000
+               PTR_INT_AREA);                                           05010000
+                                                                        05020000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    05030000
+   WHEN (0);                                                            05040000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 05050000
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#025');                        05060000
+   OTHERWISE                                                            05070000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              05080000
+                         'DB2','#026');                                 05090000
+ END;                                                                   05100000
+                                                                        05110000
+ /********************************************************************/ 05120000
+                                                                        05130000
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0735_PICOS_TP';                     05140000
+ PARM_RCB024M.LOCK_MODE      = 'E';                /* EXCLUSIVE MODE */ 05150000
+                                                                        05160000
+ CALL RCB024M (ADDR(PARM_RCB024M),                                      05170000
+               PTR_RETURN_AREA_BB,                                      05180000
+               PTR_INT_AREA);                                           05190000
+                                                                        05200000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    05210000
+   WHEN (0);                                                            05220000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 05230000
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#027');                        05240000
+   OTHERWISE                                                            05250000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              05260000
+                         'DB2','#028');                                 05270000
+ END;                                                  /* EOC RC01219 */05280000
+                                                                        05290000
+ END R001_LOCK_TABLES;                                                  05300000
+                                                                        05310000
+1/*********************************************************************/05320000
+ /*                                                                   */05330000
+ /* MODULE NAME      :  R700_INIT_COUNTRY                             */05340000
+ /*                                                                   */05350000
+ /* DESCRIPTION      :                                                */05360000
+ /*                                                                   */05370000
+ /*********************************************************************/05380000
+ R700_INIT_COUNTRY: PROC;                                               05390000
+                                  /* FILL CURRENT COUNTRY            */ 05400000
+ WRK_CTRYNO    = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).CTRYNO;         05410000
+ WRK_PGR_TYPE  = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).PGR_TYPE;       05420000
+                                                /* LOCK TABLES       */ 05430000
+ CALL R001_LOCK_TABLES;                                                 05440000
+                                                                        05450000
+ CALL R800_CLEAR_OUTPUT_TABLES;                           /* RC01219 */ 05460000
+                                                /* RETRIEVE RUN DATE */ 05470000
+ RUN_DATE_AREA.PROC_ID   =  COUNTRY_AREA.PROC_ID;                       05480000
+ RUN_DATE_AREA.CTRYNO    =  WRK_CTRYNO;                                 05490000
+ RUN_DATE_AREA.PGR_TYPE  =  WRK_PGR_TYPE;                               05500000
+                                                                        05510000
+ CALL RCB020M (PTR_RUN_DATE_AREA,                                       05520000
+               PTR_INT_AREA);                                           05530000
+                                                                        05540000
+ IF RUN_DATE_AREA.RUN_DATE = ''       /* NO RUN DATE RCB001 FOUND    */ 05550000
+ THEN                                                                   05560000
+   WRK_RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;                            05570000
+ ELSE                                                                   05580000
+   WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;                               05590000
+                                                                        05600000
+ PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;                           05610000
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                 05620000
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';                               05630000
+ PARM_INT_AREA.MSG_VAR_CODES    = '';                                   05640000
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';                                 05650000
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RUN_DATE;                         05660000
+ CALL RCB0M1M (PTR_INT_AREA);                                           05670000
+                                       /* RETRIEVE LAST EXTRACT DATE */ 05680000
+ TB_RCBV500   = '';                                                     05690000
+ TB_RCBV500_I = '';                                                     05700000
+ TB_RCBP37S.NUMBER  = 'RCB037';                                         05710000
+ TB_RCBP37S.PROC_ID = COUNTRY_AREA.PROC_ID;                             05720000
+ TB_RCBP37S.CTRYNO  = WRK_CTRYNO;                                       05730000
+                                                                        05740000
+0CALL RCBI50M ('U',                                       /* RC01219 */ 05750000
+               ADDR(TB_RCBV500),                                        05760000
+               ADDR(TB_RCBV500_I),                                      05770000
+               PTR_RETURN_AREA_BB,                                      05780000
+               PTR_INT_AREA);                                           05790000
+                                                                        05800000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    05810000
+   WHEN (0) DO;                                                         05820000
+     WRK_LAST_EXTR_DATE = TB_RCBP37S.LAST_EXTR_DATE;                    05830000
+                                                                        05840000
+           /* DETERMINE START_CHANGE_PERIOD = LAST_EXTR_DATE + 1   */   05850000
+           /* TO EXCLUDE LAST_EXTR_DATE FROM EXTRACT PERIOD        */   05860000
+     PARM_DATE_CALC = '';                                               05870000
+     PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';                             05880000
+     PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';                             05890000
+     PARM_DATE_CALC.WD_FUNCTION    = 'C';                               05900000
+     PARM_DATE_CALC.WD_PERIOD      = 1;                                 05910000
+     PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';                               05920000
+     PARM_DATE_CALC.WD_IN_DATE     = TB_RCBP37S.LAST_EXTR_DATE;         05930000
+                                                                        05940000
+     CALL RCB004M (ADDR(PARM_DATE_CALC));                               05950000
+                                                                        05960000
+     IF PARM_DATE_CALC.WD_STATUS ¬= ''                                  05970000
+     THEN DO;                                                           05980000
+       PARM_INT_AREA.MESSAGE_TYPE      = 'IS';                          05990000
+       PARM_INT_AREA.MESSAGE_NUMBER    = '0012';                        06000000
+       PARM_INT_AREA.MSG_VAR_CODES     = '';                            06010000
+                                                                        06020000
+       PARM_INT_AREA.MSG_VAR_CODE_6    = 'DN';                          06030000
+       PARM_INT_AREA.MSG_VAR_VALUE_6   = 'LAST_EXTR_DATE';              06040000
+       PARM_INT_AREA.MSG_VAR_CODE_7    = 'DT';                          06050000
+       PARM_INT_AREA.MSG_VAR_VALUE_7   = PARM_DATE_CALC.WD_IN_DATE;     06060000
+       PARM_INT_AREA.MSG_VAR_CODE_8    = 'RC';                          06070000
+       PARM_INT_AREA.MSG_VAR_VALUE_8   = PARM_DATE_CALC.WD_STATUS;      06080000
+       CALL RCB0M1M (PTR_INT_AREA);                                     06090000
+       CALL RCBDPAM_ERROR (NULL,'OTHER','#029');                        06100000
+     END;                                                               06110000
+                                                                        06120000
+     WRK_START_CHANGE_PERIOD = PARM_DATE_CALC.WD_OUT_DATE;              06130000
+   END;                                                                 06140000
+   WHEN (4) DO;                        /* NO LAST EXTRACT DATE FOUND  */06150000
+     PARM_INT_AREA.MESSAGE_TYPE               = 'IS';                   06160000
+     PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER    = 'I050';                 06170000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES     = ' ';                    06180000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6    = 'PN';                   06190000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6   =                         06200000
+                                     TB_RCBV500.PARAMETER_NUMBER;       06210000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7    = 'PK';                   06220000
+     PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7   =                         06230000
+                                     TB_RCBV500.PARAMETER_KEY;          06240000
+     CALL RCB0M1M (PTR_INT_AREA);                                       06250000
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#030');                        06260000
+   END;                                                                 06270000
+   OTHERWISE                                                            06280000
+     CALL RCBDPAM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),              06290000
+                          'DB2', '#031');                               06300000
+ END;                                                                   06310000
+                                                      /* SOC RB01237 */ 06320000
+ TB_RCBV500   = '';                      /* RETRIEVE PI EXTRACT PARM */ 06330000
+ TB_RCBV500_I = '';                                                     06340000
+ TB_RCBP05S.NUMBER   = 'RCB005';                                        06350000
+ TB_RCBP05S.CTRYNO   = WRK_CTRYNO;                                      06360000
+ TB_RCBP05S.PGR_TYPE = WRK_PGR_TYPE;                                    06370000
+                                                                        06380000
+ CALL RCBI50M ('U',                                                     06390000
+               ADDR(TB_RCBV500),                                        06400000
+               ADDR(TB_RCBV500_I),                                      06410000
+               PTR_RETURN_AREA_BB,                                      06420000
+               PTR_INT_AREA);                                           06430000
+                                                                        06440000
+ SELECT(RETURN_AREA_BB.RETURN_CODE);                                    06450000
+   WHEN (0)                                                             06460000
+     PARM_RCB005 = TB_RCBP05S, BY NAME;                                 06470000
+   WHEN (4)                               /* NO PI EXTR PARM FOUND   */ 06480000
+     PARM_RCB005.PI_TO_CEREOLS = 'N';                                   06490000
+   OTHERWISE                                                            06500000
+     CALL RCBDPAM_ERROR(ADDR(RETURN_AREA_BB.RETURN_SQL),'DB2','#032');  06510000
+ END;                                                                   06520000
+                                                      /* EOC RB01237 */ 06530000
+ END R700_INIT_COUNTRY;                                                 06540000
+                                                                        06550000
+1/*********************************************************************/06560000
+ /*                                                                   */06570000
+ /* MODULE NAME      :  R701_RETR_INSERT_FROM_RCBV0040                */06580000
+ /*                                                                   */06590000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */06600000
+ /*                    INTO RCBT0735_PICOS_TP                         */06610000
+ /*                                                                   */06620000
+ /*********************************************************************/06630000
+ R701_RETR_INSERT_FROM_RCBV0040: PROC;                                  06640000
+                                /* INSTALLED HW OCCURENCES           */ 06650000
+ EXEC SQL                                                               06660000
+   INSERT INTO RCBT0735_PICOS_TP                                        06670000
+ /*  SELECT */                                        /* SOC S1776367 */06680029
+     SELECT DISTINCT                                  /* EOC S1776367 */06681029
+         B.COUNTRY_NUMBER                                               06690000
+        ,B.PRODUCT_TYPE                                                 06700000
+        ,B.ORIGIN                                                       06710000
+        ,B.SEQUENCE_NUMBER                                              06720000
+        ,'      '                                                       06730000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  06740019
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  06750019
+     FROM RCBV0040_OU       A                                           06760000
+         ,RCBV0170_OU_HW    B                                           06770000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            06780000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         06790000
+                                   AND :WRK_RUN_DATE                    06800000
+                                                                        06810000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       06820000
+       AND B.OU_CODE           = A.OU_CODE                              06830000
+       AND :WRK_RUN_DATE       BETWEEN B.EFFECTIVE_DATE                 06840000
+                                   AND B.END_DATE                       06850000
+       AND NOT EXISTS(                                /* SOC S1776367 */06851000
+           SELECT * FROM RCBT0735_PICOS_TP C                            06852000
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               06853000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            06854000
+                    AND B.ORIGIN            = C.ORIGIN                  06855000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         06856016
+                    AND C.ORDER_REF_NUMBER  = ' ' )                     06856116
+                                                      /* EOC S1776367 */06857000
+   ;                                                                    06860000
+                                                                        06870000
+ SELECT(SQLCODE);                                                       06880000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */06890000
+   WHEN(100);                                                           06900000
+   OTHERWISE                                                            06910000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#033');                    06920000
+ END;                                                                   06930000
+                                /* ON ORDER HW OCCURENCES            */ 06940000
+ EXEC SQL                                                               06950000
+   INSERT INTO RCBT0735_PICOS_TP                                        06960000
+ /*  SELECT  */                                       /* SOC S1776367 */06970029
+     SELECT DISTINCT                                  /* EOC S1776367 */06971029
+         B.COUNTRY_NUMBER                                               06980000
+        ,B.PRODUCT_TYPE                                                 06990000
+        ,B.ORIGIN                                                       07000000
+        ,B.SEQUENCE_NUMBER                                              07010000
+        ,B.ORDER_REF_NUMBER                                             07020000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  07030019
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  07040019
+     FROM RCBV0040_OU        A                                          07050000
+         ,RCBV0260_HW_IN_ORD B                                          07060000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            07070000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         07080000
+                                   AND :WRK_RUN_DATE                    07090000
+                                                                        07100000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       07110000
+       AND B.OU_CODE           = A.OU_CODE                              07120000
+       AND :WRK_RUN_DATE       BETWEEN B.ORDER_DATE                     07130000
+                                   AND B.END_DATE                       07140000
+       AND NOT EXISTS(                                /* SOC S1776367 */07141000
+           SELECT * FROM RCBT0735_PICOS_TP C                            07142000
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               07143000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            07144000
+                    AND B.ORIGIN            = C.ORIGIN                  07145000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         07146000
+                    AND B.ORDER_REF_NUMBER  = C.ORDER_REF_NUMBER )      07147000
+                                                      /* EOC S1776367 */07148000
+   ;                                                                    07150000
+                                                                        07160000
+ SELECT(SQLCODE);                                                       07170000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */07180000
+   WHEN(100);                                                           07190000
+   OTHERWISE                                                            07200000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#034');                    07210000
+ END;                                                                   07220000
+                                                                        07230000
+ END R701_RETR_INSERT_FROM_RCBV0040;                                    07240000
+                                                                        07250000
+1/*********************************************************************/07260000
+ /*                                                                   */07270000
+ /* MODULE NAME      :  R703_RETR_INSERT_FROM_RCBV0070                */07280000
+ /*                                                                   */07290000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */07300000
+ /*                    INTO RCBT0735_PICOS_TP                         */07310000
+ /*                                                                   */07320000
+ /*********************************************************************/07330000
+ R703_RETR_INSERT_FROM_RCBV0070: PROC;                                  07340000
+                                     /* INSTALLED HW PRODUCTS        */ 07350000
+ EXEC SQL                                                               07360000
+   INSERT INTO RCBT0735_PICOS_TP                                        07370000
+ /*  SELECT */                                        /* SOC S1776367 */07380029
+     SELECT DISTINCT                                  /* EOC S1776367 */07381029
+         B.COUNTRY_NUMBER                                               07390000
+        ,B.PRODUCT_TYPE                                                 07400000
+        ,B.ORIGIN                                                       07410000
+        ,B.SEQUENCE_NUMBER                                              07420000
+        ,'      '                                                       07430000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  07440019
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  07450019
+     FROM RCBV0070_HW_PO    A                                           07460000
+         ,RCBV0300_HW_REAL  B                                           07470000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            07480000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         07490000
+                                   AND :WRK_RUN_DATE                    07500000
+                                                                        07510000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       07520000
+       AND B.PRODUCT_TYPE      = A.PRODUCT_TYPE                         07530000
+       AND B.MODEL_NUMBER      = A.MODEL_NUMBER                         07540000
+       AND :WRK_RUN_DATE       BETWEEN B.EFFECTIVE_DATE                 07550000
+                                   AND B.END_DATE                       07560000
+       AND NOT EXISTS(                                /* SOC S1776367 */07561000
+           SELECT * FROM RCBT0735_PICOS_TP C                            07562000
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               07563000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            07564000
+                    AND B.ORIGIN            = C.ORIGIN                  07565000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         07566016
+                    AND C.ORDER_REF_NUMBER  = ' ' )                     07566116
+                                                      /* EOC S1776367 */07567000
+   ;                                                                    07570000
+                                                                        07580000
+ SELECT(SQLCODE);                                                       07590000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */07600000
+   WHEN(100);                                                           07610000
+   OTHERWISE                                                            07620000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#035');                    07630000
+ END;                                                                   07640000
+                                     /* ON ORDER HW PRODUCTS         */ 07650000
+ EXEC SQL                                                               07660000
+   INSERT INTO RCBT0735_PICOS_TP                                        07670000
+ /*  SELECT */                                        /* SOC S1776367 */07680029
+     SELECT DISTINCT                                  /* EOC S1776367 */07681029
+         B.COUNTRY_NUMBER                                               07690000
+        ,B.PRODUCT_TYPE                                                 07700000
+        ,B.ORIGIN                                                       07710000
+        ,B.SEQUENCE_NUMBER                                              07720000
+        ,B.ORDER_REF_NUMBER                                             07730000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  07740000
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  07750000
+     FROM RCBV0070_HW_PO     A                                          07760000
+         ,RCBV0260_HW_IN_ORD B                                          07770000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            07780000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         07790000
+                                   AND :WRK_RUN_DATE                    07800000
+                                                                        07810000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       07820000
+       AND B.PRODUCT_TYPE      = A.PRODUCT_TYPE                         07830000
+       AND B.MODEL_NUMBER      = A.MODEL_NUMBER                         07840000
+       AND :WRK_RUN_DATE       BETWEEN B.ORDER_DATE                     07850000
+                                   AND B.END_DATE                       07860000
+       AND NOT EXISTS(                                /* SOC S1776367 */07861000
+           SELECT * FROM RCBT0735_PICOS_TP C                            07862000
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               07863000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            07864000
+                    AND B.ORIGIN            = C.ORIGIN                  07865000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         07866000
+                    AND B.ORDER_REF_NUMBER  = C.ORDER_REF_NUMBER )      07867000
+                                                      /* EOC S1776367 */07868000
+   ;                                                                    07870000
+                                                                        07880000
+ SELECT(SQLCODE);                                                       07890000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */07900000
+   WHEN(100);                                                           07910000
+   OTHERWISE                                                            07920000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2','#036');                   07930000
+ END;                                                                   07940000
+                                                                        07950000
+ END R703_RETR_INSERT_FROM_RCBV0070;                                    07960000
+                                                                        07970000
+1/*********************************************************************/07980000
+ /*                                                                   */07990000
+ /* MODULE NAME      :  R705_RETR_INSERT_FROM_RCBV0110                */08000000
+ /*                                                                   */08010000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */08020000
+ /*                    INTO RCBT0735_PICOS_TP                         */08030000
+ /*                                                                   */08040000
+ /*********************************************************************/08050000
+ R705_RETR_INSERT_FROM_RCBV0110: PROC;                                  08060000
+                                                                        08070000
+ EXEC SQL                                                               08080000
+   INSERT INTO RCBT0735_PICOS_TP                                        08090000
+ /*  SELECT                                           /* SOC S1776367 */08100013
+ /*      COUNTRY_NUMBER                                                 08110013
+        ,PRODUCT_TYPE                                                   08120000
+        ,ORIGIN                                                         08130000
+        ,SEQUENCE_NUMBER                                                08140000
+        ,'      '                                                       08150000
+ /*     ,ORIGIN                                 /* SOC CEDS00000738 */  08160024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  08170024
+ /*  FROM RCBV0110_HW_STATUS A                                          08180013
+     WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              08190000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         */08200013
+     SELECT DISTINCT                                                    08201129
+         A.COUNTRY_NUMBER                                               08202013
+        ,A.PRODUCT_TYPE                                                 08203013
+        ,A.ORIGIN                                                       08204013
+        ,A.SEQUENCE_NUMBER                                              08205013
+        ,'      '                                                       08206013
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  08207022
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  08208022
+     FROM RCBV0110_HW_STATUS A                                          08209013
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            08209113
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         08209213
+                                 AND :WRK_RUN_DATE                      08210000
+       AND NOT EXISTS(                                                  08212013
+           SELECT * FROM RCBT0735_PICOS_TP B                            08212100
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               08213029
+                    AND A.PRODUCT_TYPE    = B.PRODUCT_TYPE              08214000
+                    AND A.ORIGIN          = B.ORIGIN                    08215000
+                    AND A.SEQUENCE_NUMBER = B.SEQUENCE_NUMBER           08216016
+                    AND B.ORDER_REF_NUMBER = ' ' )                      08216116
+                                                      /* EOC S1776367 */08217000
+   ;                                                                    08220000
+                                                                        08230000
+ SELECT(SQLCODE);                                                       08240000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */08250000
+   WHEN(100);                                                           08260000
+   OTHERWISE                                                            08270000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#037');                    08280000
+ END;                                                                   08290000
+                                                                        08300000
+ END R705_RETR_INSERT_FROM_RCBV0110;                                    08310000
+                                                                        08320000
+1/*-------------------- START RA01138 CHANGES -----------------------*/ 08330000
+ /*********************************************************************/08340000
+ /*                                                                   */08350000
+ /* MODULE NAME      :  R706_RETR_INSERT_FROM_RCBV0150                */08360000
+ /*                                                                   */08370000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */08380000
+ /*                    INTO RCBT0735_PICOS_TP                         */08390000
+ /*                                                                   */08400000
+ /*********************************************************************/08410000
+ R706_RETR_INSERT_FROM_RCBV0150: PROC;                                  08420000
+                                                                        08430000
+ EXEC SQL                                                               08440000
+   INSERT INTO RCBT0735_PICOS_TP                                        08450000
+ /*  SELECT   */                                      /* SOC S1776367 */08461029
+     SELECT DISTINCT                                  /* SOC S1776367 */08462029
+         B.COUNTRY_NUMBER                                               08470030
+        ,B.PRODUCT_TYPE                                                 08480000
+        ,B.ORIGIN                                                       08490000
+        ,B.SEQUENCE_NUMBER                                              08500000
+        ,'      '                                                       08510000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  08520022
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  08530022
+     FROM RCBV0150_CUST_ADDR A                                          08540000
+         ,RCBV0190_HW_CUST   B                                          08550000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            08560000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         08570000
+                                   AND :WRK_RUN_DATE                    08580000
+                                                                        08590000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       08600000
+       AND B.CUSTOMER_NUMBER   = A.CUSTOMER_NUMBER                      08610000
+       AND NOT EXISTS(                                /* SOC S1776367 */08611000
+           SELECT * FROM RCBT0735_PICOS_TP C                            08612000
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               08613000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            08614000
+                    AND B.ORIGIN            = C.ORIGIN                  08615000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         08616016
+                    AND C.ORDER_REF_NUMBER  = ' ' )                     08616116
+                                                      /* EOC S1776367 */08617000
+   ;                                                                    08620000
+                                                                        08630000
+ SELECT(SQLCODE);                                                       08640000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */08650000
+   WHEN(100);                                                           08660000
+   OTHERWISE                                                            08670000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#038');                    08680000
+ END;                                                                   08690000
+                                                                        08700000
+ EXEC SQL                                                               08710000
+   INSERT INTO RCBT0735_PICOS_TP                                        08720000
+ /*  SELECT */                                        /* SOC S1776367 */08730029
+     SELECT DISTINCT                                  /* EOC S1776367 */08731029
+         B.COUNTRY_NUMBER                                               08740000
+        ,B.PRODUCT_TYPE                                                 08750000
+        ,B.ORIGIN                                                       08760000
+        ,B.SEQUENCE_NUMBER                                              08770000
+        ,'      '                                                       08780000
+        ,B.ORIGIN                               /* SOC CEDS00000738 */  08790022
+        ,B.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  08800022
+     FROM RCBV0150_CUST_ADDR A                                          08810000
+         ,RCBV0260_HW_IN_ORD B                                          08820000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            08830000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         08840000
+                                   AND :WRK_RUN_DATE                    08850000
+                                                                        08860000
+       AND B.COUNTRY_NUMBER    = A.COUNTRY_NUMBER                       08870000
+       AND B.CUSTOMER_USER     = A.CUSTOMER_NUMBER                      08880000
+       AND B.ORIGIN              IS NOT NULL                            08890000
+       AND B.SEQUENCE_NUMBER     IS NOT NULL                            08900000
+       AND NOT EXISTS(                                                  08900100
+           SELECT * FROM RCBT0735_PICOS_TP C          /* SOC S1776367 */08901014
+                    WHERE B.COUNTRY_NUMBER  = :WRK_CTRYNO               08902000
+                    AND B.PRODUCT_TYPE      = C.PRODUCT_TYPE            08903000
+                    AND B.ORIGIN            = C.ORIGIN                  08904000
+                    AND B.SEQUENCE_NUMBER   = C.SEQUENCE_NUMBER         08905016
+                    AND C.ORDER_REF_NUMBER  = ' ' )                     08905116
+                                                      /* EOC S1776367 */08906014
+   ;                                                                    08910000
+                                                                        08920000
+ SELECT(SQLCODE);                                                       08930000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */08940000
+   WHEN(100);                                                           08950000
+   OTHERWISE                                                            08960000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2','#039');                   08970000
+ END;                                                                   08980000
+                                                                        08990000
+ END R706_RETR_INSERT_FROM_RCBV0150;                                    09000000
+                                                                        09010000
+ /*----------------------- END RA01138 CHANGES -----------------------*/09020000
+1/*********************************************************************/09030000
+ /*                                                                   */09040000
+ /* MODULE NAME      :  R707_RETR_INSERT_FROM_RCBV0170                */09050000
+ /*                                                                   */09060000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */09070000
+ /*                    INTO RCBT0735_PICOS_TP                         */09080000
+ /*                                                                   */09090000
+ /*********************************************************************/09100000
+ R707_RETR_INSERT_FROM_RCBV0170: PROC;                                  09110000
+                                                                        09120000
+ EXEC SQL                                                               09130000
+   INSERT INTO RCBT0735_PICOS_TP                                        09140000
+ /*  SELECT                                           /* SOC S1776367 */09150013
+ /*      COUNTRY_NUMBER                                                 09160013
+        ,PRODUCT_TYPE                                                   09170000
+        ,ORIGIN                                                         09180000
+        ,SEQUENCE_NUMBER                                                09190000
+        ,'      '                                                       09200000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  09210024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  09220024
+ /*  FROM RCBV0170_OU_HW                                                09230013
+ /*  WHERE COUNTRY_NUMBER          = :WRK_CTRYNO                        09240000
+       AND (LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD           09250000
+                                 AND :WRK_RUN_DATE                      09260000
+        OR  END_DATE         BETWEEN :WRK_LAST_EXTR_DATE */             09270000
+     SELECT DISTINCT                                                    09270229
+         A.COUNTRY_NUMBER                                               09270329
+        ,A.PRODUCT_TYPE                                                 09270429
+        ,A.ORIGIN                                                       09270529
+        ,A.SEQUENCE_NUMBER                                              09270629
+        ,'      '                                                       09270729
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  09270829
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  09270929
+     FROM RCBV0170_OU_HW A                                              09271000
+     WHERE A.COUNTRY_NUMBER          = :WRK_CTRYNO                      09272000
+       AND (A.LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD         09273000
+                                 AND :WRK_RUN_DATE                      09274000
+        OR A.END_DATE         BETWEEN :WRK_LAST_EXTR_DATE               09275000
+                                 AND :WRK_RUN_DATE)                     09280000
+       AND NOT EXISTS(                                                  09281000
+           SELECT * FROM RCBT0735_PICOS_TP B                            09282000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               09283000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            09284000
+                    AND A.ORIGIN            = B.ORIGIN                  09285000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         09286016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     09286116
+                                                      /* EOC S1776367 */09287000
+   ;                                                                    09290000
+                                                                        09300000
+ SELECT(SQLCODE);                                                       09310000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */09320000
+   WHEN(100);                                                           09330000
+   OTHERWISE                                                            09340000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#040');                    09350000
+ END;                                                                   09360000
+                                                                        09370000
+ END R707_RETR_INSERT_FROM_RCBV0170;                                    09380000
+                                                                        09390000
+1/*********************************************************************/09400000
+ /*                                                                   */09410000
+ /* MODULE NAME      :  R709_RETR_INSERT_FROM_RCBV0190                */09420000
+ /*                                                                   */09430000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */09440000
+ /*                    INTO RCBT0735_PICOS_TP                         */09450000
+ /*                                                                   */09460000
+ /*********************************************************************/09470000
+ R709_RETR_INSERT_FROM_RCBV0190: PROC;                                  09480000
+                                                                        09490000
+ EXEC SQL                                                               09500000
+   INSERT INTO RCBT0735_PICOS_TP                                        09510000
+ /*  SELECT                                           /* SOC S1776367 */09520013
+ /*      COUNTRY_NUMBER                                                 09530013
+        ,PRODUCT_TYPE                                                   09540000
+        ,ORIGIN                                                         09550000
+        ,SEQUENCE_NUMBER                                                09560000
+        ,'      '                                                       09570000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  09580024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  09590024
+ /*  FROM RCBV0190_HW_CUST                                              09600013
+ /*  WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              09610000
+       AND TYPE_OF_RELATION  = 'U'                                      09620000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD */        09630000
+     SELECT DISTINCT                                                    09630229
+         A.COUNTRY_NUMBER                                               09630329
+        ,A.PRODUCT_TYPE                                                 09630429
+        ,A.ORIGIN                                                       09630529
+        ,A.SEQUENCE_NUMBER                                              09630629
+        ,'      '                                                       09630729
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  09630829
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  09630929
+     FROM RCBV0190_HW_CUST A                                            09631000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            09632000
+       AND A.TYPE_OF_RELATION  = 'U'                                    09633000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         09634000
+                                 AND :WRK_RUN_DATE                      09640000
+       AND NOT EXISTS(                                                  09641000
+           SELECT * FROM RCBT0735_PICOS_TP B                            09642000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               09643000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            09644000
+                    AND A.ORIGIN            = B.ORIGIN                  09645000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         09646016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     09646116
+                                                      /* EOC S1776367 */09647000
+   ;                                                                    09650000
+                                                                        09660000
+ SELECT(SQLCODE);                                                       09670000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */09680000
+   WHEN(100);                                                           09690000
+   OTHERWISE                                                            09700000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#041');                    09710000
+ END;                                                                   09720000
+                                                                        09730000
+ END R709_RETR_INSERT_FROM_RCBV0190;                                    09740000
+                                                                        09750000
+1/*********************************************************************/09760000
+ /*                                                                   */09770000
+ /* MODULE NAME      :  R711_RETR_INSERT_FROM_RCBV0220                */09780000
+ /*                                                                   */09790000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */09800000
+ /*                    INTO RCBT0735_PICOS_TP                         */09810000
+ /*                                                                   */09820000
+ /*********************************************************************/09830000
+ R711_RETR_INSERT_FROM_RCBV0220: PROC;                                  09840000
+                                                                        09850000
+ EXEC SQL                                                               09860000
+   INSERT INTO RCBT0735_PICOS_TP                                        09870000
+ /*  SELECT                                           /* SOC S1776367 */09880013
+ /*      COUNTRY_NUMBER                                                 09890013
+        ,PRODUCT_TYPE                                                   09900000
+        ,ORIGIN                                                         09910000
+        ,SEQUENCE_NUMBER                                                09920000
+        ,'      '                                                       09930000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  09940024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  09950024
+ /*  FROM RCBV0220_SUPPL_CTR                                            09960013
+ /*  WHERE COUNTRY_NUMBER         = :WRK_CTRYNO                         09970000
+      AND (LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD            09980000
+                                AND :WRK_RUN_DATE                       09990000
+                                                         /*SOC PTM1417*/10000013
+ /*    OR  EFFECTIVE_DATE   BETWEEN :WRK_LAST_EXTR_DATE                 10010000
+                                AND :WRK_RUN_DATE                       10020000
+                                                         /*EOC PTM1417*/10030013
+ /*    OR  END_DATE         BETWEEN :WRK_LAST_EXTR_DATE                 10040000
+                                AND :WRK_RUN_DATE                       10050000
+                                                       /* SOC RB01298 */10060000
+ /*    OR  (F_SPLT_DATE           IS NOT NULL   AND                     10070000
+            F_SPLT_DATE     BETWEEN :WRK_LAST_EXTR_DATE                 10080000
+                                AND :WRK_RUN_DATE))                     10090000
+                                                       /* EOC RB01298 */10090100
+     SELECT DISTINCT                                                    10090329
+         A.COUNTRY_NUMBER                                               10090429
+        ,A.PRODUCT_TYPE                                                 10090529
+        ,A.ORIGIN                                                       10090629
+        ,A.SEQUENCE_NUMBER                                              10090729
+        ,'      '                                                       10090829
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  10090929
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  10091029
+     FROM RCBV0220_SUPPL_CTR A                                          10091129
+     WHERE A.COUNTRY_NUMBER         = :WRK_CTRYNO                       10091229
+      AND (A.LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD          10091329
+                                AND :WRK_RUN_DATE                       10091429
+                                                       /*SOC PTM1417*/  10091529
+       OR  A.EFFECTIVE_DATE   BETWEEN :WRK_LAST_EXTR_DATE               10091629
+                                AND :WRK_RUN_DATE                       10091729
+                                                       /*EOC PTM1417*/  10091829
+       OR  A.END_DATE         BETWEEN :WRK_LAST_EXTR_DATE               10091929
+                                AND :WRK_RUN_DATE                       10092029
+                                                       /* SOC RB01298 */10092129
+       OR  (A.F_SPLT_DATE           IS NOT NULL   AND                   10092229
+            A.F_SPLT_DATE     BETWEEN :WRK_LAST_EXTR_DATE               10092329
+                                AND :WRK_RUN_DATE))                     10092429
+                                                       /* EOC RB01298 */10092529
+       AND NOT EXISTS(                                                  10092629
+           SELECT * FROM RCBT0735_PICOS_TP B                            10092729
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               10093000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            10094000
+                    AND A.ORIGIN            = B.ORIGIN                  10095000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         10096016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     10096116
+                                                      /* EOC S1776367 */10097000
+   ;                                                                    10110000
+ SELECT(SQLCODE);                                                       10120000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */10130000
+   WHEN(100);                                                           10140000
+   OTHERWISE                                                            10150000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#042');                    10160000
+ END;                                                                   10170000
+                                                                        10180000
+ END R711_RETR_INSERT_FROM_RCBV0220;                                    10190000
+                                                                        10200000
+                                                  /* SOC CEDS00000330 */10210000
+1/*********************************************************************/10220000
+ /*                                                                   */10230000
+ /* MODULE NAME      :  R715_RETR_INSERT_FROM_RCBV0240                */10240000
+ /*                                                                   */10250000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */10260000
+ /*                    INTO RCBT0735_PICOS_TP                         */10270000
+ /*                                                                   */10280000
+ /*********************************************************************/10290000
+ R715_RETR_INSERT_FROM_RCBV0240: PROC;                                  10300000
+                                                                        10310000
+ EXEC SQL                                                               10320000
+   INSERT INTO RCBT0735_PICOS_TP                                        10330027
+ /*  SELECT                                           /* SOC S1776367 */10340027
+ /*      COUNTRY_NUMBER                                                 10350013
+        ,PRODUCT_TYPE                                                   10360000
+        ,ORIGIN                                                         10370000
+        ,SEQUENCE_NUMBER                                                10380000
+        ,'      '                                                       10390000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  10400024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  10410024
+ /*  FROM RCBV0240_SERV_CTR                                             10420013
+     WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              10430000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD */        10440000
+     SELECT DISTINCT                                                    10440329
+         A.COUNTRY_NUMBER                                               10440429
+        ,A.PRODUCT_TYPE                                                 10440529
+        ,A.ORIGIN                                                       10440629
+        ,A.SEQUENCE_NUMBER                                              10440729
+        ,'      '                                                       10440829
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  10440929
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  10441029
+     FROM RCBV0240_SERV_CTR A                                           10441129
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            10442000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         10443000
+                                 AND :WRK_RUN_DATE                      10450000
+       AND NOT EXISTS(                                                  10451000
+           SELECT * FROM RCBT0735_PICOS_TP B                            10452000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               10453000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            10454000
+                    AND A.ORIGIN            = B.ORIGIN                  10455000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         10456016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     10456116
+                                                      /* EOC S1776367 */10457000
+   ;                                                                    10460000
+                                                                        10470000
+ SELECT(SQLCODE);                                                       10480000
+   WHEN(0) EXEC SQL COMMIT;                                             10490000
+   WHEN(100);                                                           10500000
+   OTHERWISE                                                            10510000
+     DO;                                                                10520000
+       CALL RCBDPAM_ERROR (ADDR (SQLCA),                                10530000
+                           'DB2',                                       10540000
+                           '#054');                                     10550000
+     END;                                                               10560000
+ END;                                                                   10570000
+                                                                        10580000
+ END R715_RETR_INSERT_FROM_RCBV0240;                                    10590000
+                                                  /* EOC CEDS00000330 */10600000
+1/*********************************************************************/10610000
+ /*                                                                   */10620000
+ /* MODULE NAME      :  R717_RETR_INSERT_FROM_RCBV0260                */10630000
+ /*                                                                   */10640000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */10650000
+ /*                    INTO RCBT0735_PICOS_TP                         */10660000
+ /*                                                                   */10670000
+ /*********************************************************************/10680000
+ R717_RETR_INSERT_FROM_RCBV0260: PROC;                                  10690000
+                                                                        10700000
+ EXEC SQL                                                               10710000
+   INSERT INTO RCBT0735_PICOS_TP                                        10720000
+ /*  SELECT                                           /* SOC S1776367 */10730013
+ /*      COUNTRY_NUMBER                                                 10740013
+        ,PRODUCT_TYPE                                                   10750000
+        ,ORIGIN                                                         10760000
+        ,SEQUENCE_NUMBER                                                10770000
+        ,ORDER_REF_NUMBER                                               10780000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  10790024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  10800024
+ /*  FROM RCBV0260_HW_IN_ORD                                            10810013
+     WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              10820000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD */        10830000
+     SELECT DISTINCT                                                    10830229
+         A.COUNTRY_NUMBER                                               10830329
+        ,A.PRODUCT_TYPE                                                 10830429
+        ,A.ORIGIN                                                       10830529
+        ,A.SEQUENCE_NUMBER                                              10830629
+        ,A.ORDER_REF_NUMBER                                             10830729
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  10830829
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  10830929
+     FROM RCBV0260_HW_IN_ORD A                                          10831000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            10832000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         10833000
+                                 AND :WRK_RUN_DATE                      10840000
+       AND NOT EXISTS(                                                  10841000
+           SELECT * FROM RCBT0735_PICOS_TP B                            10842000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               10843000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            10844000
+                    AND A.ORIGIN            = B.ORIGIN                  10845000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         10846015
+                    AND A.ORDER_REF_NUMBER  = B.ORDER_REF_NUMBER )      10846115
+                                                      /* EOC S1776367 */10847000
+   ;                                                                    10850000
+                                                                        10860000
+ SELECT(SQLCODE);                                                       10870000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */10880000
+   WHEN(100);                                                           10890000
+   OTHERWISE                                                            10900000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2', '#043');                   10910000
+ END;                                                                   10920000
+                                                                        10930000
+ END R717_RETR_INSERT_FROM_RCBV0260;                                    10940000
+                                                                        10950000
+1/*********************************************************************/10960000
+ /*                                                                   */10970000
+ /* MODULE NAME      :  R719_RETR_INSERT_FROM_RCBV0300                */10980000
+ /*                                                                   */10990000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */11000000
+ /*                    INTO RCBT0735_PICOS_TP                         */11010000
+ /*                                                                   */11020000
+ /*********************************************************************/11030000
+ R719_RETR_INSERT_FROM_RCBV0300: PROC;                                  11040000
+                                                                        11050000
+ EXEC SQL                                                               11060000
+   INSERT INTO RCBT0735_PICOS_TP                                        11070000
+ /*  SELECT                                           /* SOC S1776367 */11080013
+ /*      COUNTRY_NUMBER                                                 11090013
+        ,PRODUCT_TYPE                                                   11100000
+        ,ORIGIN                                                         11110000
+        ,SEQUENCE_NUMBER                                                11120000
+        ,'      '                                                       11130000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  11140024
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  11150024
+ /*  FROM RCBV0300_HW_REAL                                              11160013
+     WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              11170000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD */        11180000
+     SELECT DISTINCT                                                    11180229
+         A.COUNTRY_NUMBER                                               11180329
+        ,A.PRODUCT_TYPE                                                 11180429
+        ,A.ORIGIN                                                       11180529
+        ,A.SEQUENCE_NUMBER                                              11180629
+        ,'      '                                                       11180729
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  11180829
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  11180929
+     FROM RCBV0300_HW_REAL A                                            11181000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            11182000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         11183000
+                                 AND :WRK_RUN_DATE                      11190000
+       AND NOT EXISTS(                                                  11191000
+           SELECT * FROM RCBT0735_PICOS_TP B                            11192000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               11193000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            11194000
+                    AND A.ORIGIN            = B.ORIGIN                  11195000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         11196016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     11196116
+                                                      /* EOC S1776367 */11197000
+   ;                                                                    11200000
+                                                                        11210000
+ SELECT(SQLCODE);                                                       11220000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */11230000
+   WHEN(100);                                                           11240000
+   OTHERWISE                                                            11250000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#044');                    11260000
+ END;                                                                   11270000
+                                                                        11280000
+ END R719_RETR_INSERT_FROM_RCBV0300;                                    11290000
+                                                                        11300000
+1/*-------------------- START RA01138 CHANGES -----------------------*/ 11310000
+ /*********************************************************************/11320000
+ /*                                                                   */11330000
+ /* MODULE NAME      :  R722_RETR_INSERT_FROM_RCBV0340                */11340000
+ /*                                                                   */11350000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */11360000
+ /*                    INTO RCBT0735_PICOS_TP                         */11370000
+ /*                                                                   */11380000
+ /*********************************************************************/11390000
+ R722_RETR_INSERT_FROM_RCBV0340: PROC;                                  11400000
+                                                                        11410000
+ EXEC SQL                                                               11420000
+   INSERT INTO RCBT0735_PICOS_TP                                        11430000
+ /*  SELECT                                           /* SOC S1776367 */11440013
+ /*      COUNTRY_NUMBER                                                 11450013
+        ,PRODUCT_TYPE                                                   11460000
+        ,ORIGIN                                                         11470000
+        ,SEQUENCE_NUMBER                                                11480000
+        ,'      '                                                       11490000
+        ,ORIGIN                                 /* SOC CEDS00000738 */  11500022
+ /*     ,SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  11510022
+ /*  FROM RCBV0340_HW_ADDR                                              11520013
+     WHERE COUNTRY_NUMBER    = :WRK_CTRYNO                              11530000
+       AND LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD */        11540000
+     SELECT DISTINCT                                                    11540129
+         A.COUNTRY_NUMBER                                               11540213
+        ,A.PRODUCT_TYPE                                                 11540313
+        ,A.ORIGIN                                                       11540413
+        ,A.SEQUENCE_NUMBER                                              11540513
+        ,'      '                                                       11540613
+        ,A.ORIGIN                               /* SOC CEDS00000738 */  11540722
+        ,A.SEQUENCE_NUMBER                      /* EOC CEDS00000738 */  11540822
+     FROM RCBV0340_HW_ADDR A                                            11541000
+     WHERE A.COUNTRY_NUMBER    = :WRK_CTRYNO                            11542000
+       AND A.LAST_CHANGE_DATE  BETWEEN :WRK_START_CHANGE_PERIOD         11543000
+                                 AND :WRK_RUN_DATE                      11550000
+       AND NOT EXISTS(                                                  11551000
+           SELECT * FROM RCBT0735_PICOS_TP B                            11552000
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               11553000
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            11554000
+                    AND A.ORIGIN            = B.ORIGIN                  11555000
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         11556016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     11556116
+                                                      /* EOC S1776367 */11557000
+   ;                                                                    11560000
+                                                                        11570000
+ SELECT(SQLCODE);                                                       11580000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */11590000
+   WHEN(100);                                                           11600000
+   OTHERWISE                                                            11610000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA),'DB2','#045');                    11620000
+ END;                                                                   11630000
+                                                                        11640000
+ END R722_RETR_INSERT_FROM_RCBV0340;                                    11650000
+                                                                        11660000
+ /*----------------------- END RA01138 CHANGES -----------------------*/11670000
+1/*********************************************************************/11680000
+ /*                                                       SOC RB01237 */11690000
+ /* MODULE NAME      :  R730_RETR_INSERT_FROM_RCBV0051                */11700000
+ /*                                                                   */11710000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */11720000
+ /*                    INTO RCBT0735_PICOS_TP                         */11730000
+ /*                                                                   */11740000
+ /*********************************************************************/11750000
+ R730_RETR_INSERT_FROM_RCBV0051: PROC;                                  11760000
+                                                                        11770000
+ EXEC SQL                                                               11780000
+   INSERT INTO RCBT0735_PICOS_TP                                        11790000
+ /*SELECT DISTINCT                                    /* SOC S1776367 */11800015
+ /*    COUNTRY_NUMBER                                                   11810015
+      ,PRODUCT_TYPE                                                     11820000
+      ,ORIGIN                                                           11830000
+      ,SEQUENCE_NUMBER                                                  11840000
+      ,'      '                                                         11850000
+      ,ORIGIN                                   /* SOC CEDS00000738 */  11860022
+ /*   ,SEQUENCE_NUMBER                          /* EOC CEDS00000738 */  11870022
+ /*FROM RCBV0051_PI_HW_PR                                               11880015
+   WHERE COUNTRY_NUMBER             = :WRK_CTRYNO                       11890000
+ /*  AND ((LAST_CHANGE_DATE   BETWEEN :WRK_LAST_EXTR_DATE /* RB01260 */ 11900015
+ /*                               AND :WRK_RUN_DATE)                    11910015
+       OR (WARRANTY_EXP_DATE  BETWEEN :WRK_LAST_EXTR_DATE               11920000
+                                  AND :WRK_RUN_DATE)                    11930000
+       OR (WARRANTY_SPLT_DATE BETWEEN :WRK_LAST_EXTR_DATE               11940000
+                                  AND :WRK_RUN_DATE                     11950000
+         AND WARRANTY_SPLT_DATE IS NOT NULL)                            11960000
+                                                       /*SOC PTM1417*/  11970000
+ /*    OR (INSTALL_DATE       BETWEEN :WRK_LAST_EXTR_DATE             */11980015
+   SELECT DISTINCT                                                      11981015
+       A.COUNTRY_NUMBER                                                 11982015
+      ,A.PRODUCT_TYPE                                                   11983015
+      ,A.ORIGIN                                                         11984015
+      ,A.SEQUENCE_NUMBER                                                11985015
+      ,'      '                                                         11986015
+      ,A.ORIGIN                                 /* SOC CEDS00000738 */  11987015
+      ,A.SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  11988015
+   FROM RCBV0051_PI_HW_PR A                                             11989015
+   WHERE A.COUNTRY_NUMBER             = :WRK_CTRYNO                     11989115
+     AND ((A.LAST_CHANGE_DATE  BETWEEN :WRK_LAST_EXTR_DATE /* RB01260 */11989215
+                                  AND :WRK_RUN_DATE)                    11989315
+       OR (A.WARRANTY_EXP_DATE  BETWEEN :WRK_LAST_EXTR_DATE             11989415
+                                  AND :WRK_RUN_DATE)                    11989515
+       OR (A.WARRANTY_SPLT_DATE BETWEEN :WRK_LAST_EXTR_DATE             11989615
+                                  AND :WRK_RUN_DATE                     11989715
+         AND WARRANTY_SPLT_DATE IS NOT NULL)                            11989815
+                                                       /*SOC PTM1417*/  11989915
+       OR (A.INSTALL_DATE       BETWEEN :WRK_LAST_EXTR_DATE             11990015
+                                  AND :WRK_RUN_DATE))                   11991015
+                                                       /*EOC PTM1417*/  12000000
+       AND NOT EXISTS(                                                  12000115
+           SELECT * FROM RCBT0735_PICOS_TP B                            12000215
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               12000315
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            12000415
+                    AND A.ORIGIN            = B.ORIGIN                  12000515
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         12000616
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     12000716
+                                                      /* EOC S1776367 */12001015
+ ;                                                                      12010000
+ SELECT(SQLCODE);                                                       12020000
+   WHEN(0) EXEC SQL COMMIT;                                             12030000
+   WHEN(100);                                                           12040000
+   OTHERWISE                                                            12050000
+     CALL RCBDPAM_ERROR(ADDR(SQLCA),'DB2','#046');                      12060000
+ END;                                                                   12070000
+                                                                        12080000
+ END R730_RETR_INSERT_FROM_RCBV0051;                                    12090000
+                                                       /* EOC RB01237 */12100000
+1/*********************************************************************/12110000
+ /*                                                       SOC RB01237 */12120000
+ /* MODULE NAME      :  R735_RETR_INSERT_FROM_RCBV0241                */12130000
+ /*                                                                   */12140000
+ /* DESCRIPTION      : RETRIEVE CHANGED KEYS FROM TABLE AND INSERT    */12150000
+ /*                    INTO RCBT0735_PICOS_TP                         */12160000
+ /*                                                                   */12170000
+ /*********************************************************************/12180000
+ R735_RETR_INSERT_FROM_RCBV0241: PROC;                                  12190000
+                                                                        12200000
+ EXEC SQL                                                               12210000
+   INSERT INTO RCBT0735_PICOS_TP                                        12220000
+ /*SELECT DISTINCT                                    /* SOC S1776367 */12230015
+ /*    COUNTRY_NUMBER                                                   12240015
+      ,PRODUCT_TYPE                                                     12250000
+      ,ORIGIN                                                           12260000
+      ,SEQUENCE_NUMBER                                                  12270000
+      ,'      '                                                         12280000
+      ,ORIGIN                                   /* SOC CEDS00000738 */  12290022
+ /*   ,SEQUENCE_NUMBER                          /* EOC CEDS00000738 */  12300022
+ /*FROM RCBV0241_PI_CTR                                                 12310015
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO                                   12320000
+     AND ((LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD            12330000
+                                AND :WRK_RUN_DATE)                      12340000
+      OR  (END_DATE         BETWEEN :WRK_LAST_EXTR_DATE                 12350000
+                                AND :WRK_RUN_DATE)                      12360000
+      OR  (EFFECTIVE_DATE   BETWEEN :WRK_LAST_EXTR_DATE               */12370015
+   SELECT DISTINCT                                                      12371015
+       A.COUNTRY_NUMBER                                                 12372015
+      ,A.PRODUCT_TYPE                                                   12373015
+      ,A.ORIGIN                                                         12374015
+      ,A.SEQUENCE_NUMBER                                                12375015
+      ,'      '                                                         12376015
+      ,A.ORIGIN                                 /* SOC CEDS00000738 */  12377022
+      ,A.SEQUENCE_NUMBER                        /* EOC CEDS00000738 */  12378022
+   FROM RCBV0241_PI_CTR A                                               12379015
+   WHERE A.COUNTRY_NUMBER = :WRK_CTRYNO                                 12379115
+     AND ((A.LAST_CHANGE_DATE BETWEEN :WRK_START_CHANGE_PERIOD          12379215
+                                AND :WRK_RUN_DATE)                      12379315
+      OR  (A.END_DATE         BETWEEN :WRK_LAST_EXTR_DATE               12379415
+                                AND :WRK_RUN_DATE)                      12379515
+      OR  (A.EFFECTIVE_DATE   BETWEEN :WRK_LAST_EXTR_DATE               12379615
+                                AND :WRK_RUN_DATE))                     12380000
+       AND NOT EXISTS(                                                  12381015
+           SELECT * FROM RCBT0735_PICOS_TP B                            12382015
+                    WHERE A.COUNTRY_NUMBER  = :WRK_CTRYNO               12383015
+                    AND A.PRODUCT_TYPE      = B.PRODUCT_TYPE            12384015
+                    AND A.ORIGIN            = B.ORIGIN                  12385015
+                    AND A.SEQUENCE_NUMBER   = B.SEQUENCE_NUMBER         12386016
+                    AND B.ORDER_REF_NUMBER  = ' ' )                     12386116
+                                                      /* EOC S1776367 */12387015
+ ;                                                                      12390015
+ SELECT(SQLCODE);                                                       12400000
+   WHEN(0) EXEC SQL COMMIT;                                             12410000
+   WHEN(100);                                                           12420000
+   OTHERWISE                                                            12430000
+     CALL RCBDPAM_ERROR(ADDR(SQLCA),'DB2','#047');                      12440000
+ END;                                                                   12450000
+                                                                        12460000
+ END R735_RETR_INSERT_FROM_RCBV0241;                                    12470000
+                                                       /* EOC RB01237 */12480000
+1/*********************************************************************/12490000
+ /*                                                                   */12500000
+ /* MODULE NAME      :  R799_END_COUNTRY                              */12510000
+ /*                                                                   */12520000
+ /* DESCRIPTION      :                                                */12530000
+ /*                                                                   */12540000
+ /*********************************************************************/12550000
+ R799_END_COUNTRY: PROC;                                                12560000
+                                      /* INCREASE FOR NEXT CTRYNO    */ 12570000
+ WRK_CTRYNO_NO = WRK_CTRYNO_NO + 1;                                     12580000
+                                                                        12590000
+ END R799_END_COUNTRY;                                                  12600000
+                                                                        12610000
+1/*********************************************************************/12620000
+ /*                                                                   */12630000
+ /* MODULE NAME      :  R800_CLEAR_OUTPUT_TABLES                      */12640000
+ /*                                                                   */12650000
+ /* DESCRIPTION      :  DELETE ALL OCCURENCES FROM THE OUTPUT TABLES  */12660000
+ /*                     FOR THE CURRENT COUNTRY                       */12670000
+ /*                                                                   */12680000
+ /*********************************************************************/12690000
+ R800_CLEAR_OUTPUT_TABLES: PROC;                                        12700000
+                                                                        12710000
+ EXEC SQL                                              /* SOC RC01219 */12720000
+   DELETE FROM RCBT0725_PICOS_HW                                        12730000
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO;                                  12740000
+                                                                        12750000
+ SELECT(SQLCODE);                                                       12760000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */12770000
+   WHEN(100) EXEC SQL COMMIT;                              /* PTM1339 */12780000
+   OTHERWISE                                                            12790000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2', '#048');                  12800000
+ END;                                                  /* EOC RC01219 */12810000
+                                                                        12820000
+ EXEC SQL                                                               12830000
+   DELETE FROM RCBT0735_PICOS_TP                                        12840000
+   WHERE COUNTRY_NUMBER = :WRK_CTRYNO;                     /* RC01219 */12850000
+                                                                        12860000
+ SELECT(SQLCODE);                                                       12870000
+   WHEN(0) EXEC SQL COMMIT;                                /* PTM1339 */12880000
+   WHEN(100) EXEC SQL COMMIT;                              /* PTM1339 */12890000
+   OTHERWISE                                                            12900000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2', '#049');                  12910000
+ END;                                                                   12920000
+                                                                        12930000
+ END R800_CLEAR_OUTPUT_TABLES;                                          12940000
+                                                                        12950000
+1/*********************************************************************/12960000
+ /*                                                           RC01219 */12970000
+ /* MODULE NAME      :  R820_DISTINCT_COPY_RCBV0725                   */12980000
+ /*                                                                   */12990000
+ /* DESCRIPTION      :  COPY THE DISTINCT KEYS FROM TABLE             */13000000
+ /*                     RCBT0735_PICOS_TP INTO RCBT0725_PICOS_HW      */13010000
+ /*                     FOR THE CURRENT COUNTRY                       */13020000
+ /*                                                                   */13030000
+ /*********************************************************************/13040000
+ R820_DISTINCT_COPY_RCBV0725: PROC;                                     13050000
+                                                       /* SOC RB01320 */13060000
+ TB_RCBV125 = '';                                                       13070000
+                                                                        13080000
+ EXEC SQL                                                               13090000
+    OPEN CURSOR_LONG_SER;                                               13100000
+                                                                        13110000
+ SELECT(SQLCODE);                                                       13120000
+   WHEN(0);                                                             13130000
+   WHEN(100);                                                           13140000
+   OTHERWISE                                                            13150000
+      CALL RCBDPAM_ERROR(ADDR(SQLCA),'DB2','#055');                     13160000
+ END;                                                                   13170000
+                                                                        13180000
+  DO WHILE(SQLCODE = +0);                                               13190000
+     EXEC SQL                                                           13200000
+       FETCH CURSOR_LONG_SER INTO :TB_RCBV125;                          13210000
+                                                                        13220000
+     SELECT(SQLCODE);                                                   13230000
+       WHEN(0)                                                          13240000
+       DO;                                                              13250000
+         EXEC SQL                                                       13260000
+           UPDATE RCBT0735_PICOS_TP                                     13270000
+           SET ORIGIN                   = :TB_RCBV125.DUMMY_ORIGIN,     13280000
+               SEQUENCE_NUMBER          = :TB_RCBV125.DUMMY_SEQUENCE_NUM13290000
+           WHERE PRODUCT_TYPE           = :TB_RCBV125.PRODUCT_TYPE      13300000
+           AND COUNTRY_NUMBER           = :TB_RCBV125.COUNTRY_NUMBER    13310000
+           AND ORIGIN||SEQUENCE_NUMBER  = :TB_RCBV125.REAL_SERIAL_NUMBER13320000
+         ;                                                              13330000
+             SELECT(SQLCODE);                     /* SOC CEDS00000738 */13331025
+               WHEN(0);                                                 13332000
+               WHEN(100);                                               13333000
+               OTHERWISE                                                13334000
+                 DO;                                                    13335000
+                  CALL RCBDPAM_ERROR (ADDR (SQLCA),                     13336000
+                                           'DB2',                       13337000
+                                           '#058');                     13338000
+                 END;                                                   13339000
+             END;                                                       13340000
+         EXEC SQL                                                       13341000
+           UPDATE RCBT0735_PICOS_TP                                     13342000
+      SET REAL_ORIGIN     = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,1,2), 13343000
+          REAL_SEQ_NUM    = SUBSTR(:TB_RCBV125.REAL_SERIAL_NUMBER,3)    13344000
+      WHERE PRODUCT_TYPE           = :TB_RCBV125.PRODUCT_TYPE           13345000
+      AND  COUNTRY_NUMBER          = :TB_RCBV125.COUNTRY_NUMBER         13346000
+      AND  ORIGIN                  = :TB_RCBV125.DUMMY_ORIGIN           13347000
+      AND  SEQUENCE_NUMBER         = :TB_RCBV125.DUMMY_SEQUENCE_NUM     13348000
+      ;                                                                 13349000
+             SELECT(SQLCODE);                                           13349100
+                WHEN(0);                                                13349200
+                WHEN(100);                                              13349300
+                OTHERWISE                                               13349400
+                  DO;                                                   13349500
+                    CALL RCBDPAM_ERROR (ADDR (SQLCA),                   13349600
+                                             'DB2',                     13349700
+                                             '#059');                   13349800
+                  END;                                                  13349900
+             END;                                /* EOC CEDS00000738 */ 13350000
+       END;                                                             13350100
+       WHEN(100);                                                       13351000
+       OTHERWISE CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2', '#056');      13360000
+     END;                                                               13380000
+  END;                                                                  13381000
+                                                                        13390000
+  EXEC SQL                                                              13590000
+    CLOSE CURSOR_LONG_SER;                                              13600000
+                                                                        13610000
+  SELECT(SQLCODE);                                                      13620000
+    WHEN(0);                                                            13630000
+    WHEN(100);                                                          13640000
+    OTHERWISE                                                           13650000
+      CALL RCBDPAM_ERROR(ADDR(SQLCA),'DB2','#057');                     13660000
+  END;                                                                  13670000
+                                                       /* EOC RB01320 */13680000
+ EXEC SQL                                                               13690000
+  INSERT INTO RCBT0725_PICOS_HW                                         13700000
+  SELECT DISTINCT * FROM RCBT0735_PICOS_TP                              13710000
+    WHERE (ORIGIN ¬= 'HV'                                               13720000
+       OR ORIGIN IS NULL)                                               13730000
+      AND COUNTRY_NUMBER = :WRK_CTRYNO                                  13740000
+   ;                                                                    13750000
+                                                                        13760000
+ SELECT(SQLCODE);                                                       13770000
+   WHEN(0);                                                             13780000
+   WHEN(100);                                                           13790000
+   OTHERWISE                                                            13800000
+     CALL RCBDPAM_ERROR (ADDR (SQLCA), 'DB2', '#050');                  13810000
+ END;                                                                   13820000
+                                                                        13830000
+ END R820_DISTINCT_COPY_RCBV0725;                                       13840000
+                                                                        13850000
+1/********************************************************************/ 13860000
+ /*                                                                  */ 13870000
+ /* MODULE NAME      : R900_INIT_PROGRAM                             */ 13880000
+ /*                                                                  */ 13890000
+ /* DESCRIPTION      : INIT PROGRAM                                  */ 13900000
+ /*                                                                  */ 13910000
+ /********************************************************************/ 13920000
+ R900_INIT_PROGRAM: PROC;                                               13930000
+                                             /* INITIALISE POINTERS  */ 13940000
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);                              13950000
+ PTR_RETURN_AREA_BB = ADDR(RETURN_AREA_BB);                             13960000
+ PTR_COUNTRY_AREA   = ADDR (COUNTRY_AREA);                              13970000
+ PTR_RUN_DATE_AREA  = ADDR (RUN_DATE_AREA);                             13980000
+                                             /* INITIALISE VARIABLES */ 13990000
+ PARM_INT_AREA.MSG_AREA       = '';                                     14000000
+ PARM_INT_AREA.ERR_AREA       = ' ';                                    14010000
+ PARM_INT_AREA.MSG_REQUEST    = 'O';                                    14020000
+ PARM_INT_AREA.MSG_TARGET     = 'F';                                    14030000
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';                                  14040000
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PRG_NAME;                           14050000
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;                           14060000
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;                                      14070000
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;                        14080000
+ PARM_INT_AREA.TXN_CODE       = '';                                     14090000
+ PARM_INT_AREA.VERSION        = '';                                     14100000
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;                                   14110000
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;                                   14120000
+                                              /* OPEN MESSAGE FILE   */ 14130000
+ CALL RCB0M1M(PTR_INT_AREA);                                            14140000
+                                              /* RETR. SYSTEM DATE   */ 14150000
+ CALL RCB0T1M(PTR_INT_AREA);                                            14160000
+                                              /* RETRIEVE COUNTRIES  */ 14170000
+ CALL RCB019M (PTR_COUNTRY_AREA,                                        14180000
+               PTR_INT_AREA);                                           14190000
+                                                                        14200000
+                                              /* NO COUNTRIES FOUND  */ 14210000
+ IF COUNTRY_AREA.COUNT_CTRY = 0                                         14220000
+ THEN                                                                   14230000
+   DO;                                                                  14240000
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';                              14250000
+     PARM_INT_AREA.MSG_VAR_CODES     = '';                              14260000
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';                            14270000
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';                          14280000
+     CALL RCB0M1M (PTR_INT_AREA);                                       14290000
+     CALL RCBDPAM_ERROR (NULL, 'OTHER', '#051');                        14300000
+   END;                                                                 14310000
+                                                                        14320000
+ END R900_INIT_PROGRAM;                                                 14330000
+1/********************************************************************/ 14340000
+ /*                                                                  */ 14350000
+ /* MODULE NAME      : R999_END_PROGRAM                              */ 14360000
+ /*                                                                  */ 14370000
+ /* DESCRIPTION      : WRITE COUNT MESSAGES                          */ 14380000
+ /*                                                                  */ 14390000
+ /********************************************************************/ 14400000
+ R999_END_PROGRAM:  PROC;                                               14410000
+                                    /* WRITE SUCCESFULLY ENDED MSG   */ 14420000
+ PARM_INT_AREA.COUNTRY_NUMBER  = '';                                    14430000
+ PARM_INT_AREA.MESSAGE_TYPE    = 'IS';                                  14440000
+ PARM_INT_AREA.MESSAGE_NUMBER  = '9999';                                14450000
+ PARM_INT_AREA.MSG_VAR_CODES   = '';                                    14460000
+ CALL RCB0M1M (PTR_INT_AREA);                                           14470000
+                                    /* CLOSE MESSAGE FILE            */ 14480000
+ PARM_INT_AREA.MSG_REQUEST = 'C';                                       14490000
+ CALL RCB0M1M (PTR_INT_AREA);                                           14500000
+                                                                        14510000
+ END R999_END_PROGRAM;                                                  14520000
+1/********************************************************************/ 14530000
+ /*                                                                  */ 14540000
+ /* MODULE NAME      : RCBDPAM_ERROR                                 */ 14550000
+ /*                                                                  */ 14560000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 14570000
+ /*                    THE INPUT VARIABLES                           */ 14580000
+ /*                                                                  */ 14590000
+ /********************************************************************/ 14600000
+ RCBDPAM_ERROR: PROC    (PTR_ERROR,                                     14610000
+                         ERR_TYPE,                                      14620000
+                         CALL_ID);                                      14630000
+ DCL PTR_ERROR     PTR;                                                 14640000
+ DCL ERR_TYPE      CHAR(8);                                             14650000
+ DCL CALL_ID       CHAR(4);                                             14660000
+ PARM_INT_AREA.PTR_ERROR          = PTR_ERROR;                          14670000
+ PARM_INT_AREA.ERR_TYPE           = ERR_TYPE;                           14680000
+ PARM_INT_AREA.CALL_ID            = CALL_ID;                            14690000
+ CALL RCB0E1M (ADDR(PARM_INT_AREA));                                    14700000
+                                                                        14710000
+ END RCBDPAM_ERROR;                                                     14720000
+1/*******************************************************************/  14730000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  14740000
+ /*******************************************************************/  14750000
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  14760000
+ $DAIMOD (RCBDPAM);                      /* MODULE TO BE COMPILED   */  14770000
+ /*******************************************************************/  14780000
+ /* END OF ABR BLOCK                                                */  14790000
+ /*******************************************************************/  14800000
+ END RCBDPAM;                                                           14810000

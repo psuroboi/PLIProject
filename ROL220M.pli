@@ -1,0 +1,295 @@
+1/* ROL220M -  UPDATE TABLE RCBT0220_SUPPL_CTR                       */ 00021115
+ /********************************************************************/ 00022014
+ /*                                                                  */ 00030000
+ /* MODULE NAME      : ROL220M                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* PROGRAM NAME     : ROL220P                                       */ 00060000
+ /*                                                                  */ 00070000
+ /* LANGUAGE         : PLISQL                                        */ 00080000
+ /*                                                                  */ 00090000
+ /* TYPE             : LINKABLE MODULE                               */ 00100000
+ /*                                                                  */ 00110000
+ /* DESCRIPTION      : LOCAL PROGRAM TO UPDATE TABLE                 */ 00120000
+ /*                    RCBT0220_SUPPL_CTR WITH SERVICE_LVL_CODE='OEM'*/ 00130000
+ /*                    WHEN THERE IS A MATCHING TOS FOUND IN OEM FILE*/ 00140000
+ /*                    TO BE USED IN US03 UPSTREAM PROCESS           */ 00150000
+ /*                                                                  */ 00160000
+ /* INPUT            :                                               */ 00170000
+ /*                    - DB2   :RCBT0220_SUPPL_CTR                   */ 00180000
+ /*                             RCBT0470_SERV_COND                   */ 00190000
+ /*                             RCBT0500_PARM                        */ 00200000
+ /*                  : - FILE : RCB0OEM - OEM FILE                   */ 00210000
+ /*                                                                  */ 00220000
+ /* OUTPUT           : - DB2   :RCBT0220_SUPPL_CTR                   */ 00230000
+ /*                                                                  */ 00240000
+ /*                                                                  */ 00250000
+ /********************************************************************/ 00260000
+ /*  2002-08-21 | C0070-0802   | INITAIL RELEASE        - SR         */ 00270000
+ /*             |              | OEM CHANGES                         */ 00280000
+ /* 2007-11-21  | RB01242      | INCREASE LENGTH OF SERIAL NUMBER    */ 00281002
+ /********************************************************************/ 00290000
+1ROL220M: PROC OPTIONS  (MAIN) REORDER;                                 00300000
+1/********************************************************************/ 00310000
+ /*  PARAMETERS                                                      */ 00320000
+ /********************************************************************/ 00330000
+1/********************************************************************/ 00340000
+ /*  BUILTIN VARIABLES                                               */ 00350000
+ /********************************************************************/ 00360000
+ DCL (ADDR,                                                             00370000
+      SUBSTR,                                                           00380000
+      ONCODE,                                                           00390000
+      VERIFY,                                                           00400000
+      ROUND,                                                            00410000
+      DATETIME,                                                         00420000
+      PLIDUMP,                                                          00430000
+      NULL)   BUILTIN;                                                  00440000
+ /********************************************************************/ 00450000
+ /* ON ERROR CONDITIONS                                              */ 00460000
+ /********************************************************************/ 00470000
+  ON ERROR                                                              00480000
+   BEGIN;                                                               00490000
+      ON ERROR SYSTEM;                                                  00500000
+      CALL PLIDUMP ;                                                    00510000
+   END;                                                                 00520000
+ /********************************************************************/ 00530000
+ /* EXTERNAL MODULES                                                 */ 00540000
+ /********************************************************************/ 00550000
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */ 00560000
+ DCL RCB024M   ENTRY  EXTERNAL;          /* LOCK DB2 TABLE PARTITION */ 00570000
+1/********************************************************************/ 00580000
+ /* DB2 TABLE STRUCTURES                                             */ 00590000
+ /********************************************************************/ 00600000
+1/********************************************************************/ 00610000
+ /* INPUT  FILES                                                     */ 00620000
+ /********************************************************************/ 00630000
+ DCL ROL0OEM FILE RECORD INPUT SEQL;                                    00640000
+ DCL SYSPRINT FILE PRINT;                                               00650000
+1/********************************************************************/ 00660000
+ /*  POINTERS                                                        */ 00670000
+ /********************************************************************/ 00680000
+ DCL PTR_COUNTRY_AREA    PTR;          /* INTERFACE RCB019M          */ 00690000
+ DCL PTR_INT_AREA        PTR;          /* INTERFACE AREA             */ 00700000
+ DCL PTR_RETURN_AREA_BB  PTR;          /* RETURN AREA FROM BB        */ 00710000
+1/********************************************************************/ 00720000
+ /*  BIT SWITCHES                                                    */ 00730000
+ /********************************************************************/ 00740000
+ DCL TRUE     BIT (1) INIT ('1'B);                                      00750000
+ DCL FALSE    BIT (1) INIT ('0'B);                                      00760000
+ /********************************************************************/ 00770000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 00780000
+ /********************************************************************/ 00790000
+ DCL SLC_FOUND      BIT (1) INIT ('0'B);                                00800000
+ DCL OEM_FOUND      BIT (1) INIT ('1'B);                                00810000
+ DCL OEM_SW_CURR    BIT (1) INIT ('0'B);                                00820000
+ DCL EOF_OEM        BIT (1) INIT ('0'B);                                00830000
+ DCL EOF_PROC       BIT (1) INIT ('0'B);                                00840000
+ DCL EOF_CSET       BIT (1) INIT ('0'B);                                00850000
+ DCL COUNT_ROL0OEM  FIXED DEC(7,0);                                     00860000
+ DCL COUNT_220UPDT  FIXED DEC(7,0);                                     00870000
+ DCL COUNT_220REJ   FIXED DEC(7,0);                                     00880000
+                                                                        00890000
+ DCL 1 ROL220_SLC       CHAR(3);                                        00900000
+ DCL 1 ROL220_TYPE      CHAR(4);                                        00910000
+ DCL 1 ROL220_ORIGIN    CHAR(2);                                        00920000
+ DCL 1 ROL220_SERIAL    CHAR(28);                                       00930002
+ DCL 1 ROL220_LSTCHG_DT CHAR(4);                                        00940000
+ DCL 1 ROL470_SLC       CHAR(3);                                        00950000
+                                                                        00960000
+ DCL   FILE_OEM        CHAR(13);                                        00970000
+ DCL 1 OEM_REC         BASED(ADDR(FILE_OEM)),                           00980000
+        % INCLUDE RCBOEMS;                                              00990000
+                                                                        01000000
+ DCL 1 COUNTRY_AREA,                          /* COUNTRY AREA        */ 01010000
+       %INCLUDE (RCBZ26S);;                                             01020000
+ DCL 1 PARM_INT_AREA,                         /* INTERFACE AREA      */ 01030000
+       %INCLUDE (RCBZ01S);;                                             01040000
+ DCL 1 PARM_RCB024M,                           /* RCB024M PARM       */ 01050000
+      %INCLUDE (RCBZ33S);;                                              01060000
+                                                                        01070000
+ DCL 1 RETURN_AREA_BB,                        /* RETURN AREA         */ 01080000
+       %INCLUDE (RCBZ02S);;                                             01090000
+ DCL WRK_PARAMETER_KEY CHAR(10);                                        01100000
+ DCL WRK_PARAMETER_NBR CHAR(06);                                        01110000
+ DCL WRK_RUNDATE       CHAR(10);                                        01120000
+ DCL WRK_CTRY          CHAR(03);       /* COUNTRY NUMBER         */     01130000
+ DCL WRK_PROC_ID       CHAR(04);       /* PROC ID                */     01140000
+ DCL WRK_PGR_TYPE      CHAR(03);       /* PROGRAM TYPE           */     01150000
+1/********************************************************************/ 01160000
+                                                                        01170000
+ ON ENDFILE (ROL0OEM)                                                   01180000
+   BEGIN;                                                               01190000
+      EOF_OEM = ('1'B);                                                 01200000
+   END;                                                                 01210000
+1/********************************************************************/ 01220000
+ EXEC SQL                                                               01230000
+  INCLUDE SQLCA;                                                        01240000
+1/********************************************************************/ 01250000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01260000
+ /********************************************************************/ 01270000
+                                                                        01280000
+ CALL ROL220M_INIT_PROCESS;                                             01290000
+ CALL ROL220M_PROCESS_OEM;                                              01300000
+ CALL ROL220M_END_PROCESS;                                              01310000
+                                                                        01320000
+ ROL220M_INIT_PROCESS: PROC;                                            01330000
+    FILE_OEM            = '';                                           01340000
+    COUNT_ROL0OEM       = 0;                                            01350000
+    COUNT_220UPDT       = 0;                                            01360000
+    COUNT_220REJ        = 0;                                            01370000
+    WRK_RUNDATE         = '';                                           01380000
+    WRK_PARAMETER_KEY   = '';                                           01390000
+    WRK_PARAMETER_NBR   = '';                                           01400000
+ PTR_COUNTRY_AREA   = ADDR (COUNTRY_AREA);                              01410000
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);                              01420000
+ PTR_RETURN_AREA_BB = ADDR(RETURN_AREA_BB);                             01430000
+                                                                        01440000
+ CALL RCB019M (PTR_COUNTRY_AREA,                                        01450000
+               PTR_INT_AREA);                                           01460000
+                                                                        01470000
+ SELECT;                                      /* ONLY ONE COUNTRY    */ 01480000
+   WHEN(COUNTRY_AREA.COUNT_CTRY = 0)                                    01490000
+     DO;                                                                01500000
+       PUT SKIP LIST('NO COUNTRY FOUND FOR PROGRAM');                   01510000
+       SIGNAL ERROR;                                                    01520000
+     END;                                                               01530000
+   WHEN(COUNTRY_AREA.COUNT_CTRY > 1)                                    01540000
+     DO;                                                                01550000
+       PUT SKIP LIST('MORE THEN ONE COUNTRY FOUND') ;                   01560000
+       SIGNAL ERROR;                                                    01570000
+     END;                                                               01580000
+   OTHERWISE                                                            01590000
+     DO;                                                                01600000
+       WRK_PROC_ID  = COUNTRY_AREA.PROC_ID;                             01610000
+       WRK_CTRY   = COUNTRY_AREA.CTRY_ARRAY(1).CTRYNO;                  01620000
+       WRK_PGR_TYPE = COUNTRY_AREA.CTRY_ARRAY(1).PGR_TYPE;              01630000
+     END;                                                               01640000
+ END;                                                                   01650000
+    OPEN FILE (ROL0OEM);                                                01660000
+    WRK_PARAMETER_KEY = '';                                             01670000
+    WRK_PARAMETER_KEY = 'SY  '||WRK_CTRY||'A01' ;                       01680000
+    WRK_PARAMETER_NBR = 'RCB001';                                       01690000
+    EXEC SQL                                                            01700000
+        SELECT PARAMETER_VALUE INTO :WRK_RUNDATE                        01710000
+        FROM RCBV0500_PARM                                              01720000
+        WHERE PARAMETER_NUMBER = :WRK_PARAMETER_NBR                     01730000
+        AND   PARAMETER_KEY    = :WRK_PARAMETER_KEY ;                   01740000
+    SELECT (SQLCODE);                                                   01750000
+      WHEN (0);                                                         01760000
+      WHEN (100)                                                        01770000
+      DO;                                                               01780000
+         EXEC SQL                                                       01790000
+            SELECT SUBSTR(PARAMETER_VALUE,1,10) INTO :WRK_RUNDATE       01800000
+            FROM RCBV0500_PARM                                          01810000
+            WHERE PARAMETER_NUMBER = 'RCBCYC';                          01820000
+            SELECT (SQLCODE);                                           01830000
+              WHEN (0);                                                 01840000
+              WHEN (100)                                                01850000
+              DO;                                                       01860000
+                  WRK_RUNDATE = SUBSTR(DATETIME,1,4) || '-' ||          01870000
+                                SUBSTR(DATETIME,5,2) || '-' ||          01880000
+                                SUBSTR(DATETIME,7,2);                   01890000
+              END;                                                      01900000
+              OTHERWISE                                                 01910000
+              DO;                                                       01920000
+                  PUT SKIP LIST                                         01930000
+                  ('ERROR IN SELECTING TABLE 500/PARAMETER-RCBCYC');    01940000
+                  SIGNAL ERROR;                                         01950000
+              END;                                                      01960000
+            END;                                                        01970000
+      END;                                                              01980000
+      OTHERWISE                                                         01990000
+      DO;                                                               02000000
+          PUT SKIP LIST                                                 02010000
+         ('ERROR IN SELECTING TABLE 500/PARAMETER-RCB001');             02020000
+         SIGNAL ERROR;                                                  02030000
+      END;                                                              02040000
+    END;                                                                02050000
+    PUT SKIP LIST( 'RUN DATE : ', WRK_RUNDATE);                         02060000
+    PUT SKIP LIST( 'COUNTRY  : ', WRK_CTRY);                            02070000
+    CALL ROL220M_LOCK_TABLES;                                           02080000
+ END ROL220M_INIT_PROCESS;                                              02090000
+                                                                        02100000
+                                                                        02110000
+ ROL220M_PROCESS_OEM: PROC;                                             02120000
+                                                                        02130000
+    READ FILE(ROL0OEM) INTO(FILE_OEM);                                  02140000
+    DO WHILE (¬EOF_OEM );                                               02150000
+        ROL220_TYPE   = OEM_REC.TOS.TYPE;                               02160000
+        ROL220_ORIGIN = OEM_REC.TOS.ORIG;                               02170000
+        ROL220_SERIAL = OEM_REC.TOS.SERNO;                              02180000
+        COUNT_ROL0OEM = COUNT_ROL0OEM + 1;                              02190000
+        CALL ROL220M_UPDATE_TB220;                                      02200000
+        READ FILE(ROL0OEM) INTO(FILE_OEM);                              02210000
+    END;                                                                02220000
+ END ROL220M_PROCESS_OEM;                                               02230000
+                                                                        02240000
+ ROL220M_UPDATE_TB220:PROC;                                             02250000
+     EXEC SQL                                                           02260000
+       UPDATE RCBV0220_SUPPL_CTR  SET                                   02270000
+       SERVICE_LVL_CODE = 'OEM',                                        02280000
+       LAST_CHANGE_DATE = :WRK_RUNDATE                                  02290000
+       WHERE                                                            02300000
+       PRODUCT_TYPE     = :ROL220_TYPE    AND                           02310000
+       ORIGIN           = :ROL220_ORIGIN  AND                           02320000
+       SEQUENCE_NUMBER  = :ROL220_SERIAL  AND                           02330000
+       TYPE_OF_WARRANTY IS NOT NULL       AND                           02340000
+       (SERVICE_LVL_CODE IS NULL          OR                            02350000
+        SERVICE_LVL_CODE <> 'OEM'       ) AND                           02360000
+       COUNTRY_NUMBER   = :WRK_CTRY       ;                             02370000
+     SELECT(SQLCODE);                                                   02380000
+       WHEN(0)                                                          02390000
+       DO;                                                              02400000
+          COUNT_220UPDT = COUNT_220UPDT  +  1;                          02410000
+       END;                                                             02420000
+       WHEN(100)                                                        02430000
+       DO;                                                              02440000
+          COUNT_220REJ  = COUNT_220REJ  + 1 ;                           02450000
+       END;                                                             02460000
+       WHEN(-530)                                                       02470000
+       DO;                                                              02480000
+          PUT SKIP LIST                                                 02490000
+          ('FOREIGN KEY MISSING');                                      02500000
+          SIGNAL ERROR;                                                 02510000
+       END;                                                             02520000
+       OTHERWISE                                                        02530000
+       DO;                                                              02540000
+          PUT SKIP LIST                                                 02550000
+          ('ERROR WHILE UPDATING TABLE RCBV0220_SUPPL_CTR');            02560000
+          PUT SKIP LIST( 'THE SQLCODE IS  :',SQLCODE);                  02570000
+          SIGNAL ERROR;                                                 02580000
+       END;                                                             02590000
+    END;                                                                02600000
+ END ROL220M_UPDATE_TB220;                                              02610000
+ ROL220M_LOCK_TABLES: PROC;                                             02620000
+  PARM_RCB024M.COUNTRY_NUMBER = WRK_CTRY;                               02630000
+  PARM_RCB024M.VIEW_NAME      = 'RCBT0220_SUPPL_CTR';                   02640000
+  PARM_RCB024M.LOCK_MODE      = 'E';                    /* SHARE MODE */02650000
+                                                                        02660000
+  CALL RCB024M (ADDR(PARM_RCB024M),                                     02670000
+               PTR_RETURN_AREA_BB,                                      02680000
+               PTR_INT_AREA);                                           02690000
+                                                                        02700000
+  SELECT(RETURN_AREA_BB.RETURN_CODE);                                   02710000
+   WHEN (0);                                                            02720000
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */ 02730000
+     DO;                                                                02740000
+       PUT SKIP LIST('INVALID OR AMBIGUOUS PARAMETER');                 02750000
+       SIGNAL ERROR;                                                    02760000
+     END;                                                               02770000
+   OTHERWISE                                                            02780000
+     DO;                                                                02790000
+       PUT SKIP LIST('SQLCODE DURING  LOCKING  IS : ',SQLCODE);         02800000
+       SIGNAL ERROR;                                                    02810000
+     END;                                                               02820000
+  END;                                                                  02830000
+                                                                        02840000
+ END ROL220M_LOCK_TABLES;                                               02850000
+ /********************************************************************/ 02860000
+ ROL220M_END_PROCESS: PROC;                                             02870000
+    CLOSE FILE (ROL0OEM);                                               02880000
+    PUT SKIP LIST('NUMBER OF ROWS UPDATED IN RCBT220  :',COUNT_220UPDT);02890000
+    PUT SKIP LIST('NUMBER OF ROWS REJECTED IN OEM FILE:',COUNT_220REJ );02900000
+    PUT SKIP LIST('NUMBER OF ROWS READ  FROM  OEM FILE:',COUNT_ROL0OEM);02910000
+ END ROL220M_END_PROCESS;                                               02920000
+                                                                        02930000
+ END ROL220M;                                                           02940000

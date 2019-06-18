@@ -1,0 +1,522 @@
+1/* RCBBC2U - CUF USER EXIT - HW RECON ORDER INFO                    */ 00010029
+ /********************************************************************/ 00020029
+ /*                                                                  */ 00030029
+ /* MODULE NAME      : RCBBC2U                                       */ 00040029
+ /*                                                                  */ 00050029
+ /* PROGRAM NAME     : RCBBC2U                                       */ 00060029
+ /*                                                                  */ 00070029
+ /* LANGUAGE         : PLISQL                                        */ 00080029
+ /*                                                                  */ 00090029
+ /* TYPE             : LINKABLE MODULE                               */ 00100029
+ /*                                                                  */ 00110029
+ /* DESCRIPTION      : USER EXIT FOR COUNTRY USE FIELD PROCESSING    */ 00120029
+ /*                    TO BE USED IN THE HARDWARE RECON DURING THE   */ 00130029
+ /*                    DO PROCESSING                                 */ 00140029
+ /*                                                                  */ 00150029
+ /* NOTE 1           : IF YOU WANT TO USE THIS EXIT BE SURE TO SET   */ 00160029
+ /*                    SWITCH_USER_EXIT TO TRUE                      */ 00170029
+ /*                                                                  */ 00180029
+ /* INPUT            : - SOF DO RECORD                               */ 00190029
+ /*                    - DB2   : NONE                                */ 00200029
+ /*                                                                  */ 00210029
+ /* OUTPUT           : - PARAMETER INTERFACE (FROM CALLING MODULE)   */ 00220029
+ /*                  : - FILE : RCB0M10                              */ 00230029
+ /*                                                                  */ 00240029
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00250029
+ /*                                                                  */ 00260029
+ /* MESSAGES         : ----                                          */ 00270029
+ /*                                                                  */ 00280029
+ /* DEPENDENCIES     : NONE                                          */ 00290029
+ /*                                                                  */ 00300029
+ /* FREQUENCY        : ----                                          */ 00310029
+ /*                                                                  */ 00320029
+ /*  MAINTENANCE LOG :                                               */ 00330029
+ /*  ---------------                                                 */ 00340029
+ /*                                                                  */ 00350029
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00360029
+ /*  --------------------------------------------------------------  */ 00370029
+ /*  1993-05-06 | RC1035       | COUNTRY USE FIELD PROCESSING        */ 00380029
+ /*  1993-11-30 | CED0014      | CHANGE FETCH INTO CALL SEE PTM 374  */ 00390029
+ /*  1997-04-11 | PTM1036      | CORRECTED PROLOG                    */ 00400029
+ /*  1997-04-29 | PTM0892      | REMOVE DECLARES UNUSED EXT.ENTRIES  */ 00410029
+ /*  1999-11-02 | ROSOUTH      | ADD SOUTH SPECIFIC EXITS   RG       */ 00420029
+ /*  1999-11-04 | ROWEST       | ADD WEST  SPECIFIC EXITS   RG       */ 00430029
+ /*  1999-11-09 | RONORTH      | ADD REGION NORTH CODE FOR RO - SG   */ 00440029
+ /*  2004-07-07 | RS MIGRATION | REPEAT THE CODE IN 755 FOR 756      */ 00450029
+ /*                                                                  */ 00460029
+ /*  2009-07-09 | CHG0027B     | CEEMEA COUNTRY HANDLING CHANGES     */ 00470029
+ /*  2011-05-16 | RMT R09-0221 | CODE CHNAGED FOR NEW GMEA  CTRY     */ 00480029
+ /*  2012-06-19 | TREC 80749   | OU CODE SET IN INVENTORY OF GBM/SBM */ 00490029
+ /*             |              | COUNTRIES(XCLS REGION)              */ 00500029
+ /*  2012-10-22 | PCEDSP-0290  | MANAGE OU CODE COMING FROM BH FOR724*/ 00501032
+ /*  2015-09-24 | PCEDSP-0542  | LA PROJECT : PASS INTERFACE         */ 00502036
+ /*  2018-02-16 | D1451641     | PASS SSA - update user exit for all */ 00503041
+ /*             |              | SSA countries to set OU code '1'    */ 00504041
+ /*  2018-07-16 | S1570259     | Adjusting user exits RCBBC1U AND    */ 00505045
+ /*             |              | RCBBC2U to correct  BU Discrepancies*/ 00506045
+ /*  2018-09-10 | S1642413     | iERP 1808 Belgium UE Modification   */ 00507049
+ /*  2018-09-11 | S1643852     | iERP 1808 Netherlands User Exit     */ 00508053
+ /*             |              | Modification and stop OU02          */ 00509053
+ /*  2018-10-18 | S1664096     | user exit update for US03 for Spain    00509154
+ /*             |              | and Italy                              00509254
+ /********************************************************************/ 00510029
+1RCBBC2U: PROC    (PTR_SWITCH_USER_EXIT,                                00520029
+                   PTR_DB_MACH_ORD_COPY,                                00530029
+                   PTR_OU_CODE_WTAAS,                                   00540029
+                   PTR_OU_CODE_OUT,                                     00550029
+                   PTR_INT_AREA)                                        00560029
+          REORDER;                                                      00570029
+0DEFAULT RANGE (*)        STATIC;                                       00580029
+1/********************************************************************/ 00590029
+ /*  PARAMETERS                                                      */ 00600029
+ /********************************************************************/ 00610029
+0DCL PTR_SWITCH_USER_EXIT    PTR;                                       00620029
+ DCL PTR_DB_MACH_ORD_COPY    PTR;                                       00630029
+ DCL PTR_OU_CODE_WTAAS       PTR;                                       00640029
+ DCL PTR_OU_CODE_OUT         PTR;                                       00650029
+ DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00660029
+1/********************************************************************/ 00670029
+ /*  EXTERNAL ENTRIES                                                */ 00680029
+ /********************************************************************/ 00690029
+0DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 00700029
+ DCL RCB0M1M   ENTRY  EXTERNAL;  /* ROSOUTH   COMMON MSG ROUTINE     */ 00710029
+0/********************************************************************/ 00720029
+ /* ON ERROR CONDITIONS                                              */ 00730029
+ /********************************************************************/ 00740029
+0%INCLUDE (RCB0E0M);                                                    00750029
+  END;                                                                  00760029
+ /********************************************************************/ 00770029
+ /*                                                                  */ 00780029
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 00790029
+ /* AND CALL THE ERROR ROUTINE:                                      */ 00800029
+ /*                                                                  */ 00810029
+ /*                                                                  */ 00820029
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 00830029
+ /*                                                                  */ 00840029
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 00850029
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 00860029
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 00870029
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 00880029
+ /*                                                                  */ 00890029
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 00900029
+ /*                                                                  */ 00910029
+ /********************************************************************/ 00920029
+1/********************************************************************/ 00930029
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00940029
+ /********************************************************************/ 00950029
+0DCL SWITCH_USER_EXIT BIT (1) BASED (PTR_SWITCH_USER_EXIT);             00960029
+0DCL 1 DB_MACH_ORD_COPY       BASED (PTR_DB_MACH_ORD_COPY),             00970029
+       %INCLUDE (RCBBCAS1);,                                            00980029
+       %INCLUDE (RRDDO1);                                               00990029
+ DCL 1 PARM_INT_AREA          BASED (PTR_INT_AREA),                     01000029
+      %INCLUDE (RCBZ01S);;                                              01010029
+ DCL OU_CODE_WTAAS            CHAR(7) BASED (PTR_OU_CODE_WTAAS);        01020029
+ DCL OU_CODE_OUT              CHAR(7) BASED (PTR_OU_CODE_OUT);          01030029
+1/********************************************************************/ 01040029
+ /* DB2 TABLE STRUCTURES                                             */ 01050029
+ /********************************************************************/ 01060029
+1/********************************************************************/ 01070029
+ /*  BIT SWITCHES                                                    */ 01080029
+ /********************************************************************/ 01090029
+0DCL TRUE     BIT (1) INIT ('1'B);                                      01100029
+ DCL FALSE    BIT (1) INIT ('0'B);                                      01110029
+0/********************************************************************/ 01120029
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01130029
+ /********************************************************************/ 01140029
+0DCL 1 WORK_FIELDS,                                                     01150029
+       3 WRK_LEVEL      FIXED BIN (15),                                 01160029
+       3 WRK_INDNULL    FIXED BIN (15);                                 01170029
+0DCL VAR2 CHAR(02) INIT('  ');                                          01180029
+0DCL VAR3 CHAR(03) INIT('   ');                                         01190029
+0DCL VAR4 CHAR(04) INIT('    ');                                        01200029
+1/********************************************************************/ 01210029
+ /*  BUILTIN FUNCTIONS                                               */ 01220029
+ /********************************************************************/ 01230029
+0DCL (ADDR,                                                             01240029
+      SUBSTR,                                                           01250029
+      NULL)   BUILTIN;                                                  01260029
+1/********************************************************************/ 01270029
+ /* DB2/SQL SQLCA                                                    */ 01280029
+ /********************************************************************/ 01290029
+0 EXEC SQL                                                              01300029
+    INCLUDE SQLCA                                                       01310029
+    ;                                                                   01320029
+1/********************************************************************/ 01330029
+ /*                 S T A R T   P R O C E S S I N G                  */ 01340029
+ /********************************************************************/ 01350029
+0                                        /* SET LEVEL AND MOD NAME   */ 01360029
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01370029
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01380029
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCBBC2U';                     01390029
+0                                        /* USER DEFINED PROCESS     */ 01400029
+                                                                        01410029
+ SWITCH_USER_EXIT = TRUE ;                                              01420029
+   SELECT (PARM_INT_AREA.COUNTRY_NUMBER)               ; /* 12/12/97 */ 01430029
+                                                    /* SOC S1664096 */  01431054
+   /* WHEN ('758') DO  ;       /* --- START COUNTRY "758" - 12/12/97 */ 01440054
+   /*    OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || ' '; /*  3/10/97 */ 01450054
+   /*    IF SUBSTR(OU_CODE_OUT,4,1) = ' '                /*  3/10/97 */ 01460054
+   /*       THEN SUBSTR(OU_CODE_OUT,4,1) = '0';          /*  3/10/97 */ 01470054
+   /*    IF SUBSTR(OU_CODE_OUT,1,4) = '0001'             /* 12/09/97 */ 01480054
+   /*       THEN SUBSTR(OU_CODE_OUT,1,4) = '9001';       /* 12/09/97 */ 01490054
+   /* END  ;                   /* --- END COUNTRY "758" --- 12/12/97 */ 01500054
+   /* WHEN ('838') DO  ;       /* --- START COUNTRY "SPA" -  4/09/98 */ 01510054
+   /*    OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,3) ||      /*  4/09/98 */ 01520054
+   /*                  SUBSTR(OU_CODE_WTAAS,7,1) || ' '; /*  4/09/98 */ 01530054
+   /* END  ;                   /* --- END COUNTRY "SPA" ---  4/09/98 */ 01540054
+                                                    /* EOC S1664096 */  01540154
+                                                     /* SOC S1570259 */ 01541046
+      WHEN ('822') DO  ;       /* --- START COUNTRY "POR" -  4/09/98 */ 01550029
+     /*  OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,4,4) || ' '; /*  4/09/98 */ 01560044
+      END  ;                   /* --- END COUNTRY "POR" ---  4/09/98 */ 01570029
+      WHEN ('755') DO  ;       /* --- START COUNTRY "ISR" -  8/03/99 */ 01580029
+     /*  OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,2,4) || ' '; /*  8/03/99 */ 01590044
+      END  ;                   /* --- END COUNTRY "ISR" ---  8/03/99 */ 01600029
+      WHEN ('756') DO  ;       /* --- START COUNTRY "ISR" -  7/07/04 */ 01610029
+     /*  OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,2,4) || ' '; /*  7/07/04 */ 01620044
+      END  ;                   /* 756 IS USED IN SOF  " ---  7/07/04 */ 01630029
+      WHEN ('726') DO  ;       /* --- START COUNTRY "GRE" -  5/05/99 */ 01640029
+     /*  OU_CODE_OUT = '1' || SUBSTR(OU_CODE_WTAAS,2,3) || ' ';      */ 01650047
+      END  ;                   /* --- END COUNTRY "GRE" ---  5/05/99 */ 01660029
+      WHEN ('666') DO  ;       /* --- START COUNTRY "CYP" -  5/05/99 */ 01670029
+     /*  OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,2,4) || ' '; /*  4/06/99 */ 01680044
+      END  ;                   /* --- END COUNTRY "CYP" ---  5/05/99 */ 01690029
+      WHEN ('862') DO  ;       /* --- START COUNTRY "TUR" - 13/09/99 */ 01700029
+     /*  OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || ' '; /* 13/09/99 */ 01710044
+      END  ;                   /* --- END COUNTRY "TUR" --- 13/09/99 */ 01720029
+     /* ROSOUTH END */                                                  01730029
+     /* ROWEST START  */                                                01740029
+      WHEN ('706') DO  ;       /* --- START COUNTRY "FRA" - 13/09/99 */ 01750029
+         /* WAS SW_US_EX = FALSE */                                     01760029
+      END  ;                   /* --- END COUNTRY "FRA" --- 13/09/99 */ 01770029
+                                                     /* EOC S1570259 */ 01771046
+      WHEN ('624') DO  ;       /* --- START COUNTRY "BEL" - 13/09/99 */ 01780029
+  /*     CALL C624_OUCODES ; */                            /*S1642413*/ 01790050
+      END  ;                   /* --- END COUNTRY "BEL" --- 13/09/99 */ 01800029
+      /*CHG0027B  REMOVE 808 AND 865  FROM WEST REGION*/                01810029
+      /*WHEN('620','680','677','767','823','805','832') DO; */          01820029
+                                        /* TEMEA-T080749 START     */   01830029
+      /*WHEN('620','680','767','805') DO; /*  RMT R09-0221  START/END */01840029
+                               /* --- START COUNTRY "MEA" - 13/09/99 */ 01850029
+      /*      OU_CODE_OUT = '';                                         01860029
+            VAR3 = SUBSTR(OU_CODE_WTAAS,1,3);                           01870029
+                                                                        01880029
+            IF VAR3 = ''                                                01890029
+               THEN OU_CODE_OUT = '000';                                01900029
+            ELSE OU_CODE_OUT = VAR3 ; */                                01910029
+ /*   END;                     /* --- END COUNTRY "MEA" --- 13/09/99 */ 01920029
+                                        /* TEMEA-T080749 END       */   01930029
+      /* ROWEST END    */                                               01940029
+ /* -----------------------------------------------------------  */     01950029
+ /*        CEEMEA COUNTRY HANDLING CHANGES----CHG0027B           */     01960029
+ /* ------------------------------------------------------------ */     01970029
+      /*  START CHANGE  RMT R09-0221*/                                  01980029
+                                        /* TEMEA-T080749 START     */   01990029
+ /*   WHEN ('610','635','677','707','725','764','782','804',            02000029
+ /*          '823','832','851','889')                              */   02010029
+      WHEN ('610','620','677','707','725','764','767','804',            02020033
+             '805','823','832','851','857','883','889')                 02030033
+                                        /* TEMEA-T080749 END       */   02040029
+      DO;                                                               02050029
+      OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || '   ';                 02060029
+      OU_CODE_OUT = '0100 ';                                            02070029
+      END;                      /* END CHANGE RMT R09-0221*/            02080029
+      WHEN ('729','642','808','865') DO  ;                              02090029
+      OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || '   ';                 02100029
+      IF SUBSTR(OU_CODE_OUT,4,1) = ' '                                  02110029
+      THEN SUBSTR(OU_CODE_OUT,1,4) = '9001';                            02120029
+      END;                      /*2009-07-09--CHG0027B*/                02130029
+                                        /* TEMEA-T080749 START     */   02140029
+ /* REGION XCLS START     */                                            02150029
+      WHEN ('G05','G20','G23','G67','G77','G80','S32')                  02160029
+      DO;                                                               02170029
+      OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || '   ';                 02180029
+      OU_CODE_OUT = '0100   ';                                          02190029
+      END;                      /* END CHANGE RMT R09-0221*/            02200029
+                                        /* TEMEA-T080749 END       */   02210029
+ /* REGION XCLS END       */                                            02220029
+ /*--------------------------------------------------------------*/     02230029
+ /*      END OF CEEMEA COUNTRY HANDLING CHANGES---CHG0027B       */     02240029
+ /*--------------------------------------------------------------*/     02250029
+                                                                        02260029
+ /* REGION NORTH START   */                                             02270029
+                                                                        02280029
+      WHEN('788') DO;                                                   02290029
+                                                                        02300029
+    /*   IF SUBSTR(OU_CODE_WTAAS,4,1) = ' '    SOC-S1643852             02310052
+       THEN                                                             02320029
+          OU_CODE_OUT = '21     ';                                      02330029
+       ELSE                                                             02340029
+          OU_CODE_OUT = OU_CODE_WTAAS;         EOC-S1643852 */          02350052
+     END;                                             /* END DO     */  02360029
+                                                                        02370029
+ /* REGION NORTH END   */                                               02380029
+ /* REGION LATN START   */                             /* SOC PCR542 */ 02381038
+                                                                        02382038
+    WHEN('631') DO;                                                     02383038
+          OU_CODE_OUT = '2      ';                                      02384038
+    END;                                               /* END DO     */ 02385038
+                                                    /*SOC 1451641 */    02385142
+    WHEN('781','613','655','661','683','815','869','871') DO;           02385242
+                                                    /*EOC 1451641 */    02385342
+          OU_CODE_OUT = '1      ';                                      02387038
+    END;                                               /* END DO     */ 02388038
+                                                                        02389038
+ /* REGION LATN END     */                             /* EOC PCR542 */ 02389138
+                              /* PCR-0290   START */                    02390034
+      WHEN ('724') DO  ;                                                02391033
+         OU_CODE_OUT = SUBSTR(OU_CODE_WTAAS,1,4) || ' ';                02392033
+       END; /* PCR-0290   END   */                                      02393033
+                                                                        02394033
+      OTHERWISE;                                        /* 12/12/97 */  02400029
+   END;                                                 /* 12/12/97 */  02410029
+                                         /* END USER DEFINED PROCESS */ 02420029
+0                                        /* RESET LEVEL              */ 02430029
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            02440029
+1/*******************************************************************/  02450029
+ /*INTERNAL PROCEDURES FOR RUN ONCE REGIONS                         */  02460029
+ /*******************************************************************/  02470029
+ /*WEST REGION                                                      */  02480029
+ /*******************************************************************/  02490029
+ C624_OUCODES: PROCEDURE ;                                              02500029
+           OU_CODE_OUT = '230XX' ;                                      02510029
+           VAR2 = SUBSTR(OU_CODE_WTAAS, 4, 2)          ;                02520029
+                                                                        02530029
+           SELECT(VAR2);                                                02540029
+           WHEN ('00') OU_CODE_OUT = '230XX' ;                          02550029
+           WHEN ('10') OU_CODE_OUT = '299XX' ;                          02560029
+           /*WHEN ('11') OU_CODE_OUT = '211' SUPP LE 04/02/99 */        02570029
+           WHEN ('12') OU_CODE_OUT = '299XX'           ;                02580029
+           WHEN ('14') OU_CODE_OUT = '299XX'           ;                02590029
+           WHEN ('16') OU_CODE_OUT = '299XX'           ;                02600029
+           WHEN ('60') OU_CODE_OUT = '213A'          ;                  02610029
+           WHEN ('61') OU_CODE_OUT = '213A'          ;                  02620029
+           WHEN ('62') OU_CODE_OUT = '213A'          ;                  02630029
+           WHEN ('63') OU_CODE_OUT = '213B'          ;                  02640029
+           WHEN ('21') OU_CODE_OUT = '221XX'          ;                 02650029
+           WHEN ('25') OU_CODE_OUT = '222RC'          ;                 02660029
+           WHEN ('30') OU_CODE_OUT = '230XX'            ;               02670029
+           WHEN ('31') OU_CODE_OUT = '231XX'           ;                02680029
+           WHEN ('34') OU_CODE_OUT = '234XX'           ;                02690029
+           WHEN ('36') OU_CODE_OUT = '236XX'           ;                02700029
+           WHEN ('38') OU_CODE_OUT = '238XX'           ;                02710029
+           WHEN ('39') OU_CODE_OUT = '239XX'           ;                02720029
+           WHEN ('56') OU_CODE_OUT = '257XX'           ;                02730029
+           WHEN ('57') OU_CODE_OUT = '257XX'           ;                02740029
+           WHEN ('46') OU_CODE_OUT = '234XX'           ;                02750029
+           WHEN ('50') OU_CODE_OUT = '230XX'            ;               02760029
+           WHEN ('53') OU_CODE_OUT = '230XX'            ;               02770029
+           WHEN ('54') OU_CODE_OUT = '230XX'            ;               02780029
+           WHEN ('73') OU_CODE_OUT = '273XX'           ;                02790029
+           WHEN ('74') OU_CODE_OUT = '274XX'           ;                02800029
+           WHEN ('80') OU_CODE_OUT = '280XX'           ;                02810029
+           WHEN ('81') OU_CODE_OUT = '281XX'           ;                02820029
+           WHEN ('82') OU_CODE_OUT = '282XX'           ;                02830029
+           WHEN ('83') OU_CODE_OUT = '283XX'           ;                02840029
+           WHEN ('84') OU_CODE_OUT = '284XX'           ;                02850029
+           WHEN ('85') OU_CODE_OUT = '285XX'           ;                02860029
+           WHEN ('86') OU_CODE_OUT = '286XX'           ;                02870029
+           WHEN ('87') OU_CODE_OUT = '287XX'           ;                02880029
+           WHEN ('88') OU_CODE_OUT = '288XX'           ;                02890029
+           WHEN ('89') OU_CODE_OUT = '289XX'           ;                02900029
+           WHEN ('90') OU_CODE_OUT = '299XX'           ;                02910029
+           WHEN ('91') OU_CODE_OUT = '299XX'           ;                02920029
+           /*WHEN ('97') OU_CODE_OUT = '222NO'  SUPP LE 04/02/99*/      02930029
+           /*WHEN ('98') OU_CODE_OUT = '222PR'          "       */      02940029
+           /*OTHER OU_CODE_OUT = OU_CODE_WTAAS SUPP LE 15/02/99 */      02950029
+           OTHER ;                                                      02960029
+           END; /* SELECT */                                            02970029
+                                                                        02980029
+           VAR3 = SUBSTR(OU_CODE_WTAAS, 4, 3)          ;                02990029
+                                                                        03000029
+           SELECT(VAR3);                                                03010029
+           /* AJOUT SUR DEMANDE I.STUERI DU 24/12/98 */                 03020029
+           WHEN ('311') OU_CODE_OUT = '231NA'        ;                  03030029
+           WHEN ('312') OU_CODE_OUT = '231SO'        ;                  03040029
+           WHEN ('313') OU_CODE_OUT = '231BR'        ;                  03050029
+           WHEN ('314') OU_CODE_OUT = '231BR'        ;                  03060029
+           /* FIN AJOUT DU 24/12/98 */                                  03070029
+           WHEN ('340') OU_CODE_OUT = '234XX'        ;                  03080029
+           WHEN ('341') OU_CODE_OUT = '234BA' ;                         03090029
+           WHEN ('342') OU_CODE_OUT = '234BB' ;                         03100029
+           WHEN ('343') OU_CODE_OUT = '234BC' ;                         03110029
+           WHEN ('345') OU_CODE_OUT = '234C'         ;                  03120029
+           WHEN ('346') OU_CODE_OUT = '234L'         ;                  03130029
+           WHEN ('390') OU_CODE_OUT = '239XX'          ;                03140029
+           WHEN ('404') OU_CODE_OUT = '249XX'          ;                03150029
+           WHEN ('405') OU_CODE_OUT = '244XX'          ;                03160029
+           WHEN ('406') OU_CODE_OUT = '244XX'           ;               03170029
+           WHEN ('409') OU_CODE_OUT = '244XX'           ;               03180029
+           WHEN ('1180') OU_CODE_OUT = '29980' ; /* ADDED ON 31/08/99 */03190029
+           WHEN ('1181') OU_CODE_OUT = '29981' ; /* ADDED ON 31/08/99 */03200029
+           /*WHEN ('118') OU_CODE_OUT = '299XX' ; SUPP ON 31/08/99 */   03210029
+           /*OTHER OU_CODE_OUT = OU_CODE_WTAAS SUPP LE 15/02/99 */      03220029
+           OTHER ;                                                      03230029
+           END; /* SELECT */                                            03240029
+                                                                        03250029
+           VAR4 = SUBSTR(OU_CODE_WTAAS, 4, 4)          ;                03260029
+                                                                        03270029
+           SELECT(VAR4);                                                03280029
+           WHEN ('1111') OU_CODE_OUT = '299XX';                         03290029
+           WHEN ('2290') OU_CODE_OUT = '222RC' ;                        03300029
+           WHEN ('2297') OU_CODE_OUT = '222RC';                         03310029
+           WHEN ('3181') OU_CODE_OUT = '231XX';                         03320029
+           WHEN ('3440') OU_CODE_OUT = '234H';                          03330029
+           WHEN ('3441') OU_CODE_OUT = '234H';                          03340029
+           WHEN ('3442') OU_CODE_OUT = '234H';                          03350029
+           WHEN ('3443') OU_CODE_OUT = '234H';                          03360029
+           WHEN ('3444') OU_CODE_OUT = '234H';                          03370029
+           WHEN ('3445') OU_CODE_OUT = '234BR';                         03380029
+           WHEN ('3446') OU_CODE_OUT = '234BR';                         03390029
+           WHEN ('3447') OU_CODE_OUT = '234BR';                         03400029
+           WHEN ('3448') OU_CODE_OUT = '234BR';                         03410029
+           WHEN ('3449') OU_CODE_OUT = '234BR';                         03420029
+           WHEN ('3470') OU_CODE_OUT = '234AA';                         03430029
+           WHEN ('3471') OU_CODE_OUT = '234AA';                         03440029
+           WHEN ('3472') OU_CODE_OUT = '234AA';                         03450029
+           WHEN ('3473') OU_CODE_OUT = '234AA';                         03460029
+           WHEN ('3474') OU_CODE_OUT = '234AA';                         03470029
+           WHEN ('3475') OU_CODE_OUT = '234AB';                         03480029
+           WHEN ('3476') OU_CODE_OUT = '234AB';                         03490029
+           WHEN ('3477') OU_CODE_OUT = '234AB';                         03500029
+           WHEN ('3478') OU_CODE_OUT = '234AB';                         03510029
+           WHEN ('3479') OU_CODE_OUT = '234AB';                         03520029
+           WHEN ('3480') OU_CODE_OUT = '234G' ;                         03530029
+           WHEN ('3481') OU_CODE_OUT = '234XX' ;                        03540029
+           WHEN ('3482') OU_CODE_OUT = '234G' ;                         03550029
+           WHEN ('3483') OU_CODE_OUT = '234G' ;                         03560029
+           WHEN ('3484') OU_CODE_OUT = '234G' ;                         03570029
+           WHEN ('3485') OU_CODE_OUT = '234K' ;                         03580029
+           WHEN ('3486') OU_CODE_OUT = '234K' ;                         03590029
+           WHEN ('3487') OU_CODE_OUT = '234K' ;                         03600029
+           /* AJOUT SUR DEMANDE I.STUERI DU 24/12/98 */                 03610029
+           WHEN ('3641') OU_CODE_OUT = '236BR' ;                        03620029
+           WHEN ('3642') OU_CODE_OUT = '236BR' ;                        03630029
+           WHEN ('3643') OU_CODE_OUT = '236BR' ;                        03640029
+           WHEN ('3648') OU_CODE_OUT = '236BR' ;                        03650029
+           WHEN ('3653') OU_CODE_OUT = '236BR' ;                        03660029
+           WHEN ('3644') OU_CODE_OUT = '236NA' ;                        03670029
+           WHEN ('3645') OU_CODE_OUT = '236NA' ;                        03680029
+           WHEN ('3646') OU_CODE_OUT = '236NA' ;                        03690029
+           WHEN ('3647') OU_CODE_OUT = '236NA' ;                        03700029
+           WHEN ('3649') OU_CODE_OUT = '236SO' ;                        03710029
+           WHEN ('3651') OU_CODE_OUT = '236SO' ;                        03720029
+           WHEN ('3652') OU_CODE_OUT = '236SO' ;                        03730029
+           WHEN ('3681') OU_CODE_OUT = '236XX' ;                        03740029
+           /* FIN AJOUT DU 24/12/98 */                                  03750029
+           WHEN ('3910') OU_CODE_OUT = '239AX';                         03760029
+           WHEN ('3911') OU_CODE_OUT = '239AX';                         03770029
+           WHEN ('3912') OU_CODE_OUT = '239AX';                         03780029
+           WHEN ('3915') OU_CODE_OUT = '239AC';                         03790029
+           WHEN ('3916') OU_CODE_OUT = '239AC';                         03800029
+           WHEN ('3917') OU_CODE_OUT = '239AC';                         03810029
+           WHEN ('3918') OU_CODE_OUT = '239AC';                         03820029
+           WHEN ('3919') OU_CODE_OUT = '239AC';                         03830029
+           WHEN ('3920') OU_CODE_OUT = '239HX';                         03840029
+           WHEN ('3921') OU_CODE_OUT = '239HX';                         03850029
+           WHEN ('3925') OU_CODE_OUT = '239HC';                         03860029
+           WHEN ('3926') OU_CODE_OUT = '239HC';                         03870029
+           WHEN ('3929') OU_CODE_OUT = '239HC';                         03880029
+           WHEN ('3930') OU_CODE_OUT = '239LX';                         03890029
+           WHEN ('3931') OU_CODE_OUT = '239LX';                         03900029
+           WHEN ('3932') OU_CODE_OUT = '239LX';                         03910029
+           WHEN ('3935') OU_CODE_OUT = '239LC';                         03920029
+           WHEN ('3936') OU_CODE_OUT = '239LC';                         03930029
+           WHEN ('3937') OU_CODE_OUT = '239LC';                         03940029
+           WHEN ('3938') OU_CODE_OUT = '239LC';                         03950029
+           WHEN ('3939') OU_CODE_OUT = '239LC';                         03960029
+           WHEN ('3940') OU_CODE_OUT = '239CX';                         03970029
+           WHEN ('3941') OU_CODE_OUT = '239CX';                         03980029
+           WHEN ('3942') OU_CODE_OUT = '239CX';                         03990029
+           WHEN ('3945') OU_CODE_OUT = '239CC';                         04000029
+           WHEN ('3946') OU_CODE_OUT = '239CC';                         04010029
+           WHEN ('3947') OU_CODE_OUT = '239CC';                         04020029
+           WHEN ('3948') OU_CODE_OUT = '239CC';                         04030029
+           WHEN ('3949') OU_CODE_OUT = '239CC';                         04040029
+           WHEN ('3950') OU_CODE_OUT = '239GX';                         04050029
+           WHEN ('3951') OU_CODE_OUT = '239GX';                         04060029
+           WHEN ('3952') OU_CODE_OUT = '239GX';                         04070029
+           WHEN ('3955') OU_CODE_OUT = '239GC';                         04080029
+           WHEN ('3956') OU_CODE_OUT = '239GC';                         04090029
+           WHEN ('3957') OU_CODE_OUT = '239GC';                         04100029
+           WHEN ('3958') OU_CODE_OUT = '239GC';                         04110029
+           WHEN ('3959') OU_CODE_OUT = '239GC';                         04120029
+           WHEN ('3960') OU_CODE_OUT = '239S' ;                         04130029
+           WHEN ('3961') OU_CODE_OUT = '239S' ;                         04140029
+           WHEN ('3962') OU_CODE_OUT = '239S' ;                         04150029
+           WHEN ('3970') OU_CODE_OUT = '239R' ;                         04160029
+           WHEN ('3981') OU_CODE_OUT = '239XX' ;                        04170029
+           WHEN ('3990') OU_CODE_OUT = '239I' ;                         04180029
+           WHEN ('3991') OU_CODE_OUT = '239I' ;                         04190029
+           WHEN ('3992') OU_CODE_OUT = '239I' ;                         04200029
+           WHEN ('3993') OU_CODE_OUT = '239I' ;                         04210029
+           /* AJOUT SUR DEMANDE I.STUERI DU 24/12/98 */                 04220029
+           WHEN ('3994') OU_CODE_OUT = '239I' ;                         04230029
+           WHEN ('3933') OU_CODE_OUT = '239LX' ;                        04240029
+           WHEN ('3941') OU_CODE_OUT = '239I' ;                         04250029
+           /* FIN AJOUT DU 24/12/98 */                                  04260029
+           WHEN ('4000') OU_CODE_OUT = '244XX'       ;                  04270029
+           WHEN ('4001') OU_CODE_OUT = '244XX'       ;                  04280029
+           WHEN ('4002') OU_CODE_OUT = '244XX'       ;                  04290029
+           WHEN ('4003') OU_CODE_OUT = '244XX'       ;                  04300029
+           WHEN ('4004') OU_CODE_OUT = '244XX'       ;                  04310029
+           WHEN ('4011') OU_CODE_OUT = '244XX'       ;                  04320029
+           WHEN ('4023') OU_CODE_OUT = '248XX'       ;                  04330029
+           WHEN ('4024') OU_CODE_OUT = '248XX'       ;                  04340029
+           WHEN ('4760') OU_CODE_OUT = '215'         ;                  04350029
+           WHEN ('4761') OU_CODE_OUT = '215B' ;                         04360029
+           WHEN ('4763') OU_CODE_OUT = '215B' ;                         04370029
+           WHEN ('4769') OU_CODE_OUT = '215B' ;                         04380029
+           WHEN ('4798') OU_CODE_OUT = '215B' ;                         04390029
+           WHEN ('4765') OU_CODE_OUT = '215A' ;                         04400029
+           WHEN ('4770') OU_CODE_OUT = '215A' ;                         04410029
+           WHEN ('4790') OU_CODE_OUT = '215A' ;                         04420029
+           WHEN ('4791') OU_CODE_OUT = '215A' ;                         04430029
+           WHEN ('4792') OU_CODE_OUT = '215A' ;                         04440029
+           WHEN ('4793') OU_CODE_OUT = '215A' ;                         04450029
+           WHEN ('4799') OU_CODE_OUT = '215A' ;                         04460029
+           /* AJOUT SUR DEMANDE I.STUERI DU 24/12/98 */                 04470029
+           WHEN ('5600') OU_CODE_OUT = '25733';                         04480029
+           WHEN ('5612') OU_CODE_OUT = '25732';                         04490029
+           WHEN ('5614') OU_CODE_OUT = '25734';                         04500029
+           WHEN ('5700') OU_CODE_OUT = '257XX';                         04510029
+           WHEN ('5702') OU_CODE_OUT = '25703';                         04520029
+           WHEN ('5704') OU_CODE_OUT = '25701';                         04530029
+           WHEN ('5705') OU_CODE_OUT = '25704';                         04540029
+           WHEN ('5707') OU_CODE_OUT = '25702';                         04550029
+           WHEN ('5708') OU_CODE_OUT = '25721';                         04560029
+           WHEN ('5709') OU_CODE_OUT = '25715';                         04570029
+           WHEN ('5710') OU_CODE_OUT = '25723';                         04580029
+           WHEN ('5721') OU_CODE_OUT = '257XX';                         04590029
+           WHEN ('5731') OU_CODE_OUT = '25705';                         04600029
+           WHEN ('5741') OU_CODE_OUT = '25711';                         04610029
+           WHEN ('5742') OU_CODE_OUT = '25722';                         04620029
+           WHEN ('5745') OU_CODE_OUT = '25714';                         04630029
+           WHEN ('5746') OU_CODE_OUT = '25712';                         04640029
+           WHEN ('5747') OU_CODE_OUT = '25713';                         04650029
+           WHEN ('5751') OU_CODE_OUT = '257XX';                         04660029
+           WHEN ('5760') OU_CODE_OUT = '257XX';                         04670029
+           /* FIN AJOUT DU 24/12/98 */                                  04680029
+           /*OTHER         OU_CODE_OUT = '299XX' */                     04690029
+           /*OTHER OU_CODE_OUT = OU_CODE_WTAAS SUPP LE 15/02/99 */      04700029
+           OTHER ;                                                      04710029
+           END;                       /* SELECT                     */  04720029
+                                                                        04730029
+           VAR2 = SUBSTR(OU_CODE_WTAAS, 6, 2)          ;                04740029
+                                                                        04750029
+           SELECT(VAR2);                                                04760029
+           WHEN ('97') OU_CODE_OUT = '222NO' ;                          04770029
+           WHEN ('98') OU_CODE_OUT = '222PR' ;                          04780029
+           /*OTHER OU_CODE_OUT = OU_CODE_WTAAS SUPP LE 15/02/99 */      04790029
+           OTHER ;                                                      04800029
+           END;                       /* SELECT                     */  04810029
+ END C624_OUCODES ;                                                     04820029
+ /*******************************************************************/  04830029
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  04840029
+ /*******************************************************************/  04850029
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  04860029
+ $DAIMOD (RCBBC2U);                      /* MODULE TO BE COMPILED   */  04870029
+0/*******************************************************************/  04880029
+ /* END OF ABR BLOCK                                                */  04890029
+ /*******************************************************************/  04900029
+0END RCBBC2U;                                                           04910029

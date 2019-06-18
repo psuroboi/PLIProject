@@ -1,0 +1,471 @@
+ /* RCB024M - LOCK DB2 TABLE PARTITIONS                              */ 00010017
+ /********************************************************************/ 00020017
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030017
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040017
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050017
+ /********************************************************************/ 00060017
+ /********************************************************************/ 00070017
+ /*                                                                  */ 00080017
+ /* MODULE NAME         : RCB024M                                    */ 00090017
+ /*                                                                  */ 00100017
+ /* LANGUAGE            : PLISQL                                     */ 00110017
+ /*                                                                  */ 00120017
+ /* TYPE                : COMMON                                     */ 00130017
+ /*                                                                  */ 00140017
+ /* DESCRIPTION         : - CHECK FOR A GIVEN TABLE ITS PARTITIONING */ 00150017
+ /*                       - DETERMINE THE PARTITIONS FOR A GIVEN     */ 00160017
+ /*                         COUNTRY                                  */ 00170017
+ /*                       - LOCK THE PARTITIONS INVOLVED             */ 00180017
+ /*                       - IF NOT PARTITIONED, LOCK THE TABLE       */ 00190017
+ /*                                                                  */ 00200017
+ /* INPUT               : PARAMETER INTERFACE (FROM CALLING PROGRAM) */ 00210017
+ /*                       - DB2 CATALOG                              */ 00220017
+ /*                       - SELECT PRIVILEGE REQUIRED ON:            */ 00230017
+ /*                                SYSIBM.SYSTABLEPART               */ 00240017
+ /*                                SYSIBM.SYSTABLESPACE              */ 00250017
+ /*                                SYSIBM.SYSTABLES                  */ 00260017
+ /*                                SYSIBM.SYSSYNONYMS                */ 00270017
+ /*                                                                  */ 00280017
+ /*                    - FILES : OWNER    RCBOWNER                   */ 00290017
+ /*                                                                  */ 00300017
+ /* OUTPUT              : PARAMETER INTERFACE (FROM CALLING PROGRAM) */ 00310017
+ /*                                                                  */ 00320017
+ /* EXTERNAL MODULES    : NONE                                       */ 00330017
+ /*                                                                  */ 00340017
+ /* RETURNCODES         :  4 - INVALID OR AMBIGUOUS PARAMETER        */ 00350017
+ /*                       20 - PROCESSING ERROR                      */ 00360017
+ /*                                                                  */ 00370017
+ /* PROCESSING DETAILS  : THIS PROGRAM ACCESSES THE DB2 CATALOG TO   */ 00380017
+ /*                       - CHECK ON POSSIBLE VIEWS, ALIASES, AND    */ 00390017
+ /*                                                  SYNONYMS        */ 00400017
+ /*                       - CHECK THE PARTITIONING (Y/N)             */ 00410017
+ /*                       - CHECK THE LIMITKEY'S OF THE PARTITIONS   */ 00420017
+ /*                       - CHECK THE PARTITION NUMBERS              */ 00430017
+ /*                       - LOCK THE PARTITIONS OR TABLE             */ 00440017
+ /*                                                                  */ 00450017
+ /*  MAINTENANCE LOG :                                               */ 00460017
+ /*  ---------------                                                 */ 00470017
+ /*                                                                  */ 00480017
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00490017
+ /*  --------------------------------------------------------------  */ 00500017
+ /*  1999-04-07 | DORO         | START OF WORK                       */ 00510017
+ /*  2001-10-22 | PTM1361      | FIX TO PREVENT 2 PARTITONS BEING    */ 00520017
+ /*             |              | AT THE SAME TIME                    */ 00530017
+ /*  2008-07-22 | RC01292      | PCR-005 CHANGED THE NO.OF PARTIONS  */ 00540017
+ /*             |              | 64 SIZE TO NO.OF PARTIONS IN TABLE  */ 00550017
+ /*  2009-03-13 | CEDS00000465 | CHANGES FOR PCR-005 CORRECTED -     */ 00560017
+ /*             |              | FREE TAB_FIELDS MOVED TO END        */ 00570017
+ /*             |              | OF PROGRAM                          */ 00580017
+ /*  2013-07-18 | RC01333      | INCREASE THE SIZE OF VARIABLE       */ 00590022
+ /*             |              | FIELD PARTITION TO HANDLE TABLE     */ 00600020
+ /*             |              | PARTITIONING                        */ 00610020
+ /********************************************************************/ 00620017
+ /*                                                                     00630017
+ (CHECK(                                                                00640017
+ SELECT_CATALOG,                                                        00650017
+ SELECT_VIEW,                                                           00660017
+ SELECT_SYNONYM,                                                        00670017
+ CHECK_LOCKLEVEL,                                                       00680017
+ LOCK_ENTIRE_TABLE,                                                     00690017
+ LOCK_PARTITION,                                                        00700017
+ LOCK_PART_STMT,                                                        00710017
+ EXEC_STMT,                                                             00720017
+ OPEN_CURS_SYSTABLEPART,                                                00730017
+ FETCH_CURS_SYSTABLEPART,                                               00740017
+ CLOSE_CURS_SYSTABLEPART)):                                             00750017
+    */                                                                  00760017
+1RCB024M: PROC (RCB024M_PTR,                                            00770017
+                RCBZ02S_PTR,                                            00780017
+                RCBZ01S_PTR)                                            00790017
+          REORDER;                                                      00800017
+0/********************************************************************/ 00810017
+ /*                 P A R A M E T E R S                              */ 00820017
+ /********************************************************************/ 00830017
+0DCL RCB024M_PTR    PTR;               /* PTR ROW                    */ 00840017
+ DCL 1 RCB024M      BASED(RCB024M_PTR),                                 00850017
+      %INCLUDE RCBZ33S;;                                                00860017
+0DCL RCBZ02S_PTR    PTR;               /* PTR RETURN INFO            */ 00870017
+ DCL 1 RCBZ02S      BASED(RCBZ02S_PTR),                                 00880017
+      %INCLUDE RCBZ02S;;                                                00890017
+ DCL 1 SQLCA_R      BASED(ADDR(RCBZ02S.RETURN_SQL))                     00900017
+                    LIKE SQLCA;                                         00910017
+0DCL RCBZ01S_PTR    PTR;               /* PTR INTERFACE AREA         */ 00920017
+ DCL 1 RCBZ01S      BASED(RCBZ01S_PTR),                                 00930017
+      %INCLUDE RCBZ01S;;                                                00940017
+0/********************************************************************/ 00950017
+ /* FILE DECLARATIONS                                                */ 00960017
+ /********************************************************************/ 00970017
+ DCL RCBOWNER       FILE             /* INPUT CARD FOR OWNER         */ 00980017
+                    RECORD                                              00990017
+                    INPUT;                                              01000017
+0/********************************************************************/ 01010017
+ /*  RECORD STRUCTURES FOR INPUT FILES                               */ 01020017
+ /********************************************************************/ 01030017
+ DCL 1 RCBOWNER_REC,                                                    01040017
+       %INCLUDE (RCBZ34S);;                                             01050017
+0/********************************************************************/ 01060017
+ /*                 S Q L    D E C L A R A T I O N S                 */ 01070017
+ /********************************************************************/ 01080017
+0EXEC SQL INCLUDE SQLCA;                                                01090017
+0/********************************************************************/ 01100017
+ /*                 M I S C E L L A N E O U S   F I E L D S          */ 01110017
+ /********************************************************************/ 01120017
+0DCL ADDR           BUILTIN;                                            01130017
+ DCL HIGH           BUILTIN;                                            01140017
+ DCL INDEX          BUILTIN;                                            01150017
+ DCL NULL           BUILTIN;                                            01160017
+ DCL SUBSTR         BUILTIN;                                            01170017
+ DCL ALLOCATE       BUILTIN;                              /* RC01292 */ 01180017
+0DCL 1 WORK_FIELDS,                                                     01190017
+     3 WORK_CREATOR     CHAR(08),      /* TABLE CREATOR              */ 01200017
+     3 WORK_DBNAME      CHAR(08),      /* DATABASE NAME              */ 01210017
+                                                      /* SOC RC01333 */ 01220017
+ /*  3 WORK_DISP        PIC 'Z9',      /* DISPLAY FIELD PARTITION    */ 01230017
+     3 WORK_DISP        PIC 'Z99',     /* DISPLAY FIELD PARTITION    */ 01240017
+                                                      /* EOC RC01333 */ 01250017
+     3 WORK_INDNULL     FIXED BIN(15), /* NULL INDICATOR             */ 01260017
+     3 WORK_LIMITKEY    CHAR(512) VAR, /* LIMITKEY                   */ 01270017
+     3 WORK_LOCK        CHAR(27) VAR,  /* TABLE CREATOR              */ 01280017
+     3 WORK_PARTITION   FIXED BIN(15), /* PARTITION NUMBER           */ 01310021
+     3 WORK_STATEMENT   CHAR(512) VAR, /* PREPARED SQL STATEMENT     */ 01330017
+     3 WORK_SYNONYM     CHAR(18),      /* SYNONYM NAME               */ 01340017
+     3 WORK_TBCREATOR   CHAR(08),      /* =                          */ 01350017
+     3 WORK_TBNAME      CHAR(18),      /* VIEW-/ TABLE NAME          */ 01360017
+     3 WORK_TSNAME      CHAR(08),      /* TABLESPACE NAME            */ 01370017
+     3 WORK_TYPE        CHAR(01),      /* TYPE OF OBJECT             */ 01380017
+     3 WORK_VIEW        CHAR(18);      /* VIEW-/ TABLE NAME          */ 01390017
+0DCL WORK_OWNER CHAR(08) INIT(' ');    /* CURRENT OWNER              */ 01400017
+0DCL NO_OF_PART FIXED BIN(31) INIT(0); /* NO OF PARTIONS    RC01292  */ 01410017
+0DCL 1 TAB_FIELDS CTL,                                                  01420017
+ /*  3 TAB_LIMITKEY (64) CHAR(04);     /* LIMITKEY    /*SOC RC01292  */ 01430017
+     3 TAB_LIMITKEY (NO_OF_PART) CHAR(04); /* LIMITKEY                  01440017
+                                                      /*EOC RC01292  */ 01450017
+0DCL 1 SWITCHES,                                                        01460017
+     3 FALSE                           BIT (1) INIT ('0'B),             01470017
+     3 SWITCH_END_OF_CURS_SYSTABLEPART BIT (1) INIT ('0'B),             01480017
+     3 TRUE                            BIT (1) INIT ('1'B),             01490017
+     3 SWITCH_EOF_RCBOWNER             BIT (1) INIT ('0'B);             01500017
+                                                                        01510021
+0DCL I,J              FIXED BIN(15);   /* SUBSCRIPTS                 */ 01520021
+0/********************************************************************/ 01540017
+ /* ON ENDFILE CONDITIONS                                            */ 01550017
+ /********************************************************************/ 01560017
+ ON ENDFILE (RCBOWNER)               /*   INPUT CARD                 */ 01570017
+    BEGIN;                                                              01580017
+     SWITCH_EOF_RCBOWNER = TRUE;                                        01590017
+    END;                                                                01600017
+1/********************************************************************/ 01610017
+ /*                 CURSORS                                          */ 01620017
+ /********************************************************************/ 01630017
+ EXEC SQL                                                               01640017
+   DECLARE CURS_SYSTABLEPART CURSOR FOR                                 01650017
+   SELECT A.PARTITION                                                   01660017
+         ,A.LIMITKEY                                                    01670017
+   FROM   SYSIBM.SYSTABLEPART    A                                      01680017
+         ,SYSIBM.SYSTABLESPACE   B                                      01690017
+   WHERE  A.TSNAME    = :WORK_TSNAME                                    01700017
+   AND    A.DBNAME    = :WORK_DBNAME                                    01710017
+   AND    A.PARTITION > 0                                               01720017
+   AND    B.DBNAME    = A.DBNAME                                        01730017
+   AND    B.NAME      = A.TSNAME                                        01740017
+   AND    B.LOCKPART  = 'Y'                                             01750017
+   ORDER  BY 1                                                          01760017
+   FOR    FETCH ONLY                                                    01770017
+   WITH   UR                                                            01780017
+   ;                                                                    01790017
+1/********************************************************************/ 01800017
+ /*                 S T A R T   C O D I N G                          */ 01810017
+ /********************************************************************/ 01820017
+0RCBZ02S.RETURN_CODE = 0;                /* SET INITIAL RETURNCODE   */ 01830017
+ WORK_FIELDS         = '';               /* INITIALIZE WORK FIELDS   */ 01840017
+ WORK_VIEW           = RCB024M.VIEW_NAME;/* ASSUME VIEW              */ 01850017
+ IF WORK_OWNER = '' THEN                                                01860017
+   DO;                                                                  01870017
+     OPEN FILE (RCBOWNER);                                              01880017
+     READ FILE (RCBOWNER) INTO (RCBOWNER_REC); /* READ RCBOWNER CARD */ 01890017
+                                                                        01900017
+     IF SWITCH_EOF_RCBOWNER                                             01910017
+     THEN                                                               01920017
+       RCBZ02S.RETURN_CODE = 4;                                         01930017
+     ELSE                                                               01940017
+       WORK_OWNER = RCBOWNER_REC.OWNER;                                 01950017
+                                                                        01960017
+     CLOSE FILE (RCBOWNER);                                             01970017
+   END;                                                                 01980017
+                                                                        01990017
+ WORK_CREATOR = WORK_OWNER;                                             02000017
+                                                                        02010017
+ DO WHILE (RCBZ02S.RETURN_CODE = 0 & WORK_TYPE ¬=  'T');                02020017
+   CALL SELECT_CATALOG;                  /* CHECK CATALOG            */ 02030017
+ END;                                                                   02040017
+ IF RCBZ02S.RETURN_CODE = 0 THEN                                        02050017
+   CALL CHECK_LOCKLEVEL;                 /* GO TO CHECK LOCK LEVEL   */ 02060017
+ FREE TAB_FIELDS;                                    /* CEDS00000465 */ 02070017
+1/********************************************************************/ 02080017
+ /* SELECT INITIAL ROW FROM SYSIBM.SYSTABLES / -.SYSSYNONYMS         */ 02090017
+ /* ENTRY FOUND SHOULD HAVE THE CORRECT CREATOR-ID                   */ 02100017
+ /********************************************************************/ 02110017
+ SELECT_CATALOG: PROC;                                                  02120017
+ EXEC SQL                                                               02130017
+      SELECT TYPE, DBNAME, TSNAME, TBNAME, TBCREATOR                    02140017
+      INTO   :WORK_TYPE, :WORK_DBNAME, :WORK_TSNAME,                    02150017
+             :WORK_TBNAME, :WORK_TBCREATOR                              02160017
+      FROM   SYSIBM.SYSTABLES                                           02170017
+      WHERE  NAME           = :WORK_VIEW                                02180017
+        AND  CREATOR        = :WORK_CREATOR                             02190017
+      WITH UR;                                                          02200017
+0SELECT (SQLCA.SQLCODE);                                                02210017
+   WHEN (0)                                                             02220017
+     DO;                                                                02230017
+       IF (WORK_TBNAME ¬= ' ') THEN                                     02240017
+         DO;                                                            02250017
+           WORK_VIEW    = WORK_TBNAME;                                  02260017
+           WORK_CREATOR = WORK_TBCREATOR;                               02270017
+         END;                                                           02280017
+       ELSE                                                             02290017
+         DO;                                                            02300017
+           IF WORK_TYPE = 'V' THEN                                      02310017
+             CALL SELECT_VIEW;                                          02320017
+         END;                                                           02330017
+     END;                                                               02340017
+   WHEN (+100)                                                          02350017
+     DO;                                                                02360017
+       IF (WORK_OWNER = WORK_CREATOR &                                  02370017
+           WORK_VIEW  = RCB024M.VIEW_NAME) THEN                         02380017
+         CALL SELECT_SYNONYM;                                           02390017
+       ELSE                                                             02400017
+         RCBZ02S.RETURN_CODE = 4;                                       02410017
+     END;                                                               02420017
+   OTHERWISE DO;                                                        02430017
+     SQLCA_R             = SQLCA;                                       02440017
+     RCBZ02S.RETURN_CODE = 20;                                          02450017
+   END;                                                                 02460017
+ END;                                                                   02470017
+-END SELECT_CATALOG;                                                    02480017
+1/********************************************************************/ 02490017
+ /* SELECT SAME TSPACE FROM SYSIBM.SYSTABLES                         */ 02500017
+ /********************************************************************/ 02510017
+ SELECT_VIEW: PROC;                                                     02520017
+ EXEC SQL                                                               02530017
+      SELECT TYPE, DBNAME, TSNAME, NAME, CREATOR                        02540017
+      INTO   :WORK_TYPE, :WORK_DBNAME, :WORK_TSNAME,                    02550017
+             :WORK_VIEW, :WORK_CREATOR                                  02560017
+      FROM   SYSIBM.SYSTABLES                                           02570017
+      WHERE  DBNAME         = :WORK_DBNAME                              02580017
+        AND  TSNAME         = :WORK_TSNAME                              02590017
+        AND  TYPE           = 'T'                                       02600017
+      WITH UR;                                                          02610017
+0SELECT (SQLCA.SQLCODE);                                                02620017
+   WHEN (0);                                                            02630017
+   WHEN (-811)                                                          02640017
+     RCBZ02S.RETURN_CODE    = 4;                                        02650017
+   OTHERWISE DO;                                                        02660017
+     SQLCA_R                = SQLCA;                                    02670017
+     RCBZ02S.RETURN_CODE    = 4;                                        02680017
+   END;                                                                 02690017
+ END;                                                                   02700017
+-END SELECT_VIEW;                                                       02710017
+1/********************************************************************/ 02720017
+ /* SELECT INITIAL ROW FROM SYSIBM.SYSSYNONYMS                       */ 02730017
+ /********************************************************************/ 02740017
+ SELECT_SYNONYM: PROC;                                                  02750017
+ EXEC SQL                                                               02760017
+      SELECT TBNAME, TBCREATOR                                          02770017
+      INTO   :WORK_SYNONYM, :WORK_CREATOR                               02780017
+      FROM   SYSIBM.SYSSYNONYMS                                         02790017
+      WHERE  NAME           = :WORK_VIEW                                02800017
+        AND  CREATOR        = :WORK_CREATOR                             02810017
+      WITH UR;                                                          02820017
+0SELECT (SQLCA.SQLCODE);                                                02830017
+   WHEN (0) DO;                                                         02840017
+     WORK_TYPE              = 'S';                                      02850017
+     WORK_VIEW              = WORK_SYNONYM;                             02860017
+   END;                                                                 02870017
+   OTHERWISE DO;                                                        02880017
+     SQLCA_R                = SQLCA;                                    02890017
+     RCBZ02S.RETURN_CODE    = 4;                                        02900017
+   END;                                                                 02910017
+ END;                                                                   02920017
+-END SELECT_SYNONYM;                                                    02930017
+1/********************************************************************/ 02940017
+ /* CHECK LOCKLEVEL, IF NOT IN TABLEPART THEN LOCKLEVEL = TABLE      */ 02950017
+ /********************************************************************/ 02960017
+ CHECK_LOCKLEVEL: PROC;                                                 02970017
+ /*TAB_FIELDS          = ''; /* INITIALIZE TABLE FIELDS     RC01292  */ 02980017
+ I                   = 0;                /* INITIALIZE SUBSCRIPT     */ 02990017
+                                                                        03000017
+ CALL GET_COUNT_FOR_PARTIONS;                          /*SOC RC01292 */ 03010017
+ ALLOCATE TAB_FIELDS;                                                   03020017
+                                                                        03030017
+ CALL OPEN_CURS_SYSTABLEPART;                                           03040017
+ IF (RCBZ02S.RETURN_CODE = 0) THEN                                      03050017
+ DO;                                                                    03060017
+   DO WHILE (¬SWITCH_END_OF_CURS_SYSTABLEPART &                         03070017
+              RCBZ02S.RETURN_CODE = 0);                                 03080017
+     CALL FETCH_CURS_SYSTABLEPART;                                      03090017
+   END;                                                                 03100017
+   IF (RCBZ02S.RETURN_CODE = 0) THEN                                    03110017
+   DO;                                                                  03120017
+     CALL CLOSE_CURS_SYSTABLEPART;                                      03130017
+     J           = INDEX(WORK_CREATOR,' ');                             03140017
+     IF (J = 0) THEN                                                    03150017
+       WORK_LOCK = WORK_CREATOR || '.' || WORK_VIEW;                    03160017
+     ELSE                                                               03170017
+       WORK_LOCK = SUBSTR(WORK_CREATOR,1,J-1) || '.' || WORK_VIEW;      03180017
+     IF I = 0 THEN                                                      03190017
+       CALL LOCK_ENTIRE_TABLE;                                          03200017
+     ELSE                                                               03210017
+       CALL LOCK_PARTITION;                                             03220017
+   END;                                                                 03230017
+ END;                                                                   03240017
+ END CHECK_LOCKLEVEL;                                                   03250017
+1/********************************************************************/ 03260017
+ /* LOCK TABLE                                                       */ 03270017
+ /********************************************************************/ 03280017
+ LOCK_ENTIRE_TABLE: PROC;                                               03290017
+ IF RCB024M.LOCK_MODE = 'E' THEN                                        03300017
+   WORK_STATEMENT = 'LOCK TABLE ' || WORK_LOCK ||' IN EXCLUSIVE MODE';  03310017
+ ELSE                                                                   03320017
+   WORK_STATEMENT = 'LOCK TABLE ' || WORK_LOCK ||' IN SHARE MODE';      03330017
+ CALL EXEC_STMT;                                                        03340017
+ END LOCK_ENTIRE_TABLE;                                                 03350017
+1/********************************************************************/ 03360017
+ /* LOCK PER PARTITION                                               */ 03370017
+ /********************************************************************/ 03380017
+ LOCK_PARTITION: PROC;                                                  03390017
+                                                                        03400017
+                                                                        03410017
+ DO J = 1 TO I WHILE (RCBZ02S.RETURN_CODE = 0);                         03420017
+   SELECT;                                                              03430017
+   WHEN (TAB_LIMITKEY(J) = RCB024M.COUNTRY_NUMBER)                      03440017
+       CALL LOCK_PART_STMT;                                             03450017
+   WHEN (TAB_LIMITKEY(J) > RCB024M.COUNTRY_NUMBER)                      03460017
+     DO;                                                                03470017
+       SELECT (J);                                                      03480017
+       WHEN (0)                                                         03490017
+         CALL LOCK_PART_STMT;                                           03500017
+       OTHERWISE                                                        03510017
+                                                          /* PTM1361 */ 03520017
+         IF (TAB_LIMITKEY(J-1) < RCB024M.COUNTRY_NUMBER) THEN           03530017
+           CALL LOCK_PART_STMT;                                         03540017
+       END;                                                             03550017
+     END;                                                               03560017
+   OTHERWISE;                                                           03570017
+   END;                                                                 03580017
+ END;                                                                   03590017
+ END LOCK_PARTITION;                                                    03600017
+1/********************************************************************/ 03610017
+ /* LOCK PARTITION, SQL STATEMENT                                    */ 03620017
+ /********************************************************************/ 03630017
+ LOCK_PART_STMT: PROC;                                                  03640017
+ WORK_DISP = J;                                                         03650017
+ IF RCB024M.LOCK_MODE = 'E' THEN                                        03660017
+   WORK_STATEMENT = 'LOCK TABLE ' || WORK_LOCK || ' PART ' || WORK_DISP 03670017
+                  || ' IN EXCLUSIVE MODE';                              03680017
+ ELSE                                                                   03690017
+   WORK_STATEMENT = 'LOCK TABLE ' || WORK_LOCK || ' PART ' || WORK_DISP 03700017
+                  || ' IN SHARE MODE';                                  03710017
+ CALL EXEC_STMT;                                                        03720017
+ END LOCK_PART_STMT;                                                    03730017
+1/********************************************************************/;03740017
+ /* EXECUTE IMMEDIATE                                                */ 03750017
+ /********************************************************************/ 03760017
+ EXEC_STMT: PROC;                                                       03770017
+ /* PUT SKIP EDIT (WORK_STATEMENT) (A);  */                             03780017
+0EXEC SQL                                                               03790017
+  EXECUTE IMMEDIATE :WORK_STATEMENT                                     03800017
+  ;                                                                     03810017
+0SELECT (SQLCA.SQLCODE);                                                03820017
+   WHEN (0);                                                            03830017
+   OTHERWISE DO;                                                        03840017
+     SQLCA_R                = SQLCA;                                    03850017
+     RCBZ02S.RETURN_CODE    = 20;                                       03860017
+   END;                                                                 03870017
+ END;                                                                   03880017
+ END EXEC_STMT;                                                         03890017
+1/********************************************************************/;03900017
+ /* OPEN CURSOR                                                      */ 03910017
+ /********************************************************************/ 03920017
+ OPEN_CURS_SYSTABLEPART: PROC;                                          03930017
+0EXEC SQL                                                               03940017
+  OPEN CURS_SYSTABLEPART                                                03950017
+  ;                                                                     03960017
+0SELECT (SQLCA.SQLCODE);                                                03970017
+   WHEN (0)                                                             03980017
+     SWITCH_END_OF_CURS_SYSTABLEPART = FALSE;                           03990017
+   OTHERWISE DO;                                                        04000017
+     SQLCA_R                = SQLCA;                                    04010017
+     RCBZ02S.RETURN_CODE    = 20;                                       04020017
+   END;                                                                 04030017
+ END;                                                                   04040017
+0END OPEN_CURS_SYSTABLEPART;                                            04050017
+1/********************************************************************/ 04060017
+ /* FETCH CURSOR                                                     */ 04070017
+ /********************************************************************/ 04080017
+ FETCH_CURS_SYSTABLEPART: PROC;                                         04090017
+ WORK_PARTITION           = '0';                                        04100017
+ WORK_LIMITKEY            = ' ';                                        04110017
+0EXEC SQL                                                               04120017
+   FETCH CURS_SYSTABLEPART                                              04130017
+   INTO :WORK_PARTITION :WORK_INDNULL                                   04140017
+       ,:WORK_LIMITKEY  :WORK_INDNULL                                   04150017
+   ;                                                                    04160017
+0SELECT (SQLCA.SQLCODE);                                                04170017
+   WHEN (0)                                                             04180017
+     DO;                                                                04190017
+       I                        = I + 1;                                04200017
+       TAB_LIMITKEY(WORK_PARTITION)                                     04210017
+                                = SUBSTR(WORK_LIMITKEY,2,3) || ' ';     04220017
+       IF (SUBSTR(WORK_LIMITKEY,7,2) = '''9' |                          04230017
+           SUBSTR(WORK_LIMITKEY,7,1) = '9') THEN                        04240017
+         TAB_LIMITKEY(WORK_PARTITION)                                   04250017
+                                = SUBSTR(WORK_LIMITKEY,2,3) || HIGH(1); 04260017
+     END;                                                               04270017
+   WHEN (+100)                                                          04280017
+     SWITCH_END_OF_CURS_SYSTABLEPART = TRUE;                            04290017
+   OTHERWISE DO;                                                        04300017
+     SQLCA_R                = SQLCA;                                    04310017
+     RCBZ02S.RETURN_CODE    = 20;                                       04320017
+   END;                                                                 04330017
+ END;                                                                   04340017
+0END FETCH_CURS_SYSTABLEPART;                                           04350017
+1/********************************************************************/ 04360017
+ /* GET COUNT FOR NO.OF PARTIONTIONS IN THE TABLE    SOC RC01292     */ 04370017
+ /********************************************************************/ 04380017
+0GET_COUNT_FOR_PARTIONS: PROC;                                          04390017
+                                                                        04400017
+   NO_OF_PART =0;                                                       04410017
+  EXEC SQL                                                              04420017
+   SELECT COUNT(A.PARTITION)                                            04430017
+         INTO :NO_OF_PART                                               04440017
+   FROM   SYSIBM.SYSTABLEPART    A                                      04450017
+         ,SYSIBM.SYSTABLESPACE   B                                      04460017
+   WHERE  A.TSNAME    = :WORK_TSNAME                                    04470017
+   AND    A.DBNAME    = :WORK_DBNAME                                    04480017
+   AND    A.PARTITION > 0                                               04490017
+   AND    B.DBNAME    = A.DBNAME                                        04500017
+   AND    B.NAME      = A.TSNAME                                        04510017
+   AND    B.LOCKPART  = 'Y'                                             04520017
+   ;                                                                    04530017
+0END GET_COUNT_FOR_PARTIONS;                                            04540017
+1/********************************************************************/ 04550017
+ /* CLOSE CURSOR                                                     */ 04560017
+ /********************************************************************/ 04570017
+ CLOSE_CURS_SYSTABLEPART: PROC;                                         04580017
+0EXEC SQL                                                               04590017
+  CLOSE CURS_SYSTABLEPART                                               04600017
+   ;                                                                    04610017
+0SELECT (SQLCA.SQLCODE);                                                04620017
+   WHEN (0);                                                            04630017
+   OTHERWISE DO;                                                        04640017
+     SQLCA_R                = SQLCA;                                    04650017
+     RCBZ02S.RETURN_CODE    = 20;                                       04660017
+   END;                                                                 04670017
+ END;                                                                   04680017
+ /* FREE TAB_FIELDS;  */                               /*EOC RC01292 */ 04690017
+ /* ABOVE FREE TAB_FIELDS IS COMMENTED AS PART OF CEDS00000465       */ 04700017
+0END CLOSE_CURS_SYSTABLEPART;                                           04710017
+0/********************************************************************/ 04720017
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 04730017
+ $DAIMOD (RCB024M);                    /* MODULE TO BE COMPILED      */ 04740017
+ END RCB024M;                                                           04750017

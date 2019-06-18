@@ -1,0 +1,392 @@
+ /* RCBCQ3M - RCMS REQUEST "LS" SERVICE CONDITION LIST               */ 00010000
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBCQ3M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLICSQL                                       */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : RCMS REQUEST "LS" SERVICE CONDITION LIST.     */ 00140000
+ /*                    THIS PROGRAM IS CALLED BY THE ROOT MODULE     */ 00150000
+ /*                    RCBCQ0M.                                      */ 00160000
+ /*                                                                  */ 00170000
+ /* INPUT            : COMMPTR - COMMUNICATION AREA POINTER          */ 00180000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : -                                             */ 00200000
+ /*                                                                  */ 00210000
+ /* EXTERNAL MODULES : RCBCQ9M - CEDS LAM FOR "LS" REQUEST           */ 00220000
+ /*                    QCH0SCM - CHIS LAM                            */ 00230000
+ /*                    RCBCQEM - ERROR LOGGING MODULE                */ 00240000
+ /*                                                                  */ 00250000
+ /* MESSAGES         : 149 THRU 153                                  */ 00260000
+ /*                                                                  */ 00270000
+ /* DEPENDENCIES     : NONE                                          */ 00280000
+ /*                                                                  */ 00290000
+ /* MAINTENANCE LOG  :                                               */ 00300000
+ /* ---------------                                                  */ 00310000
+ /*                                                                  */ 00320000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00330000
+ /* --------------------------------------------------------------   */ 00340000
+ /*  1995-09-26 | WI4313       | CEDS 2.3                            */ 00350000
+ /*             |              |                                     */ 00360000
+ /*  1995-11-20 | PTM0838      | HANDLE SQLCODE 100 FROM OPEN LAM    */ 00370000
+ /*             |              |                                     */ 00380000
+ /*  1995-01-18 | PTM0895      | CORRECT INPUT PARAMETER VALIDATION  */ 00390000
+ /*             |              |                                     */ 00400000
+ /*  1996-04-22 | PTM0902      | UPGRADE TO CICS 4.1 - MOVE FROM     */ 00410000
+ /*             |              | PLISQL TO PLICSQL LIBRARY.          */ 00420000
+ /*  1997-05-12 | PTM1036      | USE STANDARD PROLOGS                */ 00430000
+ /*  2014-07-11 | RB01341      | CEDS 3.3 A22 RELEASE - ISRAEL       */ 00431002
+ /*             |              | COUNTRY CONVERSION                  */ 00432002
+ /*             |              |                                     */ 00440000
+ /********************************************************************/ 00450000
+1RCBCQ3M: PROC(COMMPTR)                                                 00460000
+          REORDER;                                                      00470000
+0/********************************************************************/ 00480000
+ /*  EXTERNAL ENTRIES                                                */ 00490000
+ /********************************************************************/ 00500000
+ DCL RCBCQ9M   ENTRY EXTERNAL;     /* CEDS SERVICE CONDITION LAM     */ 00510000
+ DCL QCH0SCM   ENTRY EXTERNAL;     /* CHIS SERVICE CONDITION LAM     */ 00520000
+ DCL RCBCQEM   ENTRY EXTERNAL;     /* ERROR LOGGING ROUTINE          */ 00530000
+0/********************************************************************/ 00540000
+ /*  COMMUNICATION AREA                                              */ 00550000
+ /********************************************************************/ 00560000
+ DCL    COMMPTR   PTR;             /*ADDRESS OF COMMUNICATION AREA   */ 00570000
+ /********************************************************************/ 00580000
+0/********************************************************************/ 00590000
+0DCL 1 COMMAREA           BASED (COMMPTR)                               00600000
+ %INCLUDE EDQYIHS;                                                      00610000
+ %INCLUDE EDQYISS;;                                                     00620000
+0/********************************************************************/ 00630000
+ /*  GENERAL DECLARATION                                             */ 00640000
+ /********************************************************************/ 00650000
+0DCL WRK_CURRENT_ROW      FIXED BIN(15);                                00660000
+0DCL WRK_ITEM_NO          FIXED BIN(15);                                00670000
+0DCL I                    FIXED BIN(15);                                00680000
+0DCL 1 TUSCSDC_ARRAY(7),                                                00690000
+       3 START            FIXED DEC(3,1),                               00700000
+       3 END              FIXED DEC(3,1);                               00710000
+0DCL TUSCSDC_STRING       CHAR(28) BASED(ADDR(TUSCSDC_ARRAY));          00720000
+0DCL WRK_COVERAGE         CHAR(8);                                      00730000
+0DCL 1 PIC_COVERAGE       BASED(ADDR(WRK_COVERAGE)),                    00740000
+       3 PIC_HOUR         PIC '99',                                     00750000
+       3 COLON_1          CHAR(1),                                      00760000
+       3 PIC_MINUTE       PIC '99',                                     00770000
+       3 COLON_2          CHAR(1),                                      00780000
+       3 PIC_SECOND       PIC '99';                                     00790000
+0DCL WRK_SQLCODE          FIXED BIN(31);                                00800000
+0DCL WRK_TABLE            CHAR(18);                                     00810000
+0/********************************************************************/ 00820000
+ /*  RCBCQ9M DECLARATIONS                                            */ 00830000
+ /********************************************************************/ 00840000
+0DCL RCBCQ9S_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00850000
+ DCL 1 RCBCQ9S,                                                         00860000
+      %INCLUDE RCBCQ9S;;                                                00870000
+ DCL 1 RCBCQ9S_SQLCA                                                    00880000
+      LIKE SQLCA;                                                       00890000
+0/********************************************************************/ 00900000
+ /*  QCH0SCM PARAMETER DECLARATIONS                                  */ 00910000
+ /********************************************************************/ 00920000
+0DCL (SEARCH_ARG_PTR,                                                   00930000
+      DATAROW_PTR,                                                      00940000
+      SQLCA_PTR)             POINTER;                                   00950000
+ DCL 1 SEARCH_ARG,                                                      00960000
+      %INCLUDE QCH0SCSI;;                                               00970000
+ DCL 1 QCH0SCM_SQLCA                                                    00980000
+      LIKE SQLCA;                                                       00990000
+ DCL 1 QCH0SCM_DATA,                                                    01000000
+      %INCLUDE QCH0SCSO;;                                               01010000
+0/********************************************************************/ 01020000
+ /*  RCBCQEM PARAMETER DECLARATIONS                                  */ 01030000
+ /********************************************************************/ 01040000
+0DCL RCBCQES_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 01050000
+ DCL 1 RCBCQES,                                                         01060000
+      %INCLUDE RCBCQES;;                                                01070000
+ DCL 1 RCBCQES_SQLCA                                                    01080000
+      LIKE SQLCA;                                                       01090000
+0/********************************************************************/ 01100000
+ /*            S Q L    D E C L A R A T I O N S                      */ 01110000
+ /********************************************************************/ 01120000
+0EXEC SQL INCLUDE SQLCA;                                                01130000
+0/********************************************************************/ 01140000
+ /*                 BUILD IN FUNCTIONS                               */ 01150000
+ /********************************************************************/ 01160000
+0DCL (ADDR,                                                             01170000
+      DIVIDE,                                                           01180000
+      VERIFY,                                                           01190000
+      SUBSTR)                                                           01200000
+              BUILTIN;                                                  01210000
+1/********************************************************************/ 01220000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01230000
+ /********************************************************************/ 01240000
+ CALL RCBCQ3M_INITIALISATION;                                           01250000
+ CALL RCBCQ3M_MAIN_PROCESSING;                                          01260000
+1/********************************************************************/ 01270000
+ /*      INITIALISATION                                              */ 01280000
+ /********************************************************************/ 01290000
+0RCBCQ3M_INITIALISATION : PROC;                                         01300000
+0RCBCQ9S_PTR       = ADDR(RCBCQ9S);                                     01310000
+ RCBCQ9S.SQLCA_PTR = ADDR(RCBCQ9S_SQLCA);                               01320000
+ RCBCQES_PTR       = ADDR(RCBCQES);                                     01330000
+ RCBCQES.SQLCA_PTR = ADDR(RCBCQES_SQLCA);                               01340000
+ SEARCH_ARG_PTR    = ADDR(SEARCH_ARG);                                  01350000
+ DATAROW_PTR       = ADDR(QCH0SCM_DATA);                                01360000
+ SQLCA_PTR         = ADDR(QCH0SCM_SQLCA);                               01370000
+0WRK_CURRENT_ROW   = 0;                                                 01380000
+ WRK_ITEM_NO       = 0;                                                 01390000
+ WRK_SQLCODE       = 0;                                                 01400000
+ WRK_TABLE         = '';                                                01410000
+ EDQYIHS.PAGING_PARMS.QLNETOT = 0;                                      01420000
+0EDQYISS = '';                                                          01430000
+0RCBCQES_SQLCA = '';                                                    01440000
+0END RCBCQ3M_INITIALISATION;                                            01450000
+1/********************************************************************/ 01460000
+ /*      M A I N   P R O C E S S I N G                               */ 01470000
+ /********************************************************************/ 01480000
+0RCBCQ3M_MAIN_PROCESSING : PROC;                                        01490000
+                                                /* PTM0895 START */     01500000
+ IF EDQYIHS.CATTSRC = 'S' THEN                                          01510000
+    IF EDQYIHS.IOPUCTY = ''  |         /* CHECK MANDATORY FIELD      */ 01520000
+       EDQYIHS.QLNEFST = 0   |                                          01530000
+       EDQYIHS.QLNERET < 1   |                                          01540000
+       EDQYIHS.QLNERET > 30  |                                          01550000
+       EDQYIHS.ICUSUSE = ''  |                                          01560000
+       EDQYIHS.IOFFNIK = ''  THEN                                       01570000
+    DO;                                                                 01580000
+       EDQYIHS.CRMORET = '4';      /* INVALID REQUEST            */     01590000
+       RCBCQES.MESSAGE_NUMBER = 'C146';                                 01600000
+       CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 01610000
+    END;                                                                01620000
+    ELSE;                                                               01630000
+ ELSE                                                                   01640000
+    IF EDQYIHS.IOPUCTY = ''  |         /* CHECK MANDATORY FIELD      */ 01650000
+       EDQYIHS.IAGRNBR = ''  |                                          01660000
+       EDQYIHS.LDBSOSN = ''  |                                          01670000
+       EDQYIHS.DAGRCAS = ''  |                                          01680000
+       EDQYIHS.QLNEFST = 0   |                                          01690000
+       EDQYIHS.QLNERET < 1   |                                          01700000
+       EDQYIHS.QLNERET > 30  THEN                                       01710000
+     DO;                                                                01720000
+        EDQYIHS.CRMORET = '4';   /* INVALID REQUEST            */       01730000
+        RCBCQES.MESSAGE_NUMBER = 'C146';                                01740000
+        CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                01750000
+     END;                                                               01760000
+ IF EDQYIHS.CRMORET ¬= '4' THEN                                         01770000
+ DO;                                                                    01780000
+    IF EDQYIHS.CATTSRC = 'O' THEN      /* REQUEST FOR CHIS DATA      */ 01790000
+       CALL RCBCQ3M_CHIS_LAM;                                           01800000
+    ELSE                               /* REQUEST FOR CEDS DATA      */ 01810000
+       CALL RCBCQ3M_CEDS_LAM;                                           01820000
+ END;                                                                   01830000
+                                                 /* PTM0895 END */      01840000
+0END RCBCQ3M_MAIN_PROCESSING;                                           01850000
+1/********************************************************************/ 01860000
+ /*      CHIS LAM PROCESSING                                         */ 01870000
+ /********************************************************************/ 01880000
+0RCBCQ3M_CHIS_LAM : PROC;                                               01890000
+0QCH0SCM_DATA = '';                                                     01900000
+                                                      /* SOC RB01341 */ 01901002
+ IF EDQYIHS.IOPUCTY = '755' THEN                                        01902002
+0SEARCH_ARG.IOPUCTY = '756';                                            01910001
+ ELSE                                                                   01910101
+                                                      /* EOC RB01341 */ 01910202
+0SEARCH_ARG.IOPUCTY = EDQYIHS.IOPUCTY;                                  01911001
+ SEARCH_ARG.IAGRCID = SUBSTR(EDQYIHS.IAGRNBR,1,6);                      01920000
+ SEARCH_ARG.LDBSOSN = EDQYIHS.LDBSOSN;                                  01930000
+ SEARCH_ARG.DAGRCAS = SUBSTR(EDQYIHS.DAGRCAS,1,4) || '-' ||             01940000
+                      SUBSTR(EDQYIHS.DAGRCAS,5,2) || '-' ||             01950000
+                      SUBSTR(EDQYIHS.DAGRCAS,7,2);                      01960000
+                                                                        01970000
+ SEARCH_ARG.ACCMODE = 'OPEN';                                           01980000
+ CALL QCH0SCM(SEARCH_ARG_PTR,DATAROW_PTR,SQLCA_PTR);                    01990000
+                                                                        02000000
+ SELECT(QCH0SCM_SQLCA.SQLCODE);                                         02010000
+                                                                        02020000
+  WHEN(100)                     /* PTM0838*/                            02030000
+   EDQYIHS.CRMORET = '9';       /* NO ITEM(S) FOUND           */        02040000
+                                                                        02050000
+  WHEN(0)                                                               02060000
+  DO;                                                                   02070000
+   SEARCH_ARG.ACCMODE = 'FETCH';                                        02080000
+   CALL QCH0SCM(SEARCH_ARG_PTR,DATAROW_PTR,SQLCA_PTR);                  02090000
+   DO WHILE (QCH0SCM_SQLCA.SQLCODE = 0);                                02100000
+    EDQYIHS.PAGING_PARMS.QLNETOT = EDQYIHS.PAGING_PARMS.QLNETOT + 1;    02110000
+    WRK_CURRENT_ROW = WRK_CURRENT_ROW + 1;                              02120000
+    IF WRK_CURRENT_ROW >= EDQYIHS.PAGING_PARMS.QLNEFST &                02130000
+       WRK_CURRENT_ROW < (EDQYIHS.PAGING_PARMS.QLNEFST +                02140000
+                         EDQYIHS.PAGING_PARMS.QLNERET)                  02150000
+    THEN                                                                02160000
+    DO;                                                                 02170000
+     WRK_ITEM_NO = WRK_ITEM_NO + 1;                                     02180000
+     CALL RCBCQ3M_ASSIGN_CHIS_DATA;                                     02190000
+    END;                                                                02200000
+    CALL QCH0SCM(SEARCH_ARG_PTR,DATAROW_PTR,SQLCA_PTR);                 02210000
+   END; /* DO WHILE */                                                  02220000
+   IF QCH0SCM_SQLCA.SQLCODE ¬= +100                                     02230000
+   THEN                                                                 02240000
+   DO;                                                                  02250000
+    RCBCQES.MESSAGE_NUMBER = 'C151';                                    02260000
+    RCBCQES_SQLCA          = QCH0SCM_SQLCA;                             02270000
+    WRK_SQLCODE            = QCH0SCM_SQLCA.SQLCODE;                     02280000
+    WRK_TABLE              = 'CHIS DB2 TABLE';                          02290000
+    CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                    02300000
+   END;                                                                 02310000
+                                                                        02320000
+   SEARCH_ARG.ACCMODE = 'CLOSE';                                        02330000
+   CALL QCH0SCM(SEARCH_ARG_PTR,DATAROW_PTR,SQLCA_PTR);                  02340000
+   IF QCH0SCM_SQLCA.SQLCODE ¬= 0                                        02350000
+   THEN                                                                 02360000
+   DO;                                                                  02370000
+    RCBCQES.MESSAGE_NUMBER = 'C152';                                    02380000
+    RCBCQES_SQLCA          = QCH0SCM_SQLCA;                             02390000
+    WRK_SQLCODE            = QCH0SCM_SQLCA.SQLCODE;                     02400000
+    WRK_TABLE              = 'CHIS DB2 TABLE';                          02410000
+    CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                    02420000
+   END;                                                                 02430000
+   ELSE /* 0 ON CLOSE */                                                02440000
+   DO;                                                                  02450000
+    IF WRK_ITEM_NO = 0                                                  02460000
+    THEN                                                                02470000
+    EDQYIHS.CRMORET = '9';       /* NO ITEM(S) FOUND           */       02480000
+    ELSE                                                                02490000
+    EDQYIHS.CRMORET = '0';       /* PROCESSING OK              */       02500000
+   END;                                                                 02510000
+  END; /* WHEN 0 ON OPEN */                                             02520000
+                                                                        02530000
+  OTHERWISE /* ERROR ON OPEN */                                         02540000
+  DO;                                                                   02550000
+   RCBCQES.MESSAGE_NUMBER = 'C150';                                     02560000
+   RCBCQES_SQLCA          = QCH0SCM_SQLCA;                              02570000
+   WRK_SQLCODE            = QCH0SCM_SQLCA.SQLCODE;                      02580000
+   WRK_TABLE              = 'CHIS DB2 TABLE';                           02590000
+   CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                     02600000
+  END;                                                                  02610000
+                                                                        02620000
+ END; /* SELECT */                                                      02630000
+0END RCBCQ3M_CHIS_LAM;                                                  02640000
+1/********************************************************************/ 02650000
+ /*      CEDS LAM PROCESSING                                         */ 02660000
+ /********************************************************************/ 02670000
+0RCBCQ3M_CEDS_LAM : PROC;                                               02680000
+ RCBCQ9S.SEARCH.IOPUCTY = EDQYIHS.IOPUCTY;                              02690000
+ RCBCQ9S.SEARCH.IAGRNBR = EDQYIHS.IAGRNBR;                              02700000
+ RCBCQ9S.SEARCH.ICUSUSE = EDQYIHS.ICUSUSE;                              02710000
+ RCBCQ9S.SEARCH.IOFFNIK = EDQYIHS.IOFFNIK;                              02720000
+ CALL RCBCQ9M (RCBCQ9S_PTR);                                            02730000
+ SELECT (RCBCQ9S_SQLCA.SQLCODE);                                        02740000
+    WHEN (0)                                                            02750000
+    DO;                                                                 02760000
+       EDQYIHS.PAGING_PARMS.QLNETOT = 1;                                02770000
+       WRK_ITEM_NO = 1;                                                 02780000
+       CALL RCBCQ3M_ASSIGN_CEDS_DATA;                                   02790000
+       EDQYIHS.CRMORET = '0';          /* PROCESSING OK              */ 02800000
+    END;                                                                02810000
+    WHEN (+100)                                                         02820000
+       EDQYIHS.CRMORET = '9';          /* NO ITEM(S) FOUND           */ 02830000
+    OTHERWISE                                                           02840000
+    DO;                                                                 02850000
+       RCBCQES.MESSAGE_NUMBER = 'C153';                                 02860000
+       RCBCQES_SQLCA          = RCBCQ9S_SQLCA;                          02870000
+       WRK_SQLCODE            = RCBCQ9S_SQLCA.SQLCODE;                  02880000
+       WRK_TABLE              = 'RCBT0210_ADD_SERV';                    02890000
+       CALL RCBCQ3M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 02900000
+    END;                                                                02910000
+ END;                                                                   02920000
+0END RCBCQ3M_CEDS_LAM;                                                  02930000
+1/********************************************************************/ 02940000
+ /*      ASSIGN DATA FROM CHIS LAM TO SERVICES LIST                  */ 02950000
+ /********************************************************************/ 02960000
+0RCBCQ3M_ASSIGN_CHIS_DATA : PROC;                                       02970000
+                                                      /* SOC RB01341 */ 02971002
+ IF QCH0SCM_DATA.IOPUCTY = '756' & EDQYIHS.IOPUCTY = '755' THEN         02972001
+0EDQYISS(WRK_ITEM_NO).IOPUCTY = '755';                                  02980001
+ ELSE                                                                   02980102
+                                                      /* EOC RB01341 */ 02980202
+0EDQYISS(WRK_ITEM_NO).IOPUCTY = QCH0SCM_DATA.IOPUCTY;                   02981001
+ EDQYISS(WRK_ITEM_NO).IAGRNBR = SUBSTR(QCH0SCM_DATA.IAGRCID,1,6);       02990000
+ EDQYISS(WRK_ITEM_NO).LDBSOSN = QCH0SCM_DATA.LDBSOSN;                   03000000
+ EDQYISS(WRK_ITEM_NO).DAGRCAS = SUBSTR(QCH0SCM_DATA.DAGRCAS,1,4) ||     03010000
+                                SUBSTR(QCH0SCM_DATA.DAGRCAS,6,2) ||     03020000
+                                SUBSTR(QCH0SCM_DATA.DAGRCAS,9,2);       03030000
+ EDQYISS(WRK_ITEM_NO).LUSCIDX = QCH0SCM_DATA.LUSCIDX;                   03040000
+ EDQYISS(WRK_ITEM_NO).IUTSNIK = QCH0SCM_DATA.IUTSNIK;                   03050000
+ EDQYISS(WRK_ITEM_NO).IUSCNIK = QCH0SCM_DATA.IUSCNIK;                   03060000
+ EDQYISS(WRK_ITEM_NO).TUSCSDC = QCH0SCM_DATA.TUSCSDC;                   03070000
+ EDQYISS(WRK_ITEM_NO).FSCNCMT = QCH0SCM_DATA.FSCNCMT;                   03080000
+ EDQYISS(WRK_ITEM_NO).LCMGTXT = QCH0SCM_DATA.LCMGTXT;                   03090000
+0END RCBCQ3M_ASSIGN_CHIS_DATA;                                          03100000
+1/********************************************************************/ 03110000
+ /*      ASSIGN DATA FROM CEDS LAM TO SERVICES LIST                  */ 03120000
+ /********************************************************************/ 03130000
+0RCBCQ3M_ASSIGN_CEDS_DATA : PROC;                                       03140000
+0EDQYISS(WRK_ITEM_NO).IOPUCTY = RCBCQ9S.DATA.COUNTRY_NUMBER;            03150000
+ EDQYISS(WRK_ITEM_NO).IAGRNBR = RCBCQ9S.DATA.CONTRACT_NUMBER;           03160000
+ EDQYISS(WRK_ITEM_NO).LDBSOSN = EDQYIHS.LDBSOSN;                        03170000
+ EDQYISS(WRK_ITEM_NO).DAGRCAS = EDQYIHS.DAGRCAS;                        03180000
+ EDQYISS(WRK_ITEM_NO).LUSCIDX = '';                                     03190000
+ EDQYISS(WRK_ITEM_NO).IUTSNIK = 'SERVICE HOURS';                        03200000
+ EDQYISS(WRK_ITEM_NO).IUSCNIK = '';                                     03210000
+ DO I = 1 TO 7;                                                         03220000
+    IF RCBCQ9S.DATA.COVERAGE_START(I) ¬= '' THEN                        03230000
+    DO;                                                                 03240000
+       WRK_COVERAGE = RCBCQ9S.DATA.COVERAGE_START(I);                   03250000
+       IF VERIFY(PIC_HOUR,'1234567890') = 0 &                           03260000
+          VERIFY(PIC_MINUTE,'1234567890') = 0 THEN                      03270000
+          TUSCSDC_ARRAY(I).START = PIC_HOUR + DIVIDE(PIC_MINUTE,60,3,1);03280000
+       ELSE                                                             03290000
+          TUSCSDC_ARRAY(I).START = '';                                  03300000
+    END;                                                                03310000
+    ELSE                                                                03320000
+       TUSCSDC_ARRAY(I).START = '';                                     03330000
+    IF RCBCQ9S.DATA.COVERAGE_END(I) ¬= '' THEN                          03340000
+    DO;                                                                 03350000
+       WRK_COVERAGE = RCBCQ9S.DATA.COVERAGE_END(I);                     03360000
+       IF VERIFY(PIC_HOUR,'1234567890') = 0 &                           03370000
+          VERIFY(PIC_MINUTE,'1234567890') = 0 THEN                      03380000
+          TUSCSDC_ARRAY(I).END = PIC_HOUR + DIVIDE(PIC_MINUTE,60,3,1);  03390000
+       ELSE                                                             03400000
+          TUSCSDC_ARRAY(I).END = '';                                    03410000
+    END;                                                                03420000
+    ELSE                                                                03430000
+       TUSCSDC_ARRAY(I).END = '';                                       03440000
+ END;                                                                   03450000
+ EDQYISS(WRK_ITEM_NO).TUSCSDC = TUSCSDC_STRING || '  ';                 03460000
+ EDQYISS(WRK_ITEM_NO).FSCNCMT = '';                                     03470000
+ EDQYISS(WRK_ITEM_NO).LCMGTXT = '';                                     03480000
+0END RCBCQ3M_ASSIGN_CEDS_DATA;                                          03490000
+1/********************************************************************/ 03500000
+ /*      E R R O R   L O G G I N G                                   */ 03510000
+ /********************************************************************/ 03520000
+0RCBCQ3M_LOG_ERROR : PROC(ERR_SQLCODE,ERR_TABLE);                       03530000
+0DCL ERR_TABLE   CHAR(18);                                              03540000
+0DCL ERR_SQLCODE FIXED BIN(31);                                         03550000
+0SELECT(ERR_SQLCODE);                                                   03560000
+    WHEN (0);                                                           03570000
+    WHEN (-923)                                                         03580000
+       EDQYIHS.CRMORET = '8';                                           03590000
+    WHEN (9999)                                                         03600000
+       EDQYIHS.CRMORET = '4';                                           03610000
+    OTHERWISE                                                           03620000
+       EDQYIHS.CRMORET = '7';                                           03630000
+ END;                                                                   03640000
+0EDQYIHS.ACK.NTBLNME = ERR_TABLE;                                       03650000
+0EDQYIHS.ACK.CRMOSUB = ERR_SQLCODE;                                     03660000
+0RCBCQES.MESSAGE_TYPE  = 'IS';                                          03670000
+ RCBCQES.LANGUAGE_CODE = 'EN';                                          03680000
+ RCBCQES.PROGRAM_ID    = 'RCBCQ3M';                                     03690000
+ CALL RCBCQEM(RCBCQES_PTR);                                             03700000
+0END RCBCQ3M_LOG_ERROR;                                                 03710000
+1/*******************************************************************/  03720000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  03730000
+ /*******************************************************************/  03740000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  03750000
+  $DAIMOD (RCBCQ3M);                     /* MODULE TO BE COMPILED   */  03760000
+0/*******************************************************************/  03770000
+ /* END OF ABR BLOCK '                                              */  03780000
+ /*******************************************************************/  03790000
+0 END RCBCQ3M;                                                          03800000

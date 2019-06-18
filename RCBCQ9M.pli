@@ -1,0 +1,177 @@
+ /* RCBCQ9M - CEDS LAM FOR "LS" REQUEST                              */ 00019718
+ /*                                                                  */ 00020000
+ /*                                                                  */ 00030000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060000
+ /*                                                                  */ 00070000
+ /********************************************************************/ 00080000
+ /* PROGRAM          : RCBCQ9M                                       */ 00090000
+ /*                                                                  */ 00100000
+ /* LANGUAGE         : PLICSQL                                       */ 00110000
+ /*                                                                  */ 00120000
+ /* TYPE             : LINKABLE MODULE                               */ 00130000
+ /*                                                                  */ 00140000
+ /* DESCRIPTION      : CEDS LAM FOR "LS" REQUEST                     */ 00150000
+ /*                                                                  */ 00160000
+ /* INPUT            : COUNTRY NUMBER AND CONTRACT NUMBER AND/OR     */ 00170000
+ /*                    CUSTOMER NUMBER AND/OR SERVICE NAME           */ 00180000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : DETAILS FROM RCBT0210_ADD_SERV                */ 00200000
+ /*                                                                  */ 00210000
+ /*                                                                  */ 00220000
+ /* EXTERNAL MODULES : NONE                                          */ 00230000
+ /*                                                                  */ 00240000
+ /*                                                                  */ 00250000
+ /* MESSAGES         : -                                             */ 00260000
+ /*                                                                  */ 00270000
+ /* DEPENDENCIES     : NONE                                          */ 00280000
+ /*                                                                  */ 00290000
+ /* MAINTENANCE LOG  :                                               */ 00300000
+ /* ---------------                                                  */ 00310000
+ /*                                                                  */ 00320000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00330000
+ /* --------------------------------------------------------------   */ 00340000
+ /*  1995-09-07 | WI4122       | CEDS 2.3                           **/ 00350000
+ /*             |              |                                    **/ 00360000
+ /*  1995-11-20 | PTM0855      | ALLOW DB2 TO RETURN NULL INDICATORS**/ 00370000
+ /*             |              |                                    **/ 00380000
+ /*  1996-04-22 | PTM0902      | UPGRADE TO CICS 4.1 - MOVE FROM    **/ 00390000
+ /*             |              | PLISQL TO PLICSQL LIBRARY.         **/ 00400000
+ /*  1997-04-22 | PTM1036      | USE STANDARD PROLOGS                */ 00410000
+ /*             |              |                                     */ 00420000
+ /********************************************************************/ 00430000
+1RCBCQ9M: PROC (RCBCQ9S_PTR)                                            00440000
+          REORDER;                                                      00450000
+0/********************************************************************/ 00460000
+ /*                 P A R A M E T E R S                              */ 00470000
+ /********************************************************************/ 00480000
+0DCL RCBCQ9S_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00490000
+ DCL 1 RCBCQ9S       BASED(RCBCQ9S_PTR),                                00500000
+      %INCLUDE RCBCQ9S;;                                                00510000
+ DCL 1 RCBCQ9S_SQLCA BASED(SQLCA_PTR)                                   00520000
+      LIKE SQLCA;                                                       00530000
+1/********************************************************************/ 00540000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00550000
+ /********************************************************************/ 00560000
+0EXEC SQL INCLUDE SQLCA;                                                00570000
+0/********************************************************************/ 00580000
+ /* DB2 TABLE STRUCTURES                                             */ 00590000
+ /********************************************************************/ 00600000
+ DCL 1 TB_RCBV210,                                                      00610000
+      %INCLUDE (RCB210S);;                                              00620000
+ DCL 1 TB_RCBV210_I,                                                    00630000
+      %INCLUDE (RCB210SI);;                                             00640000
+0/********************************************************************/ 00650000
+ /*         M I S C E L L A N E O U S   F I E L D S                  */ 00660000
+ /********************************************************************/ 00670000
+0DCL WRK_SERVICE_NUMBER   CHAR (10);                                    00680000
+0DCL WRK_GROUP_ID         CHAR (03);                                    00690000
+0DCL WRK_INDNULL          FIXED BIN(15);   /* PTM0855 */                00700000
+0DCL (ADDR,                                                             00710000
+      SUBSTR)             BUILTIN;                                      00720000
+1/********************************************************************/ 00730000
+ /*           P R O C E S S I N G                                    */ 00740000
+ /********************************************************************/ 00750000
+0CALL RCBCQ9M_INITIALISATION;                                           00760000
+0CALL RCBCQ9M_MAIN_PROCESSING;                                          00770000
+1/********************************************************************/ 00780000
+ /*           I N I T I A L     P R O C E S S I N G                  */ 00790000
+ /********************************************************************/ 00800000
+0RCBCQ9M_INITIALISATION : PROC;                                         00810000
+0RCBCQ9S_SQLCA = '';                                                    00820000
+ RCBCQ9S.DATA  = '';                                                    00830000
+ TB_RCBV210    = '';                                                    00840000
+0END RCBCQ9M_INITIALISATION;                                            00850000
+1/********************************************************************/ 00860000
+ /*           M A I N     P R O C E S S I N G                        */ 00870000
+ /********************************************************************/ 00880000
+0RCBCQ9M_MAIN_PROCESSING : PROC;                                        00890000
+0IF RCBCQ9S.SEARCH.IOPUCTY = '' |                                       00900000
+    RCBCQ9S.SEARCH.IAGRNBR = '' |                                       00910000
+    RCBCQ9S.SEARCH.ICUSUSE = '' |                                       00920000
+    RCBCQ9S.SEARCH.IOFFNIK = '' THEN                                    00930000
+ DO                                                                     00940000
+    RCBCQ9S_SQLCA.SQLCODE = 9999;                                       00950000
+    RCBCQ9S_SQLCA.SQLERRM = 'SEARCH ARGUMENTS FOR RCBCQ9M ARE BLANK';   00960000
+ END;                                                                   00970000
+ ELSE                                                                   00980000
+ DO;                                                                    00990000
+    WRK_SERVICE_NUMBER = SUBSTR(RCBCQ9S.SEARCH.IOFFNIK,1,10);           01000000
+    WRK_GROUP_ID       = SUBSTR(RCBCQ9S.SEARCH.IOFFNIK,11,3);           01010000
+    EXEC SQL                                                            01020000
+        SELECT                                                          01030000
+            COUNTRY_NUMBER                                              01040000
+           ,CONTRACT_NUMBER                                             01050000
+           ,COVERAGE_START_1                                            01060000
+           ,COVERAGE_END_1                                              01070000
+           ,COVERAGE_START_2                                            01080000
+           ,COVERAGE_END_2                                              01090000
+           ,COVERAGE_START_3                                            01100000
+           ,COVERAGE_END_3                                              01110000
+           ,COVERAGE_START_4                                            01120000
+           ,COVERAGE_END_4                                              01130000
+           ,COVERAGE_START_5                                            01140000
+           ,COVERAGE_END_5                                              01150000
+           ,COVERAGE_START_6                                            01160000
+           ,COVERAGE_END_6                                              01170000
+           ,COVERAGE_START_7                                            01180000
+           ,COVERAGE_END_7                                              01190000
+        INTO                                                            01200000
+            :TB_RCBV210.COUNTRY_NUMBER                                  01210000
+           ,:TB_RCBV210.CONTRACT_NUMBER                                 01220000
+           ,:TB_RCBV210.COVERAGE_START_1 :WRK_INDNULL                   01230000
+           ,:TB_RCBV210.COVERAGE_END_1 :WRK_INDNULL                     01240000
+           ,:TB_RCBV210.COVERAGE_START_2 :WRK_INDNULL                   01250000
+           ,:TB_RCBV210.COVERAGE_END_2 :WRK_INDNULL                     01260000
+           ,:TB_RCBV210.COVERAGE_START_3 :WRK_INDNULL                   01270000
+           ,:TB_RCBV210.COVERAGE_END_3 :WRK_INDNULL                     01280000
+           ,:TB_RCBV210.COVERAGE_START_4 :WRK_INDNULL                   01290000
+           ,:TB_RCBV210.COVERAGE_END_4 :WRK_INDNULL                     01300000
+           ,:TB_RCBV210.COVERAGE_START_5 :WRK_INDNULL                   01310000
+           ,:TB_RCBV210.COVERAGE_END_5 :WRK_INDNULL                     01320000
+           ,:TB_RCBV210.COVERAGE_START_6 :WRK_INDNULL                   01330000
+           ,:TB_RCBV210.COVERAGE_END_6 :WRK_INDNULL                     01340000
+           ,:TB_RCBV210.COVERAGE_START_7 :WRK_INDNULL                   01350000
+           ,:TB_RCBV210.COVERAGE_END_7 :WRK_INDNULL                     01360000
+        FROM RCBV0210_ADD_SERV                                          01370000
+        WHERE                                                           01380000
+          COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                         01390000
+          CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                         01400000
+          CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                         01410000
+          SERVICE_NUMBER  = :WRK_SERVICE_NUMBER AND                     01420000
+          GROUP_ID        = :WRK_GROUP_ID;                              01430000
+                                                                        01440000
+    SELECT (SQLCA.SQLCODE);                                             01450000
+       WHEN (0)                                                         01460000
+          CALL RCBCQ9M_ASSIGN_OUTPUT_DATA;                              01470000
+       OTHERWISE;                                                       01480000
+    END;                                                                01490000
+    RCBCQ9S_SQLCA = SQLCA;                                              01500000
+ END;                                                                   01510000
+0END RCBCQ9M_MAIN_PROCESSING;                                           01520000
+1/********************************************************************/ 01530000
+ /*          ASSIGN DB2 TABLE DATA TO OUTPUT DATA STRUCTURE          */ 01540000
+ /********************************************************************/ 01550000
+0RCBCQ9M_ASSIGN_OUTPUT_DATA : PROC;                                     01560000
+0RCBCQ9S.DATA.COUNTRY_NUMBER    = TB_RCBV210.COUNTRY_NUMBER;            01570000
+ RCBCQ9S.DATA.CONTRACT_NUMBER   = TB_RCBV210.CONTRACT_NUMBER;           01580000
+ RCBCQ9S.DATA.COVERAGE_START(1) = TB_RCBV210.COVERAGE_START_1;          01590000
+ RCBCQ9S.DATA.COVERAGE_END(1)   = TB_RCBV210.COVERAGE_END_1;            01600000
+ RCBCQ9S.DATA.COVERAGE_START(2) = TB_RCBV210.COVERAGE_START_2;          01610000
+ RCBCQ9S.DATA.COVERAGE_END(2)   = TB_RCBV210.COVERAGE_END_2;            01620000
+ RCBCQ9S.DATA.COVERAGE_START(3) = TB_RCBV210.COVERAGE_START_3;          01630000
+ RCBCQ9S.DATA.COVERAGE_END(3)   = TB_RCBV210.COVERAGE_END_3;            01640000
+ RCBCQ9S.DATA.COVERAGE_START(4) = TB_RCBV210.COVERAGE_START_4;          01650000
+ RCBCQ9S.DATA.COVERAGE_END(4)   = TB_RCBV210.COVERAGE_END_4;            01660000
+ RCBCQ9S.DATA.COVERAGE_START(5) = TB_RCBV210.COVERAGE_START_5;          01670000
+ RCBCQ9S.DATA.COVERAGE_END(5)   = TB_RCBV210.COVERAGE_END_5;            01680000
+ RCBCQ9S.DATA.COVERAGE_START(6) = TB_RCBV210.COVERAGE_START_6;          01690000
+ RCBCQ9S.DATA.COVERAGE_END(6)   = TB_RCBV210.COVERAGE_END_6;            01700000
+ RCBCQ9S.DATA.COVERAGE_START(7) = TB_RCBV210.COVERAGE_START_7;          01710000
+ RCBCQ9S.DATA.COVERAGE_END(7)   = TB_RCBV210.COVERAGE_END_7;            01720000
+0END RCBCQ9M_ASSIGN_OUTPUT_DATA;                                        01730000
+0/********************************************************************/ 01740000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 01750000
+ $DAIMOD (RCBCQ9M);                    /* MODULE TO BE COMPILED      */ 01760000
+ END RCBCQ9M;                                                           01770000

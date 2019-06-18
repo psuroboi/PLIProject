@@ -1,0 +1,1236 @@
+ /* RCBBKBM - CHIS UPGRADES: RECEIVE                                 */ 00012099
+ /*                                                                  */ 00020099
+ /********************************************************************/ 00030099
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040099
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050099
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060099
+ /********************************************************************/ 00070099
+ /*                                                                  */ 00080099
+ /* MODULE NAME      : RCBBKBM                                       */ 00090099
+ /*                                                                  */ 00100099
+ /* PROGRAM NAME     : RCBBKBP                                       */ 00110099
+ /*                                                                  */ 00120099
+ /* LANGUAGE         : PLI                                           */ 00130099
+ /*                                                                  */ 00140099
+ /* TYPE             : BATCH                                         */ 00150099
+ /*                                                                  */ 00160099
+ /* DESCRIPTION      : RETRIEVE THE WARRANTY AND MAINTENANCE UPGRADES*/ 00170099
+ /*                    FROM CHIS DB2 TABLES AND CREATE CHIS UPGRADES */ 00180099
+ /*                    FILE                                          */ 00190099
+ /*                                                                  */ 00200099
+ /* INPUT            :                                               */ 00210099
+ /*                                                                  */ 00220099
+ /*      CHIS TABLES :                                               */ 00230099
+ /*                    QCHTSCON - CCT C01 CONTRACT COMPONENT         */ 00240099
+ /*                    QCHTSCCT - CON CXX CONTRACT                   */ 00250099
+ /*                    QCHTSOVS - OVS OBJECT OF SERVICE              */ 00260099
+ /*                    QCHTSOVC - OVC OBJECT OF SERVICE COMPONENT    */ 00270099
+ /*                    QCHTSOFF - OFF C01 SERVICE OFFERING           */ 00280099
+ /*                    QCHTSOBJ - OBJ CDE07 OBJECT                   */ 00290099
+ /*                    QCHTSLIO - LIO CONTRACT COMPONENT ELEMENT     */ 00300099
+ /*                    QCHTSUSC - USC C01 SERVICE CONDITION          */ 00310099
+ /*      CEDS TABLES :                                               */ 00320099
+ /*                    RCBT0500_PARM                                 */ 00330099
+ /*                    RCBT0051_PI_HW_PR                             */ 00340099
+ /*                    RCBT0170_OU_HW                                */ 00350099
+ /*                    RCBT0300_HW_REAL                              */ 00360099
+ /*                    RCBT0400_PO_MOD1                              */ 00370099
+ /*                    RCBT0475_CTRY_COND                            */ 00380099
+ /*                    RCBT0640_TRANS_SVT                            */ 00390099
+ /*                    RCBT0645_CTRY_SVT                             */ 00400099
+ /*                    RCBT0691_TRANS_OFF                            */ 00410099
+ /*                                                                  */ 00420099
+ /* OUTPUT           : RCBBKB0 (CHIS UPGRADES FILE)                  */ 00430099
+ /*                                                                  */ 00440099
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */ 00450099
+ /*                    RCB019M   RETRIEVE COUNTRY NUMBERS            */ 00460099
+ /*                    RCBISRM   EXTRACT SERVICE REFERENCE DETAILS   */ 00470099
+ /*                    RCBIBOM   EXTRACT REFERENCE OF T640/T645      */ 00480099
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */ 00490099
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */ 00500099
+ /*                    RCBI50M   REFERENCE PARAMETER                 */ 00510099
+ /*                    RCB020M   RETRIEVE RUN DATE                   */ 00520099
+ /*                                                                  */ 00530099
+ /* DEPENDENCIES     : HAS TO BE NORMAL COMPLETED BEFORE             */ 00540099
+ /*                    RUNNING RCBBKXM                               */ 00550099
+ /*                                                                  */ 00560099
+ /* FREQUENCY        : USER DEPENDENT (ON REQUEST)                   */ 00570099
+ /*                                                                  */ 00580099
+ /*  MAINTENANCE LOG :                                               */ 00590099
+ /*  ---------------                                                 */ 00600099
+ /*                                                                  */ 00610099
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00620099
+ /*  --------------------------------------------------------------  */ 00630099
+ /*  2009-07-20 | RB01301      | CEDS ALIGNMENT TO CHIS 810 - BAU    */ 00640099
+ /*             |              | SERVICE EXTENSIONS - INITIAL VERSION*/ 00650099
+ /*  2010-03-19 | CEDS00000511 | DEFAULT VALUES ARE FILLED FOR       */ 00660099
+ /*             |              | COVERAGE HRS,SDM AND SERV TYPE WHEN */ 00670099
+ /*             |              | SLC CANNOT BE DETERMINED FROM T400  */ 00680099
+ /*  2010-03-25 | CEDS00000512 | CORRECTED SQL QUERY TO RETRIEVE     */ 00690099
+ /*             |              | CHIS UPGRADES                       */ 00700099
+ /*  2010-08-04 | CEDS00000535 | HANDLED CONDITION FOR NO SERVICE    */ 00710099
+ /*             |              | TYPE FOUND FOR AN SDM               */ 00711099
+ /********************************************************************/ 00720099
+1RCBBKBM: PROC                                                          00730099
+          OPTIONS (MAIN)                                                00740099
+          REORDER;                                                      00750099
+-DEFAULT RANGE (*) STATIC;                                              00760099
+1/********************************************************************/ 00791099
+ /* FILE DECLARATIONS                                                */ 00792099
+ /********************************************************************/ 00793099
+0DCL RCBBKB0  FILE RECORD OUTPUT;                                       00800099
+0/********************************************************************/ 00810099
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00820099
+ /********************************************************************/ 00830099
+0DCL PTR_INT_AREA         PTR;                                          00840099
+ DCL PTR_RETURN_AREA      PTR;                                          00850099
+ DCL PTR_COUNTRY_AREA     PTR;                                          00860099
+ DCL PTR_RUN_DATE_AREA    PTR;                                          00870099
+ DCL 1 PARM_INT_AREA,                              /* INTERFACE AREA */ 00880099
+      %INCLUDE (RCBZ01S);;                                              00890099
+ DCL 1 RETURN_AREA,                                /* RETURN AREA    */ 00900099
+      %INCLUDE (RCBZ02S);;                                              00910099
+ DCL 1 COUNTRY_AREA,                               /* COUNTRY AREA   */ 00920099
+      %INCLUDE (RCBZ26S);;                                              00930099
+ DCL 1 RUN_DATE_AREA,                              /* RUN DATE AREA  */ 00940099
+      %INCLUDE (RCBZ28S);;                                              00950099
+                                                                        00960099
+1/********************************************************************/ 00970099
+ /* EXTERNAL ENTRIES                                                 */ 00980099
+ /********************************************************************/ 00990099
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */ 01000099
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */ 01010099
+ DCL RCBISRM   ENTRY  EXTERNAL;          /* SERVICE REFERENCE DETAILS*/ 01020099
+ DCL RCBIBOM   ENTRY  EXTERNAL;          /* REFERENCE OF T640/T645   */ 01030099
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGE ROUTINE   */ 01040099
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* SYSTEM DATE              */ 01050099
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* REFERENCE PARAMETER      */ 01060099
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */ 01070099
+1/********************************************************************/ 01080099
+ /* ON ERROR CONDITIONS                                              */ 01090099
+ /********************************************************************/ 01100099
+ %INCLUDE (RCB0E0M);                                                    01110099
+   END;                                                                 01120099
+0/********************************************************************/ 01130099
+ /*  RECORD STRUCTURE FETCH                                          */ 01140099
+ /********************************************************************/ 01150099
+0DCL 1 STRUC_FETCH,                                                     01160099
+      3 IOPUCTY        CHAR(03),         /* COUNTRY NUMBER           */ 01170099
+      3 IAGRCID        CHAR(06),         /* CONTRACT ID              */ 01180099
+      3 IAGRENO        CHAR(10),         /* CONT. TERMS/CONDITION NR */ 01190099
+      3 IOFFNIK        CHAR(15),         /* OFFERING NICK NAME       */ 01200099
+      3 IOVSNIK        CHAR(15),         /* OBJ. OF SERVICE NICKNAME */ 01210099
+                                                 /* SOC CEDS00000512 */ 01220099
+ /*   3 IOBJNIK        CHAR(15),         /* TIER                     */ 01230099
+      3 IOBJNIK1       CHAR(15),         /* OBJ. NICKNAME            */ 01240099
+      3 IOBJNIK2       CHAR(15),         /* TIER                     */ 01250099
+                                                 /* EOC CEDS00000512 */ 01260099
+      3 DAGRCAS        CHAR(10),         /* SERVICE START DATE (CONT)*/ 01270099
+      3 DAGRVEX        CHAR(10),         /* SERVICE STOP DATE (CONT) */ 01280099
+      3 DAGREFF        CHAR(10),         /* START OBJ OF SERVICE     */ 01290099
+      3 DAGREXP        CHAR(10),         /* STOP  OBJ OF SERVICE     */ 01300099
+      3 ICUSUSE        CHAR(08),         /* USING CUSTOMER NUMBER    */ 01310099
+      3 IUSCNIK        CHAR(15),         /* SERV. CONDITION NICKNAME */ 01320099
+      3 FAGRINT        CHAR(01);         /* INTERN. CONTRACT FLAG    */ 01330099
+ DCL 1 STRUC_FETCH_I,                                                   01340099
+  /*  3 INDNULL(13)    FIXED BIN(15);                /* CEDS00000512 */ 01350099
+      3 INDNULL(14)    FIXED BIN(15);                /* CEDS00000512 */ 01360099
+                                                                        01370099
+1/********************************************************************/ 01380099
+ /* DB2 TABLE STRUCTURES                                             */ 01390099
+ /********************************************************************/ 01400099
+ DCL PTR_RCBV470      PTR;                                              01410099
+ DCL PTR_RCBV470I     PTR;                                              01420099
+ DCL PTR_RCBV500      PTR;                                              01430099
+ DCL PTR_RCBV500I     PTR;                                              01440099
+ DCL PTR_RCBV640      PTR;                                              01450099
+ DCL PTR_RCBV640I     PTR;                                              01460099
+                                                                        01470099
+ DCL 1 TB_RCBV051,                                                      01480099
+      %INCLUDE (RCB051S);;                                              01490099
+ DCL 1 TB_RCBV170,                                                      01500099
+      %INCLUDE (RCB170S);;                                              01510099
+ DCL 1 TB_RCBV300,                                                      01520099
+      %INCLUDE (RCB300S);;                                              01530099
+ DCL 1 TB_RCBV400,                                                      01540099
+      %INCLUDE (RCB400S);;                                              01550099
+ DCL 1 TB_RCBV470,                                                      01560099
+      %INCLUDE (RCB470S);;                                              01570099
+ DCL 1 TB_RCBV470_I,                                                    01580099
+      %INCLUDE (RCB470SI);;                                             01590099
+ DCL 1 TB_RCBV500,                                                      01600099
+       %INCLUDE (RCB500S);;                                             01610099
+ DCL 1 TB_RCBV500_I,                                                    01620099
+       %INCLUDE (RCB500SI);;                                            01630099
+ DCL 1 TB_RCBV640,                                                      01640099
+      %INCLUDE (RCB640S);;                                              01650099
+ DCL 1 TB_RCBV640_I,                                                    01660099
+      %INCLUDE (RCB640SI);;                                             01670099
+ DCL 1 TB_RCBV691,                                                      01680099
+      %INCLUDE (RCB691S);;                                              01690099
+                                                                        01700099
+1/********************************************************************/ 01710099
+ /*  PROGRAM CONTROL PARAMETERS                                      */ 01720099
+ /********************************************************************/ 01730099
+0DCL 1 TB_RCB035        BASED(PTR_RCBV500),         /* FILE SEQUENCE */ 01740099
+       %INCLUDE (RCBP35S);;                                             01750099
+0DCL 1 RCB035,                                                          01760099
+       %INCLUDE (RCBP35S);;                                             01770099
+                                                                        01780099
+0/********************************************************************/ 01790099
+ /*  RECORD STRUCTURES FOR OUTPUT FILE                               */ 01800099
+ /********************************************************************/ 01810099
+0DCL 1 RCBBKB0_REC             CHAR (271);                              01820099
+0DCL 1 RCBBKB0_HDR             BASED (ADDR (RCBBKB0_REC)),              01830099
+      %INCLUDE (RCBBKBSH);;                                             01840099
+0DCL 1 RCBBKB0_UPG             BASED (ADDR (RCBBKB0_REC)),              01850099
+      %INCLUDE (RCBBKBS1);;                                             01860099
+0DCL 1 RCBBKB0_TLR             BASED (ADDR (RCBBKB0_REC)),              01870099
+      %INCLUDE (RCBBKBST);;                                             01880099
+                                                                        01890099
+0/********************************************************************/ 01900099
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01910099
+ /********************************************************************/ 01920099
+ DCL RCBBKB0_CNT            FIXED BIN(31)   INIT(0);                    01930099
+ DCL WRK_CNT_PIC            PIC '(15)9';                                01940099
+ DCL POS_TYPE               FIXED BIN(15)   INIT(0);                    01950099
+ DCL POS_MODEL              FIXED BIN(15)   INIT(0);                    01960099
+ DCL POS_ORIGIN             FIXED BIN(15)   INIT(0);                    01970099
+ DCL POS_SER5               FIXED BIN(15)   INIT(0);                    01980099
+ DCL POS_SER7               FIXED BIN(15)   INIT(0);                    01990099
+ DCL WRK_INDNULL            FIXED BIN(15);                              02000099
+ DCL WRK_CTRYNO_NO          FIXED BIN(15)   INIT(1);                    02010099
+ DCL WRK_MACH_TYPE          CHAR(04)        INIT('');                   02020099
+ DCL WRK_ORIGIN             CHAR(02)        INIT('');                   02030099
+ DCL WRK_SERIAL             CHAR(09)        INIT('');                   02040099
+ DCL WRK_MODEL              CHAR(03)        INIT('');                   02050099
+ DCL WRK_SEQUENCE           CHAR(28)        INIT('');                   02060099
+ DCL WRK_SLC                CHAR(03)        INIT('');                   02070099
+ DCL WRK_SERV_START_TIME(7) CHAR(08)        INIT('');                   02080099
+ DCL WRK_SERV_STOP_TIME(7)  CHAR(08)        INIT('');                   02090099
+ DCL WRK_SERV_METH          CHAR(03)        INIT('');                   02100099
+ DCL WRK_SERV_TYPE          CHAR(01)        INIT('');                   02110099
+ DCL WRK_OU                 CHAR(07)        INIT('');                   02120099
+ DCL WRK_PROC_ID            CHAR(04)        INIT('');                   02130099
+ DCL WRK_CTRYNO             CHAR(03)        INIT('');                   02140099
+ DCL WRK_PGR_TYPE           CHAR(03)        INIT('');                   02150099
+ DCL WRK_UPG_TYPE           CHAR(1)         INIT('');                   02160099
+ DCL WRK_CREATION_DATE      CHAR(10)        INIT('');                   02170099
+ DCL WRK_RUN_DATE           CHAR(10)        INIT('');                   02180099
+ DCL WRK_SYSTEM_TYPE        CHAR(01)        INIT('B');                  02190099
+ DCL WRK_MOD_NAME           CHAR(07)        INIT('RCBBKBM');            02200099
+ DCL WRK_PRG_NAME           CHAR(07)        INIT('RCBBKBP');            02210099
+ DCL WRK_FILE_SEQ           PIC '99999';                                02220099
+ DCL WRK_RCBBKB0            CHAR(07)        INIT('RCBBKB0');            02230099
+ DCL WRK_UPG_CNT            FIXED BIN(31)   INIT(0);                    02240099
+ DCL WRK_REJECT_CNT         FIXED BIN(31)   INIT(0);                    02250099
+                                                                        02260099
+0/*********************************************************************/02270099
+ /*  BIT SWITCHES                                                     */02280099
+ /*********************************************************************/02290099
+ DCL TRUE                   BIT (1)         INIT('1'B);                 02300099
+ DCL FALSE                  BIT (1)         INIT('0'B);                 02310099
+ DCL SW_PROCESS             BIT (1)         INIT('0'B);                 02320099
+ DCL SW_SKIP                BIT (1)         INIT('0'B);                 02330099
+ DCL SW_DEFAULT_SLC         BIT (1)         INIT('0'B); /*CEDS00000511*/02340099
+ DCL CHIS_MODEL             BIT (1)         INIT('0'B);                 02350099
+1/********************************************************************/ 02360099
+ /*  BUILTIN FUNCTIONS                                               */ 02370099
+ /********************************************************************/ 02380099
+0DCL (ADDR,                                                             02390099
+      INDEX,                                                            02400099
+      NULL,                                                             02410099
+      SUBSTR)     BUILTIN;                                              02420099
+0/********************************************************************/ 02430099
+ /*                 S Q L    D E C L A R A T I O N S                 */ 02440099
+ /********************************************************************/ 02450099
+ EXEC SQL                                                               02460099
+   INCLUDE SQLCA                                                        02470099
+   ;                                                                    02480099
+1/********************************************************************/ 02490099
+ /*  DB2/SQL CURSOR DECLERATION                                      */ 02500099
+ /********************************************************************/ 02510099
+0EXEC SQL                                                               02520099
+   DECLARE CURS_UPGRADES CURSOR FOR              /* WARRANTY UPGRADES */02530099
+  SELECT    CON.IOPUCTY                    , /* COUNTRY               */02540099
+            CON.IAGRCID                    , /* CONTRACT ID           */02550099
+            CON.IAGRENO                    , /* TERMS AND CONDITIONS  */02560099
+            OFF.IOFFNIK                    , /* OFFERING NICKNAME     */02570099
+            OVS.IOVSNIK                    , /* OBJ OF SERVICE NICKN  */02580099
+                                                  /* SOC CEDS00000512 */02590099
+       /*   OBJ.IOBJNIK                    , /* TIER                  */02600099
+           OBJ1.IOBJNIK AS MAIN_OBJECT     , /*OBJECT NICKNAME        */02610099
+           OBJ2.IOBJNIK AS MAIN_OBJECT_COMP, /*TIER: SUBSTR(OBJ2.IOBJN*/02620099
+                                                  /* EOC CEDS00000512 */02630099
+            CCT.DAGRCAS                    , /*START DATE CONTR.COMPON*/02640099
+            CCT.DAGRVEX                    , /* STOP DATE CONTR.COMPON*/02650099
+            OVC.DAGREFF                    , /* START OBJECT OF SERV  */02660099
+            OVC.DAGREXP                    , /* STOP OBJECT OF SERVICE*/02670099
+            OVS.ICUSUSE                    , /* OBJECT OF SERVICE USER*/02680099
+            USC.IUSCNIK                    , /*SERVICE CONDITION NICKN*/02690099
+            CON.FAGRINT                      /* INTERN. CONTRACT FLAG */02700099
+                                                                        02710099
+        FROM QCHVCON1 CON ,                                             02720099
+             QCHVCCT1 CCT ,                                             02730099
+             QCHVOVS1 OVS ,                                             02740099
+             QCHVOVC1 OVC ,                                             02750099
+             QCHVOFF1 OFF ,                                             02760099
+    /*       QCHVOBJ1 OBJ ,                       /* SOC CEDS00000512 */02770099
+             QCHVOBJ1 OBJ1 ,                                            02780099
+             QCHVOBJ1 OBJ2 ,                      /* EOC CEDS00000512 */02790099
+             QCHVUSC1 USC ,                                             02800099
+             QCHVLIO1 LIO                                               02810099
+                                                                        02820099
+    WHERE CON.IOPUCTY = :WRK_CTRYNO                                     02830099
+      AND CON.IOPUCTY = CCT.IOPUCTY                                     02840099
+      AND CON.IAGRCID = CCT.IAGRCID                                     02850099
+      AND LIO.IOPUCTY = CCT.IOPUCTY                                     02860099
+      AND LIO.IAGRCID = CCT.IAGRCID                                     02870099
+      AND LIO.LDBSOSN = CCT.LDBSOSN                                     02880099
+      AND CCT.LOFFIDX = OFF.LOFFIDX                                     02890099
+      AND CCT.IOPUCTY = OFF.IOPUCTY                                     02900099
+      AND LIO.LXXXIDX = OVS.LOVSIDX                                     02910099
+ /*   AND OVS.LOBJIDX = OBJ.LOBJIDX     */            /* CEDS00000512 */02920099
+      AND OVS.LOBJIDX = OBJ1.LOBJIDX                  /* CEDS00000512 */02930099
+      AND OVS.LOVSIDX = OVC.LOVSIDX                                     02940099
+ /*   AND OVC.LOBJIDX = OBJ.LOBJIDX     */            /* CEDS00000512 */02950099
+      AND OVC.LOBJIDX = OBJ2.LOBJIDX                  /* CEDS00000512 */02960099
+      AND OVC.LUSCIDX = USC.LUSCIDX                                     02970099
+      AND OVC.LUSCIDX <> 0                                              02980099
+      AND CON.IAGRDPC = 'C'                                /* ONLY CON*/02990099
+      AND :WRK_RUN_DATE BETWEEN CON.DAGRCAS AND CON.DAGRVEX/* ONLY ACT*/03000099
+      AND :WRK_RUN_DATE BETWEEN CCT.DAGRCAS AND CCT.DAGRVEX/* ONLY ACT*/03010099
+      AND :WRK_RUN_DATE BETWEEN OVC.DAGREFF AND OVC.DAGREXP/* ONLY ACT*/03020099
+                                                                        03030099
+ UNION                                                                  03040099
+                                              /* MAINTENANCE UPGRADES */03050099
+  SELECT    CON.IOPUCTY                  , /* COUNTRY                 */03060099
+            CON.IAGRCID                  , /* CONTRACT ID             */03070099
+            CON.IAGRENO                  , /* TERMS AND CONDITIONS    */03080099
+            OFF.IOFFNIK                  , /* OFFERING NICKNAME       */03090099
+            OVS.IOVSNIK                  , /* OBJ OF SERVICE NICKNAME */03100099
+                                                  /* SOC CEDS00000512 */03110099
+  /*        OBJ.IOBJNIK                  , /* TIER                    */03120099
+           OBJ1.IOBJNIK AS MAIN_OBJECT     , /*OBJECT NICKNAME        */03130099
+           OBJ2.IOBJNIK AS MAIN_OBJECT_COMP, /*TIER: SUBSTR(OBJ2.IOBJN*/03140099
+                                                  /* EOC CEDS00000512 */03150099
+            CCT.DAGRCAS                  , /* START DATE CONTR.COMPON */03160099
+            CCT.DAGRVEX                  , /* STOP DATE CONTR.COMPON  */03170099
+            OVC.DAGREFF                  , /* START OBJECT OF SERVICE */03180099
+            OVC.DAGREXP                  , /* STOP OBJECT OF SERVICE  */03190099
+            OVS.ICUSUSE                  , /* OBJECT OF SERVICE USER  */03200099
+            ' ' AS IUSCNIK               , /* SERV. CONDITION NICKNAME*/03210099
+            CON.FAGRINT                    /* INTERN. CONTRACT FLAG   */03220099
+                                                                        03230099
+        FROM QCHVCON1 CON ,                                             03240099
+             QCHVCCT1 CCT ,                                             03250099
+             QCHVOVS1 OVS ,                                             03260099
+             QCHVOVC1 OVC ,                                             03270099
+             QCHVOFF1 OFF ,                                             03280099
+    /*       QCHVOBJ1 OBJ ,                       /* SOC CEDS00000512 */03290099
+             QCHVOBJ1 OBJ1 ,                                            03300099
+             QCHVOBJ1 OBJ2 ,                      /* EOC CEDS00000512 */03310099
+             QCHVLIO1 LIO                                               03320099
+                                                                        03330099
+    WHERE CON.IOPUCTY = :WRK_CTRYNO                                     03340099
+      AND CON.IOPUCTY = CCT.IOPUCTY                                     03350099
+      AND CON.IAGRCID = CCT.IAGRCID                                     03360099
+      AND LIO.IOPUCTY = CCT.IOPUCTY                                     03370099
+      AND LIO.IAGRCID = CCT.IAGRCID                                     03380099
+      AND LIO.LDBSOSN = CCT.LDBSOSN                                     03390099
+      AND CCT.LOFFIDX = OFF.LOFFIDX                                     03400099
+      AND CCT.IOPUCTY = OFF.IOPUCTY                                     03410099
+      AND LIO.LXXXIDX = OVS.LOVSIDX                                     03420099
+ /*   AND OVS.LOBJIDX = OBJ.LOBJIDX  */              /* CEDS00000512 */ 03430099
+      AND OVS.LOBJIDX = OBJ1.LOBJIDX                 /* CEDS00000512 */ 03440099
+      AND OVS.LOVSIDX = OVC.LOVSIDX                                     03450099
+ /*   AND OVC.LOBJIDX = OBJ.LOBJIDX  */              /* CEDS00000512 */ 03460099
+      AND OVC.LOBJIDX = OBJ2.LOBJIDX                 /* CEDS00000512 */ 03470099
+      AND OVC.LUSCIDX = 0                              /* CHIS CHANGE */03480099
+      AND CON.IAGRDPC = 'C'                                /* ONLY CON*/03490099
+      AND :WRK_RUN_DATE BETWEEN CON.DAGRCAS AND CON.DAGRVEX/* ONLY ACT*/03500099
+      AND :WRK_RUN_DATE BETWEEN CCT.DAGRCAS AND CCT.DAGRVEX/* ONLY ACT*/03510099
+      AND :WRK_RUN_DATE BETWEEN OVC.DAGREFF AND OVC.DAGREXP/* ONLY ACT*/03520099
+   ;                                                                    03530099
+1/********************************************************************/ 03550699
+ /*                 S T A R T   P R O C E S S I N G                  */ 03551099
+ /********************************************************************/ 03560099
+ CALL RCBBKBM_INIT_PROG;                                                03570099
+                                                                        03580099
+ DO WHILE (WRK_CTRYNO_NO <= COUNTRY_AREA.COUNT_CTRY);                   03590099
+   CALL RCBBKBM_INIT_COUNTRY;                                           03600099
+   CALL RCBBKBM_FETCH_CURSOR;                                           03610099
+     DO WHILE(SW_PROCESS = TRUE);                                       03620099
+           IF SW_SKIP = FALSE                                           03630099
+           THEN                                                         03640099
+             DO;                                                        03650099
+               CALL RCBBKBM_WRITE_REC;                                  03660099
+             END;                                                       03670099
+           ELSE                                                         03680099
+             DO;                                                        03690099
+               WRK_REJECT_CNT =  WRK_REJECT_CNT + 1;                    03700099
+             END;                                                       03710099
+       CALL RCBBKBM_FETCH_CURSOR;                                       03720099
+     END;                                                               03730099
+   CALL RCBBKBM_END_COUNTRY;                                            03740099
+ END;                                                                   03750099
+                                                                        03760099
+ CALL RCBBKBM_END_PROG;                                                 03770099
+                                                                        03780099
+1/********************************************************************/ 03790099
+ /*                                                                  */ 03800099
+ /* MODULE NAME      : RCBBKBM_INIT_PROG                             */ 03810099
+ /*                                                                  */ 03820099
+ /* DESCRIPTION      : INITIAL ACTIONS FOR THE PROGRAM               */ 03830099
+ /*                                                                  */ 03840099
+ /********************************************************************/ 03850099
+ RCBBKBM_INIT_PROG : PROC;                                              03860099
+                                                                        03870099
+ PTR_INT_AREA       =  ADDR (PARM_INT_AREA);                            03880099
+ PTR_RETURN_AREA    =  ADDR (RETURN_AREA);                              03890099
+ PTR_COUNTRY_AREA   =  ADDR (COUNTRY_AREA);                             03900099
+ PTR_RUN_DATE_AREA  =  ADDR (RUN_DATE_AREA);                            03910099
+                                                                        03920099
+ PTR_RCBV500        =  ADDR (TB_RCBV500);                               03930099
+ PTR_RCBV500I       =  ADDR (TB_RCBV500_I);                             03940099
+ PTR_RCBV470        =  ADDR (TB_RCBV470);                               03950099
+ PTR_RCBV470I       =  ADDR (TB_RCBV470_I);                             03960099
+ PTR_RCBV640        =  ADDR (TB_RCBV640);                               03970099
+ PTR_RCBV640I       =  ADDR (TB_RCBV640_I);                             03980099
+                                             /* INITIALISE VARIABLES */ 03990099
+ PARM_INT_AREA.MSG_AREA       = '';                                     04000099
+ PARM_INT_AREA.ERR_AREA       = ' ';                                    04010099
+ PARM_INT_AREA.MSG_REQUEST    = 'O';                                    04020099
+ PARM_INT_AREA.MSG_TARGET     = 'F';                                    04030099
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';                                  04040099
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PRG_NAME;                           04050099
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;                           04060099
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;                                      04070099
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;                        04080099
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;                                   04090099
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;                                   04100099
+                                                                        04110099
+ CALL RCB0M1M (PTR_INT_AREA);                                           04120099
+                                                                        04130099
+ CALL RCB0T1M (PTR_INT_AREA);              /* RETRIEVE SYSTEM DATE   */ 04140099
+  WRK_CREATION_DATE = PARM_INT_AREA.SYSTEM_DATE;                        04150099
+                                                                        04160099
+ CALL RCB019M (PTR_COUNTRY_AREA,PTR_INT_AREA);                          04170099
+                                                                        04180099
+ IF COUNTRY_AREA.COUNT_CTRY = 0                                         04190099
+ THEN DO;                                                               04200099
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';                              04210099
+     PARM_INT_AREA.MSG_VAR_CODES     = '';                              04220099
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';                            04230099
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';                          04240099
+     CALL RCB0M1M (PTR_INT_AREA);                                       04250099
+     CALL RCBBKBM_ERROR (NULL, 'OTHER', '#001');                        04260099
+ END;                                                                   04270099
+                                                                        04280099
+               /* RETRIEVE PREVIOUS FILE SEQUENCE NUMBER FROM RCB035 */ 04290099
+                                                                        04300099
+ TB_RCBV500                  = '';                                      04310099
+ TB_RCBV500_I                = '';                                      04320099
+ TB_RCB035.NUMBER            = 'RCB035';                                04330099
+                                                                        04340099
+ TB_RCB035.PROC_ID           = COUNTRY_AREA.PROC_ID;                    04350099
+ TB_RCB035.SEQ_NR            = '02';                                    04360099
+ TB_RCB035.FILLER_G1         = COUNTRY_AREA.CTRYNO(1);                  04370099
+                                                                        04380099
+0CALL RCBI50M ('R',                                                     04390099
+               PTR_RCBV500,                                             04400099
+               PTR_RCBV500I,                                            04410099
+               PTR_RETURN_AREA,                                         04420099
+               PTR_INT_AREA);                                           04430099
+                                                                        04440099
+ SELECT (RETURN_AREA.RETURN_CODE);                                      04450099
+   WHEN (0)                                                             04460099
+     DO;                                                                04470099
+       RCB035 = TB_RCB035 , BY NAME;                                    04480099
+       WRK_FILE_SEQ = RCB035.FILE_SEQ_NUM_SC + 1;                       04490099
+     END;                                                               04500099
+   WHEN (4)                                                             04510099
+     DO;                                                                04520099
+       WRK_FILE_SEQ = 1;                                                04530099
+                                           /* ISSUE MESSAGE TO USER */  04540099
+       PARM_INT_AREA.MSG_VAR_CODES      = '';                           04550099
+       PARM_INT_AREA.MESSAGE_TYPE       = 'IS';                         04560099
+       PARM_INT_AREA.MESSAGE_NUMBER     = 'I050';                       04570099
+       PARM_INT_AREA.MSG_VAR_CODE_6     = 'PN';                         04580099
+       PARM_INT_AREA.MSG_VAR_VALUE_6    = 'RCB035';                     04590099
+       PARM_INT_AREA.MSG_VAR_CODE_7     = 'PK';                         04600099
+       PARM_INT_AREA.MSG_VAR_VALUE_7    = TB_RCBV500.PARAMETER_KEY;     04610099
+       CALL RCB0M1M (PTR_INT_AREA);                                     04620099
+     END;                                                               04630099
+   OTHERWISE                                                            04640099
+     DO;                                                                04650099
+       CALL RCBBKBM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),               04660099
+                           'DB2','#002');                               04670099
+     END;                                                               04680099
+ END;                                                                   04690099
+                                                                        04700099
+ OPEN FILE (RCBBKB0);                                                   04710099
+                                                                        04720099
+ CALL RCBBKBM_PROCESS_HEADER;                                           04730099
+                                                                        04740099
+ END RCBBKBM_INIT_PROG;                                                 04750099
+                                                                        04760099
+1/********************************************************************/ 04770099
+ /*                                                                  */ 04780099
+ /* MODULE NAME      : RCBBKBM_PROCESS_HEADER                        */ 04790099
+ /*                                                                  */ 04800099
+ /* DESCRIPTION      : PROCESS HEADER FOR OUTPUT FILE RCBBKB0        */ 04810099
+ /*                                                                  */ 04820099
+ /********************************************************************/ 04830099
+ RCBBKBM_PROCESS_HEADER : PROC;                                         04840099
+                                                                        04850099
+  RCBBKB0_REC                = '';                                      04860099
+  RCBBKB0_HDR.RECORD_TYPE    =  'C000';                                 04870099
+  RCBBKB0_HDR.CREATION_DATE  =  WRK_CREATION_DATE;                      04880099
+  RCBBKB0_HDR.FILE_SEQ_NBR   =  WRK_FILE_SEQ;                           04890099
+  RCBBKB0_HDR.FILE_NAME      =  'CHIS UPGRADE DATA';                    04900099
+                                                                        04910099
+  WRITE FILE(RCBBKB0) FROM(RCBBKB0_REC);                                04920099
+                                                                        04930099
+  RCBBKB0_CNT = RCBBKB0_CNT + 1;                                        04940099
+                                                                        04950099
+ END RCBBKBM_PROCESS_HEADER;                                            04960099
+                                                                        04970099
+1/********************************************************************/ 04980099
+ /*                                                                  */ 04990099
+ /* MODULE NAME      : RCBBKBM_INIT_COUNTRY                          */ 05000099
+ /*                                                                  */ 05010099
+ /* DESCRIPTION      : INITIAL ACTIONS FOR A COUNTRY                 */ 05020099
+ /*                                                                  */ 05030099
+ /********************************************************************/ 05040099
+ RCBBKBM_INIT_COUNTRY : PROC;                                           05050099
+                                                                        05060099
+ SW_PROCESS = TRUE;                                                     05070099
+                                                                        05080099
+ WRK_PROC_ID      = COUNTRY_AREA.PROC_ID;                               05090099
+ WRK_CTRYNO       = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).CTRYNO;      05100099
+ WRK_PGR_TYPE     = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).PGR_TYPE;    05110099
+                                                                        05120099
+                                              /* RETRIEVE RUN DATE */   05130099
+ RUN_DATE_AREA.PROC_ID          =  WRK_PROC_ID;                         05140099
+ RUN_DATE_AREA.CTRYNO           =  WRK_CTRYNO;                          05150099
+ RUN_DATE_AREA.PGR_TYPE         =  WRK_PGR_TYPE;                        05160099
+                                                                        05170099
+ CALL RCB020M (PTR_RUN_DATE_AREA, PTR_INT_AREA);                        05180099
+                                                                        05190099
+ IF RUN_DATE_AREA.RUN_DATE      = ''   THEN    /* NO RUN DATE FOUND */  05200099
+   WRK_RUN_DATE  = PARM_INT_AREA.SYSTEM_DATE;                           05210099
+ ELSE                                                                   05220099
+   WRK_RUN_DATE  = RUN_DATE_AREA.RUN_DATE;                              05230099
+                                                                        05240099
+ PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;                           05250099
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                 05260099
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';                               05270099
+ PARM_INT_AREA.MSG_VAR_CODES    = '';                                   05280099
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';                                 05290099
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_CTRYNO;                           05300099
+ PARM_INT_AREA.MSG_VAR_CODE_7   = 'DT';                                 05310099
+ PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_RUN_DATE;                         05320099
+ CALL RCB0M1M (PTR_INT_AREA);                                           05330099
+                                                                        05340099
+ CALL RCBBKBM_OPEN_CURSOR;                                              05350099
+                                                                        05360099
+ END RCBBKBM_INIT_COUNTRY;                                              05370099
+                                                                        05380099
+1/********************************************************************/ 05390099
+ /*                                                                  */ 05400099
+ /* MODULE NAME      : RCBBKBM_OPEN_CURSOR                           */ 05410099
+ /*                                                                  */ 05420099
+ /* DESCRIPTION      : OPEN CURSOR CURS_UPGRADES                     */ 05430099
+ /*                                                                  */ 05440099
+ /********************************************************************/ 05450099
+ RCBBKBM_OPEN_CURSOR : PROC;                                            05460099
+                                                                        05470099
+ EXEC SQL                                                               05480099
+   OPEN CURS_UPGRADES                                                   05490099
+   ;                                                                    05500099
+ IF SQLCA.SQLCODE ¬= 0                                                  05510099
+ THEN                                                                   05520099
+   DO;                                                                  05530099
+     CALL RCBBKBM_ERROR (ADDR (SQLCA),                                  05540099
+                        'DB2',                                          05550099
+                        '#003');                                        05560099
+   END;                                                                 05570099
+ END RCBBKBM_OPEN_CURSOR;                                               05580099
+                                                                        05590099
+1/********************************************************************/ 05600099
+ /*                                                                  */ 05610099
+ /* MODULE NAME      : RCBBKBM_FETCH_CURSOR                           */05620099
+ /*                                                                  */ 05630099
+ /* DESCRIPTION      : FETCH CURSOR CURS_UPGRADES                     */05640099
+ /*                                                                  */ 05650099
+ /********************************************************************/ 05660099
+ RCBBKBM_FETCH_CURSOR : PROC;                                           05670099
+                                                                        05680099
+ WRK_OU        =  '';                                                   05690099
+ STRUC_FETCH   =  '';                                                   05700099
+ STRUC_FETCH_I =  '';                                                   05710099
+ SW_SKIP = FALSE;                                                       05720099
+ EXEC SQL                                                               05730099
+   FETCH CURS_UPGRADES                                                  05740099
+   INTO :STRUC_FETCH :STRUC_FETCH_I.INDNULL                             05750099
+   ;                                                                    05760099
+ SELECT(SQLCA.SQLCODE);                                                 05770099
+   WHEN(100)                                                            05780099
+     DO;                                                                05790099
+       SW_PROCESS = FALSE;                                              05800099
+     END;                                                               05810099
+   WHEN(0)                                                              05820099
+     DO;                                                                05830099
+       WRK_UPG_CNT = WRK_UPG_CNT + 1;                                   05840099
+       CALL RCBBKBM_VERIFY_OFFID;                   /* CHECK IN T691 */ 05850099
+       IF SW_SKIP = FALSE                                               05860099
+       THEN                                                             05870099
+        DO;                                         /* CHECK IN T300 */ 05880099
+           CALL RCBBKBM_SRCH_MODEL_OU;                                  05890099
+           CALL RCBBKBM_SEARCH_SLC;                                     05900099
+           CALL RCBBKBM_SEARCH_SERV_TIME;                               05910099
+           CALL RCBBKBM_SEARCH_SERV_TYPE;                               05920099
+         END;                                                           05930099
+     END;                                                               05940099
+   OTHERWISE                                                            05950099
+     DO;                                                                05960099
+       CALL RCBBKBM_ERROR (ADDR (SQLCA),                                05970099
+                          'DB2',                                        05980099
+                          '#004');                                      05990099
+     END;                                                               06000099
+ END;                                                                   06010099
+ END RCBBKBM_FETCH_CURSOR;                                              06020099
+                                                                        06030099
+1/********************************************************************/ 06040099
+ /*                                                                  */ 06050099
+ /* MODULE NAME      : RCBBKBM_VERIFY_OFFID                          */ 06060099
+ /*                                                                  */ 06070099
+ /* DESCRIPTION      : VERIFY TYPE OF OFFERING FIELD IN T691         */ 06080099
+ /*                                                                  */ 06090099
+ /********************************************************************/ 06100099
+ RCBBKBM_VERIFY_OFFID : PROC;                                           06110099
+                                                                        06120099
+ WRK_UPG_TYPE              = '';                                        06130099
+ WRK_MACH_TYPE             = '';                                        06140099
+ WRK_ORIGIN                = '';                                        06150099
+ WRK_MODEL                 = '';                                        06160099
+ WRK_SEQUENCE              = '';                                        06170099
+ POS_TYPE                  = 0;                                         06180099
+ POS_MODEL                 = 0;                                         06190099
+ POS_ORIGIN                = 0;                                         06200099
+ POS_SER7                  = 0;                                         06210099
+ CHIS_MODEL                = FALSE;                                     06220099
+ TB_RCBV691                = '';                                        06230099
+                                                                        06240099
+ EXEC SQL                                                               06250099
+   SELECT TYPE_OF_OFFERING, TOS_FORMAT                                  06260099
+   INTO :TB_RCBV691.TYPE_OF_OFFERING    :WRK_INDNULL,                   06270099
+        :TB_RCBV691.TOS_FORMAT          :WRK_INDNULL                    06280099
+   FROM RCBV0691_TRANS_OFF                                              06290099
+   WHERE COUNTRY_NUMBER   = :STRUC_FETCH.IOPUCTY                        06300099
+     AND OFFERING_ID      = :STRUC_FETCH.IOFFNIK  /* OFF NICK NAME */   06310099
+ ;                                                                      06320099
+                                                                        06330099
+ SELECT (SQLCA.SQLCODE);                                                06340099
+   WHEN (0)                                                             06350099
+     DO;                                                                06360099
+       SELECT (TB_RCBV691.TYPE_OF_OFFERING);                            06370099
+         WHEN ('WSU')                                                   06380099
+           DO;                                                          06390099
+             WRK_UPG_TYPE = 'W';                                        06400099
+           END;                                                         06410099
+         WHEN ('MSU')                                                   06420099
+           DO;                                                          06430099
+             WRK_UPG_TYPE = 'M';                                        06440099
+           END;                                                         06450099
+         OTHERWISE                                                      06460099
+           DO;                                 /* REJECT AND REPORT */  06470099
+             SW_SKIP        =  TRUE;                                    06480099
+                                         /* ISSUE A MESSAGE TO USER */  06490099
+             PARM_INT_AREA.MSG_VAR_CODES      = '';                     06500099
+             PARM_INT_AREA.MESSAGE_TYPE       = 'BU';                   06510099
+             PARM_INT_AREA.MESSAGE_NUMBER     = '0260';                 06520099
+             PARM_INT_AREA.MSG_VAR_CODE_6     = 'CY';                   06530099
+             PARM_INT_AREA.MSG_VAR_VALUE_6    = STRUC_FETCH.IOPUCTY;    06540099
+             PARM_INT_AREA.MSG_VAR_CODE_7     = 'FN';                   06550099
+             PARM_INT_AREA.MSG_VAR_VALUE_7    = 'OFFERING_ID';          06560099
+             PARM_INT_AREA.MSG_VAR_CODE_8     = 'FV';                   06570099
+             PARM_INT_AREA.MSG_VAR_VALUE_8    = STRUC_FETCH.IOFFNIK;    06580099
+             PARM_INT_AREA.MSG_VAR_CODE_9     = 'FN';                   06590099
+             PARM_INT_AREA.MSG_VAR_VALUE_9    = 'TYPE_OF_OFFERING';     06600099
+             PARM_INT_AREA.MSG_VAR_CODE_10    = 'FV';                   06610099
+             PARM_INT_AREA.MSG_VAR_VALUE_10   =                         06620099
+                                            TB_RCBV691.TYPE_OF_OFFERING;06630099
+             CALL RCB0M1M (PTR_INT_AREA);                               06640099
+                                                                        06650099
+           END;                                                         06660099
+       END;                                                             06670099
+                                                                        06680099
+       POS_TYPE   = INDEX(TB_RCBV691.TOS_FORMAT,'TTTT');                06690099
+       POS_MODEL  = INDEX(TB_RCBV691.TOS_FORMAT,'MMM');                 06700099
+       POS_ORIGIN = INDEX(TB_RCBV691.TOS_FORMAT,'OO');                  06710099
+       POS_SER7   = INDEX(TB_RCBV691.TOS_FORMAT,'SSSSSSS');             06720099
+                                                                        06730099
+       WRK_MACH_TYPE  = SUBSTR(STRUC_FETCH.IOVSNIK,POS_TYPE,4);         06740099
+       WRK_ORIGIN     = SUBSTR(STRUC_FETCH.IOVSNIK,POS_ORIGIN,2);       06750099
+       IF POS_MODEL  ¬= 0                                               06760099
+       THEN                                                             06770099
+         DO;                                                            06780099
+           CHIS_MODEL = TRUE;                                           06790099
+           WRK_MODEL  = SUBSTR(STRUC_FETCH.IOVSNIK,POS_MODEL,3);        06800099
+         END;                                                           06810099
+       IF POS_SER7 = 0 THEN                                             06820099
+         DO;                                                            06830099
+           POS_SER5      =  INDEX(TB_RCBV691.TOS_FORMAT,'SSSSS');       06840099
+           WRK_SERIAL    =  SUBSTR(STRUC_FETCH.IOVSNIK,POS_ORIGIN,2)    06850099
+                            || '00'                                     06860099
+                            || SUBSTR(STRUC_FETCH.IOVSNIK,POS_SER5,5);  06870099
+           WRK_SEQUENCE  =  '00'                                        06880099
+                            || SUBSTR(STRUC_FETCH.IOVSNIK,POS_SER5,5);  06890099
+         END;                                                           06900099
+       ELSE                                                             06910099
+         DO;                                                            06920099
+           WRK_SERIAL    =  SUBSTR(STRUC_FETCH.IOVSNIK,POS_ORIGIN,2)    06930099
+                            || SUBSTR(STRUC_FETCH.IOVSNIK,POS_SER7,7);  06940099
+           WRK_SEQUENCE  =  SUBSTR(STRUC_FETCH.IOVSNIK,POS_SER7,7);     06950099
+         END;                                                           06960099
+     END;                                                               06970099
+   WHEN (100)                                                           06980099
+     DO;                                                                06990099
+       SW_SKIP = TRUE;                                                  07000099
+                                           /* ISSUE A MESSAGE TO USER */07010099
+       PARM_INT_AREA.MSG_VAR_CODES    = '';                             07020099
+       PARM_INT_AREA.MESSAGE_TYPE     = 'BU';                           07030099
+       PARM_INT_AREA.MESSAGE_NUMBER   = '0244';                         07040099
+       PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';                           07050099
+       PARM_INT_AREA.MSG_VAR_VALUE_6  = STRUC_FETCH.IOPUCTY;            07060099
+       PARM_INT_AREA.MSG_VAR_CODE_7   = 'FN';                           07070099
+       PARM_INT_AREA.MSG_VAR_VALUE_7  = 'OFFERING_ID';                  07080099
+       PARM_INT_AREA.MSG_VAR_CODE_8   = 'FV';                           07090099
+       PARM_INT_AREA.MSG_VAR_VALUE_8  = STRUC_FETCH.IOFFNIK;            07100099
+       CALL RCB0M1M (PTR_INT_AREA);                                     07110099
+     END;                                                               07120099
+   OTHERWISE                                                            07130099
+     DO;                                                                07140099
+       CALL RCBBKBM_ERROR (ADDR (SQLCA),                                07150099
+                          'DB2',                                        07160099
+                          '#005');                                      07170099
+     END;                                                               07180099
+ END;                                                                   07190099
+                                                 /* SOC CEDS00000535 */ 07200099
+ PARM_INT_AREA.SEQUENCE_KEY = STRUC_FETCH.IOPUCTY                       07210099
+                           ||WRK_MACH_TYPE                              07220099
+                           ||WRK_SERIAL;                                07230099
+                                                 /* EOC CEDS00000535 */ 07240099
+                                                                        07250099
+ END RCBBKBM_VERIFY_OFFID;                                              07260099
+                                                                        07270099
+1/********************************************************************/ 07280099
+ /*                                                                  */ 07290099
+ /* MODULE NAME      : RCBBKBM_SRCH_MODEL_OU                         */ 07300099
+ /*                                                                  */ 07310099
+ /* DESCRIPTION      : RETRIEVE MODEL NUMBER AND OU CODE FOR THE     */ 07320099
+ /*                    UPGRADE                                       */ 07330099
+ /*                                                                  */ 07340099
+ /********************************************************************/ 07350099
+ RCBBKBM_SRCH_MODEL_OU : PROC;                                          07360099
+                                                                        07370099
+ TB_RCBV170             = '';                                           07380099
+ TB_RCBV300             = '';                                           07390099
+                                                                        07400099
+ EXEC SQL                                                               07410099
+   SELECT MODEL_NUMBER                                                  07420099
+   INTO :TB_RCBV300.MODEL_NUMBER   :WRK_INDNULL                         07430099
+   FROM RCBV0300_HW_REAL                                                07440099
+   WHERE COUNTRY_NUMBER   = :STRUC_FETCH.IOPUCTY                        07450099
+     AND PRODUCT_TYPE     = :WRK_MACH_TYPE                              07460099
+     AND ORIGIN           = :WRK_ORIGIN                                 07470099
+     AND SEQUENCE_NUMBER  = :WRK_SEQUENCE                               07480099
+     AND :WRK_RUN_DATE BETWEEN EFFECTIVE_DATE AND END_DATE              07490099
+ ;                                                                      07500099
+ SELECT (SQLCA.SQLCODE);                                                07510099
+   WHEN (0)                                                             07520099
+     DO;                                                                07530099
+       WRK_MODEL = TB_RCBV300.MODEL_NUMBER;                             07540099
+                                       /* RETRIEVE OU CODE FROM T170 */ 07550099
+       EXEC SQL                                                         07560099
+         SELECT OU_CODE                                                 07570099
+         INTO :TB_RCBV170.OU_CODE        :WRK_INDNULL                   07580099
+         FROM RCBV0170_OU_HW                                            07590099
+         WHERE COUNTRY_NUMBER   = :STRUC_FETCH.IOPUCTY                  07600099
+           AND PRODUCT_TYPE     = :WRK_MACH_TYPE                        07610099
+           AND ORIGIN           = :WRK_ORIGIN                           07620099
+           AND SEQUENCE_NUMBER  = :WRK_SEQUENCE                         07630099
+           AND :WRK_RUN_DATE BETWEEN EFFECTIVE_DATE AND END_DATE        07640099
+       ;                                                                07650099
+       SELECT (SQLCA.SQLCODE);                                          07660099
+       WHEN (0)                                                         07670099
+         DO;                                                            07680099
+           WRK_OU = TB_RCBV170.OU_CODE;                                 07690099
+         END;                                                           07700099
+       WHEN (100);                                                      07710099
+       OTHERWISE                                                        07720099
+         DO;                                                            07730099
+           CALL RCBBKBM_ERROR (ADDR (SQLCA),                            07740099
+                              'DB2',                                    07750099
+                              '#007');                                  07760099
+         END;                                                           07770099
+       END;                                                             07780099
+     END;                                                               07790099
+   WHEN (100)                                                           07800099
+     DO;                                                                07810099
+       CALL RCBBKBM_SEARCH_T051;                                        07820099
+     END;                                                               07830099
+   OTHERWISE                                                            07840099
+     DO;                                                                07850099
+       CALL RCBBKBM_ERROR (ADDR (SQLCA),                                07860099
+                          'DB2',                                        07870099
+                          '#006');                                      07880099
+     END;                                                               07890099
+ END;                                                                   07900099
+                                                                        07910099
+ END RCBBKBM_SRCH_MODEL_OU;                                             07920099
+                                                                        07930099
+ /********************************************************************/ 07940099
+ /*                                                                  */ 07950099
+ /* MODULE NAME      : RCBBKBM_SEARCH_T051                           */ 07960099
+ /*                                                                  */ 07970099
+ /* DESCRIPTION      : CHECK IN T051 FOR MODEL NUMBER AND OU CODE    */ 07980099
+ /*                                                                  */ 07990099
+ /********************************************************************/ 08000099
+ RCBBKBM_SEARCH_T051 : PROC;                                            08010099
+                                                                        08020099
+ TB_RCBV051                   = '';                                     08030099
+                                                                        08040099
+  EXEC SQL                                                              08050099
+    SELECT MODEL_NUMBER,OU_CODE                                         08060099
+    INTO   :TB_RCBV051.MODEL_NUMBER  :WRK_INDNULL,                      08070099
+           :TB_RCBV051.OU_CODE       :WRK_INDNULL                       08080099
+    FROM   RCBV0051_PI_HW_PR                                            08090099
+    WHERE  COUNTRY_NUMBER     = :STRUC_FETCH.IOPUCTY                    08100099
+      AND  PRODUCT_TYPE       = :WRK_MACH_TYPE                          08110099
+      AND  ORIGIN             = :WRK_ORIGIN                             08120099
+      AND  SEQUENCE_NUMBER    = :WRK_SEQUENCE                           08130099
+ ;                                                                      08140099
+                                                                        08150099
+ SELECT (SQLCA.SQLCODE);                                                08160099
+ WHEN (0)                                                               08170099
+   DO;                                                                  08180099
+     WRK_MODEL =  TB_RCBV051.MODEL_NUMBER;                              08190099
+     WRK_OU    =  TB_RCBV051.OU_CODE;                                   08200099
+   END;                                                                 08210099
+ WHEN (100)                                                             08220099
+   DO;                                                                  08230099
+    IF CHIS_MODEL = FALSE                                               08240099
+    THEN DO;                               /* ISSUE A MESSAGE TO USER */08250099
+       PARM_INT_AREA.MSG_VAR_CODES      = '';                           08260099
+       PARM_INT_AREA.MESSAGE_TYPE       = 'BU';                         08270099
+       PARM_INT_AREA.MESSAGE_NUMBER     = '0261';                       08280099
+       PARM_INT_AREA.MSG_VAR_CODE_6     = 'CY';                         08290099
+       PARM_INT_AREA.MSG_VAR_VALUE_6    = STRUC_FETCH.IOPUCTY;          08300099
+       PARM_INT_AREA.MSG_VAR_CODE_7     = 'FN';                         08310099
+       PARM_INT_AREA.MSG_VAR_VALUE_7    = 'IOVSNIK';                    08320099
+       PARM_INT_AREA.MSG_VAR_CODE_8     = 'FV';                         08330099
+       PARM_INT_AREA.MSG_VAR_VALUE_8    = STRUC_FETCH.IOVSNIK;          08340099
+       CALL RCB0M1M (PTR_INT_AREA);                                     08350099
+    END;                                                                08360099
+   END;                                                                 08370099
+ OTHERWISE                                                              08380099
+   DO;                                                                  08390099
+       CALL RCBBKBM_ERROR (ADDR (SQLCA),                                08400099
+                          'DB2',                                        08410099
+                          '#008');                                      08420099
+   END;                                                                 08430099
+ END;                                                                   08440099
+                                                                        08450099
+ END RCBBKBM_SEARCH_T051;                                               08460099
+                                                                        08470099
+1/********************************************************************/ 08480099
+ /*                                                                  */ 08490099
+ /* MODULE NAME      : RCBBKBM_SEARCH_SLC                            */ 08500099
+ /*                                                                  */ 08510099
+ /* DESCRIPTION      : RETRIEVE SLC FROM T400 FOR THE MACHINE        */ 08520099
+ /*                                                                  */ 08530099
+ /********************************************************************/ 08540099
+ RCBBKBM_SEARCH_SLC : PROC;                                             08550099
+                                                                        08560099
+ TB_RCBV400                 = '';                                       08570099
+ SW_DEFAULT_SLC             = FALSE;                 /*  CEDS00000511 */08580099
+ WRK_SLC                    = '';                    /*  CEDS00000511 */08590099
+                                                                        08600099
+ EXEC SQL                                                               08610099
+   SELECT SERVICE_LVL_CODE_1                                            08620099
+   INTO :TB_RCBV400.SERVICE_LVL_CODE_1  :WRK_INDNULL                    08630099
+   FROM RCBV0400_PO_MOD1                                                08640099
+   WHERE COUNTRY_NUMBER   = :STRUC_FETCH.IOPUCTY                        08650099
+     AND PRODUCT_TYPE     = :WRK_MACH_TYPE                              08660099
+     AND MODEL_NUMBER     = :WRK_MODEL                                  08670099
+ ;                                                                      08680099
+ SELECT (SQLCA.SQLCODE);                                                08690099
+   WHEN (0)                                                             08700099
+     DO;                                                                08710099
+      IF WRK_INDNULL < 0                                                08720099
+ /*   THEN  WRK_SLC = '';    */                      /* CEDS00000511 */ 08730099
+      THEN  SW_DEFAULT_SLC = TRUE;                   /* CEDS00000511 */ 08740099
+      ELSE                                                              08750099
+        DO;                                                             08760099
+          WRK_SLC = TB_RCBV400.SERVICE_LVL_CODE_1;                      08770099
+        END;                                                            08780099
+     END;                                                               08790099
+   WHEN (100)                                                           08800099
+     DO;                                                                08810099
+ /*    WRK_SLC = '';   */                            /* CEDS00000511*/  08820099
+       SW_DEFAULT_SLC = TRUE;                        /* CEDS00000511*/  08830099
+     END;                                                               08840099
+   OTHERWISE                                                            08850099
+     DO;                                                                08860099
+       CALL RCBBKBM_ERROR (ADDR (SQLCA),                                08870099
+                          'DB2',                                        08880099
+                          '#009');                                      08890099
+     END;                                                               08900099
+ END;                                                                   08910099
+                                                                        08920099
+ END RCBBKBM_SEARCH_SLC;                                                08930099
+                                                                        08940099
+1/********************************************************************/ 08950099
+ /*                                                                  */ 08960099
+ /* MODULE NAME      : RCBBKBM_SEARCH_SERV_TIME                      */ 08970099
+ /*                                                                  */ 08980099
+ /* DESCRIPTION      : SELECT SERVICE START/ END TIME AND METHOD     */ 08990099
+ /*                                                                  */ 09000099
+ /********************************************************************/ 09010099
+ RCBBKBM_SEARCH_SERV_TIME : PROC;                                       09020099
+                                                                        09030099
+ WRK_SERV_START_TIME(*)      = '';                                      09040099
+ WRK_SERV_STOP_TIME(*)       = '';                                      09050099
+ TB_RCBV470                  = '';                                      09060099
+ TB_RCBV470_I.INDNULL(*)     = 0;                                       09070099
+ TB_RCBV470.SERVICE_LVL_CODE = WRK_SLC;                                 09080099
+                                                                        09090099
+ IF SW_DEFAULT_SLC = TRUE                         /* SOC CEDS00000511 */09100099
+ THEN                                                                   09110099
+  DO;                                                                   09120099
+    WRK_SERV_START_TIME(1) = '00.00.00';                                09130099
+    WRK_SERV_STOP_TIME(1)  = '00.00.00';                                09140099
+    WRK_SERV_START_TIME(2) = '00.00.00';                                09150099
+    WRK_SERV_STOP_TIME(2)  = '00.00.00';                                09160099
+    WRK_SERV_START_TIME(3) = '00.00.00';                                09170099
+    WRK_SERV_STOP_TIME(3)  = '00.00.00';                                09180099
+    WRK_SERV_START_TIME(4) = '00.00.00';                                09190099
+    WRK_SERV_STOP_TIME(4)  = '00.00.00';                                09200099
+    WRK_SERV_START_TIME(5) = '00.00.00';                                09210099
+    WRK_SERV_STOP_TIME(5)  = '00.00.00';                                09220099
+    WRK_SERV_START_TIME(6) = '00.00.00';                                09230099
+    WRK_SERV_STOP_TIME(6)  = '00.00.00';                                09240099
+    WRK_SERV_START_TIME(7) = '00.00.00';                                09250099
+    WRK_SERV_STOP_TIME(7)  = '00.00.00';                                09260099
+    WRK_SERV_METH          = '';                                        09270099
+  END;                                                                  09280099
+ ELSE                                                                   09290099
+  DO;                                             /* EOC CEDS00000511 */09300099
+    CALL RCBISRM (PTR_RCBV470,                                          09310099
+                  PTR_RCBV470I,                                         09320099
+                  PTR_RETURN_AREA,                                      09330099
+                  PTR_INT_AREA);                                        09340099
+                                                                        09350099
+    SELECT(RETURN_AREA.RETURN_CODE);                                    09360099
+     WHEN (0)                                                           09370099
+      DO;                                                               09380099
+        WRK_SERV_START_TIME(1) = TB_RCBV470.COVERAGE_START_1;           09390099
+        WRK_SERV_STOP_TIME(1)  = TB_RCBV470.COVERAGE_END_1;             09400099
+        WRK_SERV_START_TIME(2) = TB_RCBV470.COVERAGE_START_2;           09410099
+        WRK_SERV_STOP_TIME(2)  = TB_RCBV470.COVERAGE_END_2;             09420099
+        WRK_SERV_START_TIME(3) = TB_RCBV470.COVERAGE_START_3;           09430099
+        WRK_SERV_STOP_TIME(3)  = TB_RCBV470.COVERAGE_END_3;             09440099
+        WRK_SERV_START_TIME(4) = TB_RCBV470.COVERAGE_START_4;           09450099
+        WRK_SERV_STOP_TIME(4)  = TB_RCBV470.COVERAGE_END_4;             09460099
+        WRK_SERV_START_TIME(5) = TB_RCBV470.COVERAGE_START_5;           09470099
+        WRK_SERV_STOP_TIME(5)  = TB_RCBV470.COVERAGE_END_5;             09480099
+        WRK_SERV_START_TIME(6) = TB_RCBV470.COVERAGE_START_6;           09490099
+        WRK_SERV_STOP_TIME(6)  = TB_RCBV470.COVERAGE_END_6;             09500099
+        WRK_SERV_START_TIME(7) = TB_RCBV470.COVERAGE_START_7;           09510099
+        WRK_SERV_STOP_TIME(7)  = TB_RCBV470.COVERAGE_END_7;             09520099
+        WRK_SERV_METH          = TB_RCBV470.SERVICE_DLVR_METHD;         09530099
+      END;                                                              09540099
+     OTHERWISE                                                          09550099
+      DO;                                                               09560099
+      /*CALL RCBBKBM_ERROR (ADDR (SQLCA), */      /* SOC CEDS00000535 */09570099
+        CALL RCBBKBM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),              09580099
+                                                  /* EOC CEDS00000535 */09590099
+                           'DB2',                                       09600099
+                           '#010');                                     09610099
+      END;                                                              09620099
+    END;                                                                09630099
+  END;                                                /*CEDS00000511 */ 09640099
+                                                                        09650099
+ END RCBBKBM_SEARCH_SERV_TIME;                                          09660099
+                                                                        09670099
+1/********************************************************************/ 09680099
+ /*                                                                  */ 09690099
+ /* MODULE NAME      : RCBBKBM_SEARCH_SERV_TYPE                      */ 09700099
+ /*                                                                  */ 09710099
+ /* DESCRIPTION      : SELECT SERVICE TYPE                           */ 09720099
+ /*                                                                  */ 09730099
+ /********************************************************************/ 09740099
+ RCBBKBM_SEARCH_SERV_TYPE : PROC;                                       09750099
+                                                                        09760099
+ WRK_SERV_TYPE                 = '';                                    09770099
+ TB_RCBV640                    = '';                                    09780099
+ TB_RCBV640_I.INDNULL(*)       = 0;                                     09790099
+ TB_RCBV640.SERVICE_DLVR_METHD = WRK_SERV_METH;                         09800099
+                                                                        09810099
+ IF SW_DEFAULT_SLC = FALSE                        /* SOC CEDS00000511 */09820099
+ THEN                                                                   09830099
+  DO;                                             /* EOC CEDS00000511 */09840099
+    CALL RCBIBOM (PTR_RCBV640,                                          09850099
+                  PTR_RCBV640I,                                         09860099
+                  PTR_RETURN_AREA,                                      09870099
+                  PTR_INT_AREA,                                         09880099
+                 'SDM');                                                09890099
+                                                                        09900099
+    SELECT(RETURN_AREA.RETURN_CODE);                                    09910099
+     WHEN (0)                                                           09920099
+      DO;                                                               09930099
+        WRK_SERV_TYPE = TB_RCBV640.SERVICE_TYPE;                        09940099
+      END;                                                              09950099
+     WHEN (4)                                     /* SOC CEDS00000535 */09960099
+      DO;                                                               09970099
+        WRK_SERV_TYPE = '';                                             09980099
+              /* ISSUE WARNING MESSAGE WHEN SERVICE TYPE IS NOT FOUND */09980199
+        PARM_INT_AREA.MSG_VAR_CODES   = '';                             09981099
+        PARM_INT_AREA.COUNTRY_NUMBER  = WRK_CTRYNO;                     09982099
+        PARM_INT_AREA.MESSAGE_TYPE    = 'BU';                           09983099
+        PARM_INT_AREA.MESSAGE_NUMBER  = '0231';                         09984099
+        PARM_INT_AREA.MSG_VAR_CODE_8  = 'FN';                           09985099
+        PARM_INT_AREA.MSG_VAR_VALUE_8 = 'SDM';                          09986099
+        PARM_INT_AREA.MSG_VAR_CODE_9  = 'FV';                           09987099
+        PARM_INT_AREA.MSG_VAR_VALUE_9 = WRK_SERV_METH;                  09988099
+        CALL RCB0M1M (PTR_INT_AREA);                                    09989099
+      END;                                        /* EOC CEDS00000535 */09990099
+     OTHERWISE                                                          10000099
+      DO;                                                               10010099
+      /*CALL RCBBKBM_ERROR (ADDR (SQLCA), */      /* SOC CEDS00000535 */10020099
+        CALL RCBBKBM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),              10030099
+                                                  /* EOC CEDS00000535 */10040099
+                           'DB2',                                       10050099
+                           '#011');                                     10060099
+      END;                                                              10070099
+    END;                                                                10080099
+  END;                                                /* CEDS00000511 */10090099
+                                                                        10100099
+ END RCBBKBM_SEARCH_SERV_TYPE;                                          10110099
+                                                                        10120099
+1/********************************************************************/ 10130099
+ /*                                                                  */ 10140099
+ /* MODULE NAME      : RCBBKBM_WRITE_RECORD                          */ 10150099
+ /*                                                                  */ 10160099
+ /* DESCRIPTION      : FILL AND WRITE RECORD TO OUTPUT FILE RCBBKB0  */ 10170099
+ /*                                                                  */ 10180099
+ /********************************************************************/ 10190099
+ RCBBKBM_WRITE_REC : PROC;                                              10200099
+                                                                        10210099
+   RCBBKB0_REC         = '';                                            10220099
+   RCBBKB0_UPG.CDBSFRT = 'C002';                                        10230099
+   RCBBKB0_UPG.IOPUCTY = STRUC_FETCH.IOPUCTY;                           10240099
+   RCBBKB0_UPG.CSLMTYP = WRK_MACH_TYPE;                                 10250099
+   RCBBKB0_UPG.CSLMMOD = WRK_MODEL;                                     10260099
+   RCBBKB0_UPG.IHSIMID = WRK_SERIAL;                                    10270099
+   RCBBKB0_UPG.ICUSHWU = STRUC_FETCH.ICUSUSE;                           10280099
+   RCBBKB0_UPG.IAGRNBR = STRUC_FETCH.IAGRCID;                           10290099
+   IF STRUC_FETCH.DAGREFF > STRUC_FETCH.DAGRCAS THEN                    10300099
+     DO;                                                                10310099
+       RCBBKB0_UPG.DDBSEFF  = STRUC_FETCH.DAGREFF;                      10320099
+       RCBBKB0_UPG.DAGRASS  = STRUC_FETCH.DAGREFF;                      10330099
+     END;                                                               10340099
+   ELSE                                                                 10350099
+     DO;                                                                10360099
+       RCBBKB0_UPG.DDBSEFF  = STRUC_FETCH.DAGRCAS;                      10370099
+       RCBBKB0_UPG.DAGRASS  = STRUC_FETCH.DAGRCAS;                      10380099
+     END;                                                               10390099
+   IF STRUC_FETCH.DAGREXP < STRUC_FETCH.DAGRVEX THEN                    10400099
+     DO;                                                                10410099
+       RCBBKB0_UPG.DDBSIAC = STRUC_FETCH.DAGREXP;                       10420099
+       RCBBKB0_UPG.DAGREXP = STRUC_FETCH.DAGREXP;                       10430099
+     END;                                                               10440099
+   ELSE                                                                 10450099
+     DO;                                                                10460099
+       RCBBKB0_UPG.DDBSIAC = STRUC_FETCH.DAGRVEX;                       10470099
+       RCBBKB0_UPG.DAGREXP = STRUC_FETCH.DAGRVEX;                       10480099
+     END;                                                               10490099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(1) = WRK_SERV_START_TIME(1);             10500099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(1) = WRK_SERV_STOP_TIME(1);              10510099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(2) = WRK_SERV_START_TIME(2);             10520099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(2) = WRK_SERV_STOP_TIME(2);              10530099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(3) = WRK_SERV_START_TIME(3);             10540099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(3) = WRK_SERV_STOP_TIME(3);              10550099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(4) = WRK_SERV_START_TIME(4);             10560099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(4) = WRK_SERV_STOP_TIME(4);              10570099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(5) = WRK_SERV_START_TIME(5);             10580099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(5) = WRK_SERV_STOP_TIME(5);              10590099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(6) = WRK_SERV_START_TIME(6);             10600099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(6) = WRK_SERV_STOP_TIME(6);              10610099
+   RCBBKB0_UPG.SRCCMCV.DAGRMFR(7) = WRK_SERV_START_TIME(7);             10620099
+   RCBBKB0_UPG.SRCCMCV.DAGRMTO(7) = WRK_SERV_STOP_TIME(7);              10630099
+   RCBBKB0_UPG.CCESTSV            = WRK_SERV_TYPE;                      10640099
+   RCBBKB0_UPG.SERVICE_LVL_CODE   = WRK_SLC;                            10650099
+   RCBBKB0_UPG.QCUOHVP            =  '1';                               10660099
+   RCBBKB0_UPG.IAGRNOE            =  'N';                               10670099
+   RCBBKB0_UPG.CODPBUC            =  WRK_OU;                            10680099
+   RCBBKB0_UPG.IAGRTCN            =  STRUC_FETCH.IAGRENO;               10690099
+   RCBBKB0_UPG.FAGRINT            =  STRUC_FETCH.FAGRINT;               10700099
+   RCBBKB0_UPG.ICESMIC            =  0;                                 10710099
+   RCBBKB0_UPG.GCUSCSI(1)         =  '';                                10720099
+   RCBBKB0_UPG.GCUSCSI(2)         =  '';                                10730099
+   RCBBKB0_UPG.GCUSCSI(3)         =  '';                                10740099
+   RCBBKB0_UPG.GCUSCSI(4)         =  '';                                10750099
+   RCBBKB0_UPG.GCUSCSI(5)         =  '';                                10760099
+   RCBBKB0_UPG.PROP_CONTR_IND     =  '';                                10770099
+   RCBBKB0_UPG.UPGRADE_TYPE       =  WRK_UPG_TYPE;                      10780099
+                                                 /* SOC CEDS00000512 */ 10790099
+ /*RCBBKB0_UPG.IOBJNIK            =  STRUC_FETCH.IOBJNIK; */            10800099
+   RCBBKB0_UPG.IOBJNIK            =  STRUC_FETCH.IOBJNIK2;              10810099
+                                                 /* EOC CEDS00000512 */ 10820099
+   RCBBKB0_UPG.IUSCNIK            =  STRUC_FETCH.IUSCNIK;               10830099
+                                                                        10840099
+   WRITE FILE(RCBBKB0) FROM(RCBBKB0_REC);                               10850099
+                                                                        10860099
+   RCBBKB0_CNT = RCBBKB0_CNT + 1;                                       10870099
+                                                                        10880099
+ END RCBBKBM_WRITE_REC;                                                 10890099
+                                                                        10900099
+1/********************************************************************/ 10910099
+ /*                                                                  */ 10920099
+ /* MODULE NAME      : RCBBKBM_END_COUNTRY                           */ 10930099
+ /*                                                                  */ 10940099
+ /* DESCRIPTION      : CLOSE ACTIONS FOR A COUNTRY                   */ 10950099
+ /*                                                                  */ 10960099
+ /********************************************************************/ 10970099
+ RCBBKBM_END_COUNTRY : PROC;                                            10980099
+                                                                        10990099
+ CALL RCBBKBM_CLOSE_CURSOR;                                             11000099
+ WRK_CTRYNO_NO = WRK_CTRYNO_NO + 1;                                     11010099
+                                                                        11020099
+ END RCBBKBM_END_COUNTRY;                                               11030099
+                                                                        11040099
+1/********************************************************************/ 11050099
+ /*                                                                  */ 11060099
+ /* MODULE NAME      : RCBBKBM_CLOSE_CURSOR                          */ 11070099
+ /*                                                                  */ 11080099
+ /* DESCRIPTION      : CLOSE CURSOR CURS_UPGRADES                    */ 11090099
+ /*                                                                  */ 11100099
+ /********************************************************************/ 11110099
+ RCBBKBM_CLOSE_CURSOR : PROC;                                           11120099
+                                                                        11130099
+ EXEC SQL                                                               11140099
+   CLOSE CURS_UPGRADES;                                                 11150099
+                                                                        11160099
+ IF SQLCA.SQLCODE ¬= 0                                                  11170099
+ THEN                                                                   11180099
+   DO;                                                                  11190099
+     CALL RCBBKBM_ERROR (ADDR (SQLCA),                                  11200099
+                       'DB2',                                           11210099
+                       '#012');                                         11220099
+   END;                                                                 11230099
+                                                                        11240099
+ END RCBBKBM_CLOSE_CURSOR;                                              11250099
+                                                                        11260099
+1/********************************************************************/ 11270099
+ /*                                                                  */ 11280099
+ /* MODULE NAME      : RCBBKBM_END_PROG                              */ 11290099
+ /*                                                                  */ 11300099
+ /* DESCRIPTION      : ENDING ACTIONS FOR THE PROGRAM                */ 11310099
+ /*                                                                  */ 11320099
+ /********************************************************************/ 11330099
+ RCBBKBM_END_PROG : PROC;                                               11340099
+                                                                        11350099
+  CALL RCBBKBM_PROCESS_TRAILER;                                         11360099
+  CLOSE FILE(RCBBKB0);                                                  11370099
+                                             /* ISSUE COUNT MESSAGES */ 11380099
+  PARM_INT_AREA.COUNTRY_NUMBER   = '';                                  11390099
+  PARM_INT_AREA.MSG_VAR_CODES    = '';                                  11400099
+  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                11410099
+                                                                        11420099
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0003';                              11430099
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'DB';                                11440099
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = 'CHIS UPGRADES';                     11450099
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'C3';          /* TOTAL RETRIEVED */ 11460099
+  WRK_CNT_PIC                    = WRK_UPG_CNT;                         11470099
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11480099
+  CALL RCB0M1M (PTR_INT_AREA);                                          11490099
+                                                                        11500099
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0004';                              11510099
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';                                11520099
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'C6';            /* TOTAL WRITTEN */ 11530099
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBKB0;                         11540099
+  WRK_CNT_PIC                    = RCBBKB0_CNT;                         11550099
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11560099
+  CALL RCB0M1M (PTR_INT_AREA);                                          11570099
+                                                                        11580099
+  PARM_INT_AREA.MESSAGE_NUMBER   = '0003';                              11590099
+  PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';                                11600099
+  PARM_INT_AREA.MSG_VAR_CODE_7   = 'C4';           /* TOTAL REJECTED */ 11610099
+  PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBKB0;                         11620099
+  WRK_CNT_PIC                    = WRK_REJECT_CNT;                      11630099
+  PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_CNT_PIC;                         11640099
+  CALL RCB0M1M (PTR_INT_AREA);                                          11650099
+                                                                        11660099
+  PARM_INT_AREA.MSG_VAR_CODES    = ' ';                                 11670099
+  PARM_INT_AREA.MESSAGE_TYPE     = 'IS';                                11680099
+  PARM_INT_AREA.MESSAGE_NUMBER   = '9999';                              11690099
+  CALL RCB0M1M (PTR_INT_AREA);                                          11700099
+                                                                        11710099
+ END RCBBKBM_END_PROG;                                                  11720099
+                                                                        11730099
+1/********************************************************************/ 11740099
+ /*                                                                  */ 11750099
+ /* MODULE NAME      : RCBBKBM_PROCESS_TRAILER                       */ 11760099
+ /*                                                                  */ 11770099
+ /* DESCRIPTION      : PROCESS TRAILER FOR OUTPUT FILE RCBBKB0       */ 11780099
+ /*                                                                  */ 11790099
+ /********************************************************************/ 11800099
+ RCBBKBM_PROCESS_TRAILER : PROC;                                        11810099
+                                                                        11820099
+  RCBBKB0_CNT = RCBBKB0_CNT + 1;                                        11830099
+                                                                        11840099
+  WRK_CNT_PIC                =  RCBBKB0_CNT;                            11850099
+  RCBBKB0_REC                =  '';                                     11860099
+  RCBBKB0_TLR.RECORD_TYPE    =  'C999';                                 11870099
+  RCBBKB0_TLR.REC_CNT        =  WRK_CNT_PIC;                            11880099
+                                                                        11890099
+  WRITE FILE(RCBBKB0) FROM(RCBBKB0_REC);                                11900099
+                                                                        11910099
+ END RCBBKBM_PROCESS_TRAILER;                                           11920099
+                                                                        11930099
+1/********************************************************************/ 11940099
+ /*                                                                  */ 11950099
+ /* MODULE NAME      : RCBBKBM_ERROR                                 */ 11960099
+ /*                                                                  */ 11970099
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 11980099
+ /*                    THE INPUT VARIABLES                           */ 11990099
+ /*                                                                  */ 12000099
+ /********************************************************************/ 12010099
+0RCBBKBM_ERROR: PROC     (PTR_ERROR,                                    12020099
+                          ERR_TYPE,                                     12030099
+                          CALL_ID);                                     12040099
+ DCL PTR_ERROR    PTR;                                                  12050099
+ DCL ERR_TYPE     CHAR(8);                                              12060099
+ DCL CALL_ID      CHAR(4);                                              12070099
+                                                                        12080099
+ PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;                              12090099
+ PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;                               12100099
+ PARM_INT_AREA.CALL_ID        = CALL_ID;                                12110099
+                                                                        12120099
+ CALL RCB0E1M (PTR_INT_AREA);                                           12130099
+                                                                        12140099
+0END RCBBKBM_ERROR;                                                     12150099
+                                                                        12160099
+1/*******************************************************************/  12170099
+ /*  DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                   */  12180099
+ /*******************************************************************/  12190099
+0%INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  12200099
+ $DAIMOD (RCBBKBM);                      /* MODULE TO BE COMPILED   */  12210099
+0/*******************************************************************/  12220099
+ /* END OF ABR BLOCK                                                */  12230099
+ /*******************************************************************/  12240099
+ END RCBBKBM;                                                           12250099

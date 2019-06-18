@@ -1,0 +1,421 @@
+1/* RCBDR2M - RCMS: OU EXTRACT REPORT                                */ 00010000
+ /********************************************************************/ 00020000
+ /*                                                                  */ 00030000
+ /* MODULE NAME      : RCBDR2M                                       */ 00040000
+ /*                                                                  */ 00050000
+ /* PROGRAM NAME     : RCBDR2P                                       */ 00060000
+ /*                                                                  */ 00070000
+ /* LANGUAGE         : PLISQL                                        */ 00080000
+ /*                                                                  */ 00090000
+ /* TYPE             : BMP                                           */ 00100000
+ /*                                                                  */ 00110000
+ /* DESCRIPTION      : THIS PROGRAM GENERATES A REPORT OF THE        */ 00120000
+ /*                    SYSTEM ID'S AND ORGANIZATION UNITS            */ 00130000
+ /*                    THE RCMS DELTA EXTRACTS ARE ASKED FOR         */ 00140000
+ /*                                                                  */ 00150000
+ /* INPUT            : - DB2   : RCBT0040_OU                         */ 00160000
+ /*                              RCBT0130_OU_STRUCT                  */ 00170000
+ /*                              RCBT0500_PARM                       */ 00180000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : - REPORT                                      */ 00200000
+ /*                                                                  */ 00210000
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00220000
+ /*                                                                  */ 00230000
+ /* MESSAGES         : ----                                          */ 00240000
+ /*                                                                  */ 00250000
+ /* DEPENDENCIES     : BEFORE THIS MODULE CAN BE CALLED, MODULE      */ 00260000
+ /*                    RCBDR1M HAS TO BE CALLED FOR RETRIEVING       */ 00270000
+ /*                    THE OU_STRUCTURE TABLE                        */ 00280000
+ /*                                                                  */ 00290000
+ /* FREQUENCY        : USER DEPENDENT                                */ 00300000
+ /*                                                                  */ 00310000
+ /*  MAINTENANCE LOG :                                               */ 00320000
+ /*  ---------------                                                 */ 00330000
+ /*                                                                  */ 00340000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00350000
+ /*  --------------------------------------------------------------  */ 00360000
+ /*  1991-12-03 | ----         | CEDS INITIAL DEVELOPMENT            */ 00370000
+ /*  1997-04-11 | PTM1036      | CORRECTED PROLOG                    */ 00380000
+ /*  1997-04-29 | PTM0892      | REMOVE DECLARES UNUSED EXT.ENTRIES  */ 00390000
+ /*  2012-01-09 | CEDS00000572 | CHANGE DEFINITION OF OU FIELD FROM  */ 00391002
+ /*             |              | BIN(15) TO BIN(31)                  */ 00392002
+ /*                                                                  */ 00400000
+ /********************************************************************/ 00410000
+1RCBDR2M: PROC    (PTR_INT_AREA,                                        00420000
+                   PTR_RCBDR2S,                                         00430000
+                   PTR_OU_TABLE)                                        00440000
+         REORDER;                                                       00450000
+0DEFAULT RANGE (*)        STATIC;                                       00460000
+1/********************************************************************/ 00470000
+ /*  PARAMETERS                                                      */ 00480000
+ /********************************************************************/ 00490000
+ DCL PTR_RCBDR2S             PTR;          /* OUTPUT FILE POINTER    */ 00500000
+ DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00510000
+ DCL PTR_OU_TABLE            PTR;          /* OU STRUCTURE TABLE     */ 00520000
+1/********************************************************************/ 00530000
+ /* EXTERNAL ENTRIES                                                 */ 00540000
+ /********************************************************************/ 00550000
+ DCL PLIXOPT      EXTERNAL  CHAR (30) VAR INIT ('ISA(10K),NOSTAE');     00560000
+                                                                        00570000
+ DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 00580000
+0/********************************************************************/ 00590000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00600000
+ /********************************************************************/ 00610000
+0DCL 1 PARM_INT_AREA   BASED(PTR_INT_AREA),                             00620000
+      %INCLUDE (RCBZ01S);;                                              00630000
+0DCL 1 PARM_RCBDR2S0   BASED(PTR_RCBDR2S),                              00640000
+      %INCLUDE (RCBDR2S0);;                                             00650000
+0DCL 1 PARM_OU_TABLE   BASED(PTR_OU_TABLE),                             00660000
+      %INCLUDE (RCBDR1S1);;                                             00670000
+1/********************************************************************/ 00680000
+ /* DB2 TABLE STRUCTURES                                             */ 00690000
+ /********************************************************************/ 00700000
+0DCL 1 TB_RCBV050,                                                      00710000
+      %INCLUDE (RCB050S);;                                              00720000
+ DCL 1 TB_RCBV050_I,                                                    00730000
+      %INCLUDE (RCB050SI);;                                             00740000
+ DCL 1 TB_RCBP10S            BASED (ADDR(TB_RCBV050)),                  00750000
+      %INCLUDE (RCBP00S);;                                              00760000
+1/********************************************************************/ 00770000
+ /* REPORT FILE                                                      */ 00780000
+ /********************************************************************/ 00790000
+ DCL REPORT        FILE RECORD OUTPUT ENV(FB,RECSIZE(80),CTLASA);       00800000
+0/********************************************************************/ 00810000
+ /*  BIT SWITCHES                                                    */ 00820000
+ /********************************************************************/ 00830000
+ DCL TRUE                  BIT (1)         INIT ('1'B);                 00840000
+ DCL FALSE                 BIT (1)         INIT ('0'B);                 00850000
+ DCL SWITCH_END_OF_CURS_RCBV001R  BIT (1)         INIT ('0'B);          00860000
+0/********************************************************************/ 00870000
+ /* REPORT LINES                                                     */ 00880000
+ /********************************************************************/ 00890000
+0DCL 1 HEADER1,                                                         00900000
+       3 HEADER1A  CHAR(40)                                             00910000
+            INIT('1 CE DATA SERVER                        '),           00920000
+       3 HEADER1B  CHAR(40)                                             00930000
+            INIT('        *** IBM INTERNAL USE ONLY ***   ');           00940000
+0DCL 1 HEADER2,                                                         00950000
+       3 HEADER2A  CHAR(40)                                             00960000
+            INIT('0                                       '),           00970000
+       3 HEADER2B  CHAR(40)                                             00980000
+            INIT('     RCMS BUSINESS UNIT PARAMETER REPORT');           00990000
+0DCL 1 HEADER3,                                                         01000000
+       3 HEADER3A  CHAR(40)                                             01010000
+            INIT('0                GROUP ID   EXTRACT TYPE'),           01020000
+       3 HEADER3B  CHAR(40)                                             01030000
+            INIT('     BU DIV     BU CODE     UPDATE TYPE ');           01040000
+0DCL 1 HEADER4,                                                         01050000
+       3 HEADER4A  CHAR(40)                                             01060000
+            INIT('                 ________   ____________'),           01070000
+       3 HEADER4B  CHAR(40)                                             01080000
+            INIT('     ______     _______     ___________ ');           01090000
+0DCL 1 DETLINE     CHAR(80) INIT(' ');                                  01100000
+ DCL  DL_CTLASA       CHAR(01)   DEF(DETLINE) POS(01),                  01110000
+      DL_GROUPID      CHAR(02)   DEF(DETLINE) POS(22),                  01120000
+      DL_EXTR_TYPE    CHAR(01)   DEF(DETLINE) POS(35),                  01130000
+      DL_BU_DIV       CHAR(01)   DEF(DETLINE) POS(49),                  01140000
+      DL_BU_CODE      CHAR(07)   DEF(DETLINE) POS(57),                  01150000
+      DL_UPD_TYPE     CHAR(01)   DEF(DETLINE) POS(74);                  01160000
+0DCL 1 TRAILER,                                                         01170000
+       3 TRAILERA  CHAR(40)                                             01180000
+            INIT('-                                *** END'),           01190000
+       3 TRAILERB  CHAR(40)                                             01200000
+            INIT(' OF REPORT ***                          ');           01210000
+0/********************************************************************/ 01220000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01230000
+ /********************************************************************/ 01240000
+0DCL 1 WORK_FIELDS,                                                     01250000
+    3 WRK_MOD_NAME                      CHAR (08)  INIT ('RCBDR2M'),    01260000
+    3 WRK_PRG_NAME                      CHAR (08)  INIT ('RCBDR2P'),    01270000
+    3 WRK_SYSTEM_TYPE                   CHAR (01)  INIT ('B'),          01280000
+    3 WRK_INDNULL                       FIXED BIN(15),                  01290000
+                                        /* SOC CEDS00000572          */ 01291002
+    /*3 WRK_OU_SEQNR                    FIXED BIN(15) INIT(0),       */ 01300001
+    3 WRK_OU_SEQNR                      FIXED BIN(31) INIT(0),          01301001
+                                        /* EOC CEDS00000572          */ 01301102
+    3 WRK_SYSTEM_ID                     PIC'99',                        01310000
+    3 WRK_PREV_UPDATE_TYPE              CHAR(01),                       01320000
+    3 WRK_LINE_COUNT                    FIXED BIN(15) INIT(99),         01330000
+    3 WRK_PAGE_LIMIT                    FIXED BIN(15) INIT(55),         01340000
+    3 WRK_LINE_SKIP                     FIXED BIN(15) INIT(0);          01350000
+                                                                        01360000
+ DCL 1 WRK_FETCH_FIELDS,                                                01370000
+       3 SYSTEM_ID                      CHAR(02),                       01380000
+       3 EXTRACT_TYPE                   CHAR(01);                       01390000
+                                                                        01400000
+ DCL 1 WRK_OLD_FIELDS LIKE WRK_FETCH_FIELDS;                            01410000
+1/********************************************************************/ 01420000
+ /*  BUILTIN FUNCTIONS                                               */ 01430000
+ /********************************************************************/ 01440000
+0DCL (ADDR,                                                             01450000
+     DATE,                                                              01460000
+     NULL,                                                              01470000
+     STG,                                                               01480000
+     PLIRETC,                                                           01490000
+     STRING,                                                            01500000
+     SUBSTR,                                                            01510000
+     TIME)                   BUILTIN;                                   01520000
+1/********************************************************************/ 01530000
+ /* ON ERROR CONDITIONS                                              */ 01540000
+ /********************************************************************/ 01550000
+0%INCLUDE (RCB0E0M);                                                    01560000
+  END;                                                                  01570000
+1/********************************************************************/ 01580000
+ /* DB2/SQL SQLCA                                                    */ 01590000
+ /********************************************************************/ 01600000
+0 EXEC SQL                                                              01610000
+   INCLUDE SQLCA                                                        01620000
+   ;                                                                    01630000
+0/********************************************************************/ 01640000
+ /* DB2/SQL CURSORS                                                  */ 01650000
+ /********************************************************************/ 01660000
+0                                        /* CURSOR RCBV001R          */ 01670000
+ EXEC SQL                                                               01680000
+   DECLARE CURS_RCBV001R CURSOR FOR                                     01690000
+   SELECT SUBSTR(PARAMETER_KEY,7,2)                                     01700000
+         ,SUBSTR(PARAMETER_VALUE,1,1)                                   01710000
+   FROM RCBV0500_PARM                                                   01720000
+   WHERE PARAMETER_NUMBER = 'RCB010'                                    01730000
+     AND SUBSTR(PARAMETER_KEY,1,3) = :PARM_RCBDR2S0.CTRYNO              01740000
+     AND SUBSTR(PARAMETER_KEY,4,3) = :PARM_RCBDR2S0.PGR_TYPE            01750000
+   ORDER BY 1,2                                                         01760000
+   FOR FETCH ONLY                                         /* RC01219 */ 01770000
+     ;                                                                  01780000
+1/********************************************************************/ 01790000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01800000
+ /********************************************************************/ 01810000
+0                                  /* INIT PROGRAM                   */ 01820000
+ CALL RCBDR2M_R90_INIT_PROG;                                            01830000
+ CALL RCBDR2M_R80_INIT_CURSOR;                                          01840000
+                                   /* FOR EVERY PARAMETER SYSTEM ID  */ 01850000
+ DO WHILE (¬ SWITCH_END_OF_CURS_RCBV001R);                              01860000
+   CALL RCBDR2M_R70_INIT_SYSTEM_ID;                                     01870000
+                                   /* PROCESS OU TABLE               */ 01880000
+   DO WHILE ( (PARM_OU_TABLE.OU_CODE(WRK_OU_SEQNR) ¬= '')               01890000
+           |  (  (WRK_OU_SEQNR = 1)                                     01900000
+               & (PARM_OU_TABLE.OU_LEVEL(WRK_OU_SEQNR) ¬= '')           01910000
+              )                                                         01920000
+            );                                                          01930000
+     IF PARM_OU_TABLE.UPDATE_TYPE(WRK_OU_SEQNR,WRK_SYSTEM_ID) ¬= ''     01940000
+       THEN DO;                                                         01950000
+               CALL RCBDR2M_R51_PROCESS_OU_TABLE;                       01960000
+               CALL RCBDR2M_R52_WRITE_REPORT;                           01970000
+            END;                                                        01980000
+            CALL RCBDR2M_R69_INC_SEQNR;                                 01990000
+   END;                                                                 02000000
+   CALL RCBDR2M_R73_FETCH_RCBV001R;                                     02010000
+ END;                                                                   02020000
+ CALL RCBDR2M_R89_CLOSE_CURSOR;                                         02030000
+ CALL RCBDR2M_R99_END;                                                  02040000
+                                                                        02050000
+1/********************************************************************/ 02060000
+ /*                                                                  */ 02070000
+ /* MODULE NAME      : RCBDR2M_R51_PROCESS_OU_TABLE                  */ 02080000
+ /*                                                                  */ 02090000
+ /* DESCRIPTION      :                                               */ 02100000
+ /*                                                                  */ 02110000
+ /********************************************************************/ 02120000
+ RCBDR2M_R51_PROCESS_OU_TABLE: PROC;                                    02130000
+                                                                        02140000
+                                                                        02150000
+ DL_BU_DIV       =  '2';                                                02160000
+ DL_BU_CODE      =  PARM_OU_TABLE.OU_CODE(WRK_OU_SEQNR);                02170000
+                                                                        02180000
+ IF PARM_OU_TABLE.UPDATE_TYPE(WRK_OU_SEQNR,WRK_SYSTEM_ID)               02190000
+                                      ¬= WRK_PREV_UPDATE_TYPE           02200000
+   THEN DO;                                                             02210000
+          DL_UPD_TYPE     =                                             02220000
+             PARM_OU_TABLE.UPDATE_TYPE(WRK_OU_SEQNR,WRK_SYSTEM_ID);     02230000
+          WRK_PREV_UPDATE_TYPE = DL_UPD_TYPE;                           02240000
+        END;                                                            02250000
+                                                                        02260000
+ END RCBDR2M_R51_PROCESS_OU_TABLE;                                      02270000
+1/********************************************************************/ 02280000
+ /*                                                                  */ 02290000
+ /* MODULE NAME      : RCBDR2M_R52_WRITE_REPORT                      */ 02300000
+ /*                                                                  */ 02310000
+ /* DESCRIPTION      :                                               */ 02320000
+ /*                                                                  */ 02330000
+ /********************************************************************/ 02340000
+ RCBDR2M_R52_WRITE_REPORT: PROC;                                        02350000
+                                                                        02360000
+ SELECT(DL_CTLASA);                                                     02370000
+   WHEN(' ') WRK_LINE_SKIP = 1;                                         02380000
+   WHEN('0') WRK_LINE_SKIP = 2;                                         02390000
+   OTHERWISE WRK_LINE_SKIP = 1;                                         02400000
+ END;                                                                   02410000
+ WRK_LINE_COUNT = WRK_LINE_COUNT + WRK_LINE_SKIP;                       02420000
+                                                                        02430000
+ IF WRK_LINE_COUNT > WRK_PAGE_LIMIT                                     02440000
+   THEN DO;                                                             02450000
+          WRITE FILE(REPORT) FROM (HEADER1);                            02460000
+          WRITE FILE(REPORT) FROM (HEADER2);                            02470000
+          WRITE FILE(REPORT) FROM (HEADER3);                            02480000
+          WRITE FILE(REPORT) FROM (HEADER4);                            02490000
+          WRK_LINE_COUNT = 8;                                           02500000
+          DL_CTLASA = '0';                                              02510000
+        END;                                                            02520000
+                                                                        02530000
+ WRITE FILE(REPORT) FROM (DETLINE);                                     02540000
+ DETLINE = '';                                                          02550000
+                                                                        02560000
+ END RCBDR2M_R52_WRITE_REPORT;                                          02570000
+1/********************************************************************/ 02580000
+ /*                                                                  */ 02590000
+ /* MODULE NAME      : RCBDR2M_R69_INC_SEQNR                         */ 02600000
+ /*                                                                  */ 02610000
+ /* DESCRIPTION      :                                               */ 02620000
+ /*                                                                  */ 02630000
+ /********************************************************************/ 02640000
+ RCBDR2M_R69_INC_SEQNR:      PROC;                                      02650000
+                                                                        02660000
+ WRK_OU_SEQNR = WRK_OU_SEQNR + 1;                                       02670000
+                                                                        02680000
+ END RCBDR2M_R69_INC_SEQNR;                                             02690000
+1/********************************************************************/ 02700000
+ /*                                                                  */ 02710000
+ /* MODULE NAME      : RCBDR2M_R70_INIT_SYSTEM_ID                    */ 02720000
+ /*                                                                  */ 02730000
+ /* DESCRIPTION      :                                               */ 02740000
+ /*                                                                  */ 02750000
+ /********************************************************************/ 02760000
+ RCBDR2M_R70_INIT_SYSTEM_ID: PROC;                                      02770000
+                                                                        02780000
+ DL_CTLASA       = '0';                                                 02790000
+ DL_GROUPID      =  WRK_FETCH_FIELDS.SYSTEM_ID;                         02800000
+ DL_EXTR_TYPE    =  WRK_FETCH_FIELDS.EXTRACT_TYPE;                      02810000
+                                                                        02820000
+ WRK_OU_SEQNR = 1;                                                      02830000
+ WRK_SYSTEM_ID = WRK_FETCH_FIELDS.SYSTEM_ID;                            02840000
+                                                                        02850000
+ END RCBDR2M_R70_INIT_SYSTEM_ID;                                        02860000
+1/********************************************************************/ 02870000
+ /*                                                                  */ 02880000
+ /* MODULE NAME      : RCBDR2M_R73_FETCH_RCBV001R                    */ 02890000
+ /*                                                                  */ 02900000
+ /* DESCRIPTION      :                                               */ 02910000
+ /*                                                                  */ 02920000
+ /********************************************************************/ 02930000
+ RCBDR2M_R73_FETCH_RCBV001R: PROC;                                      02940000
+                                                                        02950000
+ WRK_OLD_FIELDS.SYSTEM_ID     = WRK_FETCH_FIELDS.SYSTEM_ID;             02960000
+ WRK_OLD_FIELDS.EXTRACT_TYPE  = WRK_FETCH_FIELDS.EXTRACT_TYPE;          02970000
+                                                                        02980000
+ EXEC SQL                                                               02990000
+   FETCH CURS_RCBV001R                                                  03000000
+   INTO :WRK_FETCH_FIELDS.SYSTEM_ID                                     03010000
+       ,:WRK_FETCH_FIELDS.EXTRACT_TYPE                                  03020000
+       ;                                                                03030000
+                                                                        03040000
+ SELECT (SQLCA.SQLCODE);                                                03050000
+   WHEN (0);                                                            03060000
+   WHEN (100) SWITCH_END_OF_CURS_RCBV001R = TRUE;                       03070000
+   OTHERWISE DO;                                                        03080000
+     CALL RCBDR2M_ERROR (ADDR (SQLCA),                                  03090000
+                              'DB2',                                    03100000
+                              '#001');                                  03110000
+   END;                                                                 03120000
+ END;                                                                   03130000
+                                                                        03140000
+ END RCBDR2M_R73_FETCH_RCBV001R;                                        03150000
+1/********************************************************************/ 03160000
+ /*                                                                  */ 03170000
+ /* MODULE NAME      : RCBDR2M_R80_INIT_CURSOR                       */ 03180000
+ /*                                                                  */ 03190000
+ /* DESCRIPTION      :                                               */ 03200000
+ /*                                                                  */ 03210000
+ /********************************************************************/ 03220000
+ RCBDR2M_R80_INIT_CURSOR: PROC;                                         03230000
+ EXEC SQL                                                               03240000
+     OPEN CURS_RCBV001R;                                                03250000
+                                                                        03260000
+ SELECT (SQLCA.SQLCODE);                                                03270000
+   WHEN (0);                                                            03280000
+   OTHERWISE DO;                                                        03290000
+     CALL RCBDR2M_ERROR (ADDR (SQLCA),                                  03300000
+                              'DB2',                                    03310000
+                              '#002');                                  03320000
+   END;                                                                 03330000
+ END;                                                                   03340000
+                                                                        03350000
+ CALL RCBDR2M_R73_FETCH_RCBV001R;                                       03360000
+                                                                        03370000
+ END RCBDR2M_R80_INIT_CURSOR;                                           03380000
+1/********************************************************************/ 03390000
+ /*                                                                  */ 03400000
+ /* MODULE NAME      : RCBDR2M_R89_CLOSE_CURSOR                      */ 03410000
+ /*                                                                  */ 03420000
+ /* DESCRIPTION      :                                               */ 03430000
+ /*                                                                  */ 03440000
+ /********************************************************************/ 03450000
+ RCBDR2M_R89_CLOSE_CURSOR: PROC;                                        03460000
+                                                                        03470000
+ DETLINE = STRING(TRAILER);                                             03480000
+ CALL RCBDR2M_R52_WRITE_REPORT;                                         03490000
+                                                                        03500000
+ EXEC SQL                                                               03510000
+     CLOSE CURS_RCBV001R;                                               03520000
+                                                                        03530000
+ SELECT (SQLCA.SQLCODE);                                                03540000
+   WHEN (0);                                                            03550000
+   OTHERWISE DO;                                                        03560000
+     CALL RCBDR2M_ERROR (ADDR (SQLCA),                                  03570000
+                              'DB2',                                    03580000
+                              '#003');                                  03590000
+   END;                                                                 03600000
+ END;                                                                   03610000
+                                                                        03620000
+ END RCBDR2M_R89_CLOSE_CURSOR;                                          03630000
+1/********************************************************************/ 03640000
+ /*                                                                  */ 03650000
+ /* MODULE NAME      : RCBDR2M_R90_INIT_PROG                         */ 03660000
+ /*                                                                  */ 03670000
+ /* DESCRIPTION      :                                               */ 03680000
+ /*                                                                  */ 03690000
+ /********************************************************************/ 03700000
+ RCBDR2M_R90_INIT_PROG: PROC;                                           03710000
+                                                                        03720000
+ PARM_INT_AREA.ID_MOD_LEVEL   = PARM_INT_AREA.ID_MOD_LEVEL + 1;         03730000
+ PARM_INT_AREA.ID_MOD_PATH (PARM_INT_AREA.ID_MOD_LEVEL) = WRK_MOD_NAME; 03740000
+                                                                        03750000
+ END RCBDR2M_R90_INIT_PROG;                                             03760000
+1/********************************************************************/ 03770000
+ /*                                                                  */ 03780000
+ /* MODULE NAME      : RCBDR2M_R99_END                               */ 03790000
+ /*                                                                  */ 03800000
+ /* DESCRIPTION      :                                               */ 03810000
+ /*                                                                  */ 03820000
+ /********************************************************************/ 03830000
+ RCBDR2M_R99_END: PROC;                                                 03840000
+                                                                        03850000
+ PARM_INT_AREA.ID_MOD_LEVEL   = PARM_INT_AREA.ID_MOD_LEVEL - 1;         03860000
+                                                                        03870000
+ END RCBDR2M_R99_END;                                                   03880000
+1/********************************************************************/ 03890000
+ /*                                                                  */ 03900000
+ /* MODULE NAME      : RCBDR2M_ERROR                                 */ 03910000
+ /*                                                                  */ 03920000
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 03930000
+ /*                    THE INPUT VARIABLES                           */ 03940000
+ /*                                                                  */ 03950000
+ /********************************************************************/ 03960000
+0 RCBDR2M_ERROR: PROC     (PTR_ERROR,                                   03970000
+                         ERR_TYPE,                                      03980000
+                         CALL_ID);                                      03990000
+0 DCL PTR_ERROR    PTR;                                                 04000000
+ DCL ERR_TYPE      CHAR(8);                                             04010000
+ DCL CALL_ID       CHAR(4);                                             04020000
+0 PARM_INT_AREA.PTR_ERROR         = PTR_ERROR;                          04030000
+ PARM_INT_AREA.ERR_TYPE           = ERR_TYPE;                           04040000
+ PARM_INT_AREA.CALL_ID            = CALL_ID;                            04050000
+0 CALL RCB0E1M (ADDR(PARM_INT_AREA));                                   04060000
+0 END RCBDR2M_ERROR;                                                    04070000
+1/*******************************************************************/  04080000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  04090000
+ /*******************************************************************/  04100000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  04110000
+ $DAIMOD (RCBDR2M);                      /* MODULE TO BE COMPILED   */  04120000
+0/*******************************************************************/  04130000
+ /* END OF ABR BLOCK                                                */  04140000
+ /*******************************************************************/  04150000
+0 END RCBDR2M;                                                          04160000

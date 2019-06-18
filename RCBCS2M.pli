@@ -1,0 +1,1137 @@
+ /* RCBCS2M - LIST MODULE FOR ACM / CEDS QUERY BY SERIAL TRASACTION  */ 00010000
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBCS2M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLICSQL                                       */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : RCMS REQUEST "LI" LIST ITEMS.                 */ 00140000
+ /*                  : THIS PROGRAM IS CALLED BY THE ROOT MODULE     */ 00150000
+ /*                    RCBCQ0M.                                      */ 00160000
+ /*                                                                  */ 00170000
+ /* ALL WARNINGS AND ERRORS WILL BE STORED IN AN EXTRA PARTITION     */ 00180000
+ /* TRANSIENT DATASET.                                               */ 00190000
+ /*                                                                  */ 00200000
+ /* INPUT            : COMMPTR - COMMUNICATION AREA POINTER          */ 00210000
+ /*                                                                  */ 00220000
+ /* OUTPUT           :                                               */ 00230000
+ /*                                                                  */ 00240000
+ /*                                                                  */ 00250000
+ /* EXTERNAL MODULES : RCBCQEM - ERROR LOGGING MODULE                */ 00260000
+ /*                                                                  */ 00270000
+ /* MESSAGES         :                                               */ 00280000
+ /*                                                                  */ 00290000
+ /* DEPENDENCIES     : NONE                                          */ 00300000
+ /*                                                                  */ 00310000
+ /* MAINTENANCE LOG  :                                               */ 00320000
+ /* ---------------                                                  */ 00330000
+ /*                                                                  */ 00340000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00350000
+ /* --------------------------------------------------------------   */ 00360000
+ /*  2015-10-12 | RC01366      | PCEDSP-0587 : LI REDESIGN           */ 00370004
+ /*  2015-11-16 | RC01369      | PCEDSP-0593 : INCLUDED SSN CHECK IN */ 00371034
+ /*             |              |               T125                  */ 00372019
+ /********************************************************************/ 00380000
+1RCBCS2M: PROC(COMMPTR)                                                 00390000
+          OPTIONS (MAIN)                                                00400000
+          REORDER;                                                      00410000
+0/********************************************************************/ 00420000
+ /*  EXTERNAL ENTRIES                                                */ 00430000
+ /********************************************************************/ 00440000
+ DCL RCBCQEM   ENTRY EXTERNAL;     /* ERROR LOGGING ROUTINE          */ 00450000
+0/********************************************************************/ 00460000
+ /*  COMMUNICATION AREA                                              */ 00470000
+ /********************************************************************/ 00480000
+ DCL    COMMPTR   PTR;             /*ADDRESS OF COMMUNICATION AREA   */ 00490000
+ /********************************************************************/ 00500000
+0/********************************************************************/ 00510000
+0DCL 1 COMMAREA,                                                        00520000
+ %INCLUDE EDQBSHS;,                                                     00530000
+ %INCLUDE EDQBSLS;;                                                     00540000
+0DCL 1 COMMAREA_OLD   BASED (COMMPTR),                                  00550000
+ %INCLUDE EDQBSHS;,                                                     00560000
+ %INCLUDE EDQBSLS;;                                                     00570000
+0DCL 1 COMMAREA_NEW   BASED (COMMPTR),                                  00580000
+ %INCLUDE EDQBSHS1;,                                                    00590000
+ %INCLUDE EDQBSLS1;;                                                    00600000
+0/********************************************************************/ 00610000
+ /*  RETURN CODES                                                    */ 00620000
+ /********************************************************************/ 00630000
+0DCL RESPONSE             FIXED BIN(31) INIT('0'B);  /* CICS RESPONSE*/ 00640000
+0/********************************************************************/ 00650000
+ /*  RCBCQEM PARAMETER DECLARATIONS                                  */ 00660000
+ /********************************************************************/ 00670000
+0DCL RCBCQES_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00680000
+ DCL 1 RCBCQES,                                                         00690000
+      %INCLUDE RCBCQES;;                                                00700000
+ DCL 1 RCBCQES_SQLCA                                                    00710000
+      LIKE SQLCA;                                                       00720000
+0RCBCQES_PTR       = ADDR(RCBCQES);                                     00730000
+0RCBCQES.SQLCA_PTR = ADDR(RCBCQES_SQLCA);                               00740000
+1/********************************************************************/ 00750000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00760000
+ /********************************************************************/ 00770000
+0EXEC SQL INCLUDE SQLCA;                                                00780000
+0/********************************************************************/ 00790000
+ /* DB2 TABLE STRUCTURES                                             */ 00800000
+ /********************************************************************/ 00810000
+ DCL 1 TB_RCBV010,                                                      00820003
+      %INCLUDE (RCB010S);;                                              00830003
+ DCL 1 TB_RCBV010_I,                                                    00840003
+      %INCLUDE (RCB010SI);;                                             00850003
+ DCL 1 TB_RCBV011,                                                      00860003
+      %INCLUDE (RCB011S);;                                              00870003
+ DCL 1 TB_RCBV011_I,                                                    00880003
+      %INCLUDE (RCB011SI);;                                             00890003
+ DCL 1 TB_RCBV190,                                                      01000003
+      %INCLUDE (RCB190S);;                                              01010003
+ DCL 1 TB_RCBV190_I,                                                    01020003
+      %INCLUDE (RCB190SI);;                                             01030003
+ DCL 1 TB_RCBV300,                                                      01100003
+      %INCLUDE (RCB300S);;                                              01110003
+ DCL 1 TB_RCBV300_I,                                                    01120003
+      %INCLUDE (RCB300SI);;                                             01130003
+ /********************************************************************/ 01200003
+ /*        WORK FIELDS                                               */ 01210000
+ /********************************************************************/ 01220000
+ DCL REQTYPE     CHAR(04)      INIT('')    ;/* REQUEST MACH. TYPE    */ 01230000
+ DCL REQORIG     CHAR(02)      INIT('')    ;/* REQUEST ORIGIN        */ 01240000
+ DCL REQSEQN     CHAR(07)      INIT('')    ;/* REQUEST SERIAL NBR.   */ 01250000
+ DCL REQLSEQ     CHAR(30)      INIT('')    ;/* LONG SEQUENCE NUMBER  */ 01270000
+ DCL REFCTRY     CHAR(03)      INIT('')    ;/* REQUEST COUNTRY CODE  */ 01290000
+ DCL REQSERC     CHAR(02)      INIT('')    ;/* REQUEST SEARCH ARG.   */ 01300000
+ DCL DATE10      CHAR(10)      INIT('')    ;/*YYYY-MM-DD DATE FORMAT */ 01310000
+ DCL STRTCTRY    CHAR(03)      INIT('')    ;/* START COUNTRY CODE    */ 01320000
+ DCL ENDCTRY     CHAR(03)      INIT('')    ;/* END   COUNTRY CODE    */ 01330000
+ DCL STRTTYPE    CHAR(04)      INIT('')    ;/* START PRODUCT TYPE    */ 01340000
+ DCL ENDTYPE     CHAR(04)      INIT('')    ;/* END   PRODUCT TYPE    */ 01350000
+ DCL WRK_SQLCODE FIXED BIN(31) INIT(0);                                 01360000
+ DCL WRK_TABLE   CHAR(18)      INIT('');                                01370000
+ DCL WRK_CSLMTYP CHAR(04)      INIT('')    ;/* RETURN  MACH. TYPE    */ 01380000
+ DCL WRK_IOLCPLM CHAR(02)      INIT('')    ;/* RETURN  ORIGIN        */ 01390000
+                                                                        01400000
+ DCL WRK_IHSINBR CHAR(28)      INIT('')    ;/* RETURN  SERIAL NBR.   */ 01410000
+ DCL WRK_IOPUCTY CHAR(03)      INIT('')    ;/* RETURN  COUNTRY CODE  */ 01420000
+ DCL WRK_SSRCIND CHAR(01)      INIT('')    ;/* RETURN  SOURCE IND    */ 01430000
+ DCL WRK_CSLMMOD CHAR(03)      INIT('')    ;/* RETURN  MODEL NO.     */ 01440000
+ DCL WRK_ICUSWHU CHAR(08)      INIT('')    ;/* RETURN  CUSTOMER NO.  */ 01450000
+ DCL WRK_ICUSANO CHAR(03)      INIT('')    ;/* RETURN  CUST NO. EXT. */ 01460000
+ DCL WRK_INSTALL CHAR(10)      INIT('')    ;/* RETURN  INSTALL DATE  */ 01470000
+ DCL WRK_WED     CHAR(10)      INIT('')    ;/* RETURN  WARRANTY DATE */ 01480000
+ DCL WRK_SOURCE  CHAR(03)      INIT('')    ;/* RETURN  SYSTEM        */ 01490000
+ DCL TRUE        BIT(01)       INIT('1'B);                              01540000
+ DCL FALSE       BIT(01)       INIT('0'B);                              01550000
+ DCL SWITCH_EOC_LIST           BIT(01)      INIT('0'B);                 01560000
+ DCL I           FIXED BIN(31) INIT(0);                                 01570000
+ DCL WRK_ORIGIN                CHAR (02)     INIT('');                  01590000
+ DCL WRK_SEQ_NO                CHAR (28)     INIT('');                  01600000
+ DCL TMP_ORIGIN                CHAR (02)     INIT('');                  01610000
+ DCL TMP_SEQ_NBR               CHAR (28)     INIT('');                  01620000
+ DCL WRK_LONG_COUNT            FIXED BIN(31) INIT(0);                   01630000
+ DCL WRK_INDNULL FIXED BIN(15);                                         01640000
+ DCL WRK_AUTHORISATION_CODE    CHAR(10)     INIT('');                   01650000
+ DCL WRK_EFFECTIVE_DATE        CHAR(10)     INIT('');                   01660000
+ DCL WRK_END_DATE              CHAR(10)     INIT('');                   01670000
+ DCL WRK_LENOVO_TI             CHAR(01)     INIT('');                   01680000
+ DCL WRK_WARLBTY               CHAR(03)     INIT('');                   01690000
+ DCL WRK_LONG_SERIAL           CHAR(30)     INIT('');                   01700000
+ DCL SWITCH_0211_S2            BIT(01)      INIT('0'B);                 01710000
+ DCL SWITCH_3317_S2            BIT(01)      INIT('0'B);                 01720000
+ DCL J                         FIXED BIN(31) INIT(0);                   01740000
+                                                      /* SOC RC01369 */ 01741034
+ DCL SWITCH_DUP_FND            BIT(01)      INIT('0'B);                 01750019
+ DCL SWITCH_SSN_CHECK          BIT(01)      INIT('0'B);                 01750125
+ DCL SWITCH_EOC_GETLNGSR       BIT(01)      INIT('0'B);                 01750325
+ DCL TMP_LONG_SERIAL           CHAR(30)     INIT('');                   01760019
+ DCL WRK_LONG_ARR(90)          CHAR(30)     INIT('');                   01770019
+ DCL CNT                       FIXED BIN(31) INIT(0); /* EOC RC01369 */ 01780034
+0/********************************************************************/ 01800000
+ /*         D E F I N E    C U R S O R S                             */ 01810000
+ /********************************************************************/ 01820000
+ EXEC SQL                                                               01910000
+   DECLARE LIST_CURSOR CURSOR FOR                                       01920000
+     SELECT T050.PRODUCT_TYPE,                                          01930000
+            T050.ORIGIN,                                                01940000
+            T050.SEQUENCE_NUMBER,                                       01950000
+            T050.COUNTRY_NUMBER,                                        01960000
+            T110.SOURCE_INDICATOR,                                      01970000
+            ' ',                                                        01980000
+            ' ',                                                        01990000
+            ' ',                                                        02000000
+            ' ',                                                        02010000
+            ' ',                                                        02020000
+            'BAU',                                                      02030000
+            ' '                                                         02040000
+     FROM RCBV0050_HW_PR T050, RCBV0110_HW_STATUS T110                  02050000
+     WHERE T050.COUNTRY_NUMBER  BETWEEN :STRTCTRY                       02060000
+                                    AND :ENDCTRY                        02070000
+       AND T050.PRODUCT_TYPE    BETWEEN :STRTTYPE                       02080000
+                                    AND :ENDTYPE                        02090000
+       AND T050.ORIGIN          = :WRK_ORIGIN                           02100000
+       AND T050.SEQUENCE_NUMBER = :WRK_SEQ_NO                           02110000
+       AND T110.PRODUCT_TYPE    = T050.PRODUCT_TYPE                     02120000
+       AND T110.ORIGIN          = T050.ORIGIN                           02130000
+       AND T110.SEQUENCE_NUMBER = T050.SEQUENCE_NUMBER                  02140000
+       AND T110.COUNTRY_NUMBER  = T050.COUNTRY_NUMBER                   02150000
+       AND :DATE10              BETWEEN T110.EFFECTIVE_DATE             02160000
+                                    AND T110.END_DATE                   02170000
+     UNION ALL                                                          02180000
+    SELECT T051.PRODUCT_TYPE,                                           02190000
+           T051.ORIGIN,                                                 02200000
+           T051.SEQUENCE_NUMBER,                                        02210000
+           T051.COUNTRY_NUMBER,                                         02220000
+           T051.SOURCE_INDICATOR,                                       02230000
+           T051.MODEL_NUMBER,                                           02240000
+           T051.CUSTOMER_NUMBER,                                        02250000
+           T051.CUSTOMER_NR_EXTEND,                                     02260000
+           CHAR(T051.INSTALL_DATE,ISO),                                 02270000
+           CHAR(T051.WARRANTY_EXP_DATE,ISO),                            02280000
+           'PI',                                                        02290000
+           T051.WARRANTY_LIABILITY                                      02300000
+     FROM RCBV0051_PI_HW_PR T051                                        02310000
+     WHERE T051.COUNTRY_NUMBER BETWEEN :STRTCTRY                        02320000
+                                   AND :ENDCTRY                         02330000
+       AND T051.PRODUCT_TYPE   BETWEEN :STRTTYPE                        02340000
+                                   AND :ENDTYPE                         02350000
+      AND T051.ORIGIN          = :WRK_ORIGIN                            02360000
+      AND T051.SEQUENCE_NUMBER = :WRK_SEQ_NO                            02370000
+     ORDER BY 4,1,2,3,5                                                 02380000
+     FOR FETCH ONLY;                                                    02390000
+                                                                        02400000
+ EXEC SQL                                             /* SOC RC01369 */ 02401034
+   DECLARE GET_LONG_SERIAL CURSOR FOR                                   02402005
+    SELECT REAL_SERIAL_NUMBER                                           02403005
+     FROM RCBV0125_DMMY_REAL T125                                       02404005
+      WHERE  T125.COUNTRY_NUMBER     BETWEEN :STRTCTRY                  02405005
+                                     AND :ENDCTRY                       02406005
+        AND  T125.PRODUCT_TYPE       BETWEEN :STRTTYPE                  02407005
+                                     AND :ENDTYPE                       02408005
+        AND T125.DUMMY_ORIGIN        = :WRK_ORIGIN                      02409005
+        AND T125.DUMMY_SEQUENCE_NUM  = :WRK_SEQ_NO                      02409105
+ ;                                                    /* EOC RC01369 */ 02409234
+0/********************************************************************/ 02410000
+ /*                 BUILT IN FUNCTIONS                               */ 02420000
+ /********************************************************************/ 02430000
+0DCL (LENGTH,                                                           02440000
+      CSTG,                                                             02450000
+      STRING,                                                           02460000
+      SUBSTR,                                                           02470000
+      NULL,                                                             02480000
+      LOW,                                                              02490000
+      HIGH,                                                             02500000
+      ADDR)                                                             02510000
+              BUILTIN;                                                  02520000
+1/********************************************************************/ 02530000
+ /*                 S T A R T   P R O C E S S I N G                  */ 02540000
+ /********************************************************************/ 02550000
+0CALL RCBCS2M_INITIALISATION;                                           02560000
+0CALL RCBCS2M_MAIN_PROCESSING;                                          02570000
+0CALL RCBCS2M_FINALISATION;                                             02580000
+1/********************************************************************/ 02590000
+ /*      I N I T I A L I S A T I O N   P R O C E S S I N G           */ 02600000
+ /********************************************************************/ 02610000
+0RCBCS2M_INITIALISATION : PROC;                                         02620000
+                                                                        02630000
+ IF EIBCALEN = 150 THEN                                                 02640000
+   DO;                                                                  02650000
+     SWITCH_0211_S2 = '1'B;                                             02660000
+     COMMAREA = '';                                                     02670000
+     COMMAREA = COMMAREA_OLD;                                           02680000
+   END;                                                                 02690000
+ IF EIBCALEN = 180 THEN                                                 02700000
+   DO;                                                                  02710000
+     SWITCH_3317_S2 = '1'B;                                             02720000
+     COMMAREA = '';                                                     02730000
+     COMMAREA.EDQBSHS = COMMAREA_NEW.EDQBSHS1, BY NAME;                 02740000
+     COMMAREA.EDQBSLS = COMMAREA_NEW.EDQBSLS1, BY NAME;                 02750000
+     REQLSEQ = COMMAREA_NEW.EDQBSHS1.REQ.SEDQGSN;                       02760000
+   END;                                                                 02770000
+                                                                        02780000
+ COMMAREA.EDQBSHS.REQ.CRMORET = '';                                     02790000
+ COMMAREA.EDQBSHS.REQ.NTBLNME = '';                                     02800000
+                                                                        02810000
+ SELECT (EIBCALEN);                      /* CHECK LENGTH OF COMMAREA */ 02820000
+    WHEN(0)                              /* COMMAREA EMPTY           */ 02830000
+    DO;                                                                 02840000
+       COMMAREA.EDQBSHS.CRMORET = '4';                                  02850000
+       RCBCQES.MESSAGE_NUMBER = 'C201';                                 02860000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 02870000
+    END;                                                                02880000
+                                                                        02890000
+    WHEN(150, 180)                       /* HEADER RECORD            */ 02900000
+                                                                        02910000
+    DO;                                                                 02920000
+       IF COMMAREA.EDQBSHS.REQ.TYPE ¬= 'LI'                             02930000
+        & COMMAREA.EDQBSHS.REQ.TYPE ¬= 'DL' THEN                        02940000
+       DO;                                                              02950000
+          COMMAREA.EDQBSHS.CRMORET = '4';                               02960000
+          RCBCQES.MESSAGE_NUMBER = 'C203';                              02970000
+          CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);              02980000
+       END;                                                             02990000
+    END;                                                                03000000
+                                                                        03010000
+    WHEN(5460, 8190)                     /* HEADER & LIST ITEMS      */ 03020000
+    DO;                                                                 03030000
+       IF COMMAREA.EDQBSHS.REQ.TYPE ¬= 'LI'                             03040000
+        & COMMAREA.EDQBSHS.REQ.TYPE ¬= 'DL' THEN                        03050000
+       DO;                                                              03060000
+          COMMAREA.EDQBSHS.CRMORET = '4';                               03070000
+          RCBCQES.MESSAGE_NUMBER = 'C203';                              03080000
+          CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);              03090000
+       END;                                                             03100000
+    END;                                                                03110000
+                                                                        03120000
+    WHEN(6060, 8790)                   /* HEADER,LIST & DETAIL ITEMS */ 03130000
+    DO;                                                                 03140000
+                                                                        03150000
+       IF COMMAREA.EDQBSHS.REQ.TYPE ¬= 'DL' THEN                        03160000
+       DO;                                                              03170000
+          COMMAREA.EDQBSHS.CRMORET = '4';                               03180000
+          RCBCQES.MESSAGE_NUMBER = 'C203';                              03190000
+          CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);              03200000
+       END;                                                             03210000
+    END;                                                                03220000
+    OTHERWISE                            /* INVALID COMMAREA LENGTH  */ 03230000
+    DO;                                                                 03240000
+       COMMAREA.EDQBSHS.CRMORET = '4';                                  03250000
+       RCBCQES.MESSAGE_NUMBER = 'C202';                                 03260000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 03270000
+    END;                                                                03280000
+ END;                                                                   03290000
+                                                                        03300000
+ TB_RCBV010 = '';                                                       03310000
+ TB_RCBV011 = '';                                                       03320000
+ TB_RCBV190 = '';                                                       03360000
+ TB_RCBV300 = '';                                                       03370000
+ WRK_LONG_ARR(*) ='';                                     /* RC01369 */ 03380034
+                                                                        03400000
+ REFCTRY = COMMAREA.EDQBSHS.REQ.REQKEY.IOPUCTY;                         03410000
+ REQTYPE = COMMAREA.EDQBSHS.REQ.REQKEY.CSLMTYP;                         03420000
+ REQORIG = COMMAREA.EDQBSHS.REQ.REQKEY.IHSIMID.IOLCPLM;                 03430000
+ REQSEQN = COMMAREA.EDQBSHS.REQ.REQKEY.IHSIMID.IHSINBR;                 03440000
+ REQSERC = COMMAREA.EDQBSHS.REQ.SEARCH;                                 03450000
+ DATE10  = $DTSEP(COMMAREA.EDQBSHS.REQ.DFLTREF,'-');                    03460000
+                                                                        03470000
+                                                                        03480000
+ IF COMMAREA.EDQBSHS.REQ.TYPE = 'DL' &                                  03490000
+    COMMAREA.EDQBSHS.REQ.SEARCH = 'SC' THEN                             03500000
+   DO;                                                                  03510000
+     REQTYPE = '';                                                      03520000
+   END;                                                                 03530000
+                                                                        03540000
+                                                                        03550000
+ IF COMMAREA.EDQBSHS.REQ.TYPE = 'DL' &                                  03560000
+    COMMAREA.EDQBSHS.REQ.SEARCH = 'MC' THEN                             03570000
+   DO;                                                                  03580000
+                                                                        03590000
+     REFCTRY = '';                                                      03600000
+     REQTYPE = '';                                                      03610000
+                                                                        03620000
+   END;                                                                 03630000
+                                                                        03640000
+ IF REFCTRY = '' THEN                                                   03650000
+   DO;                                                                  03660000
+     STRTCTRY = LOW(3);                                                 03670000
+     ENDCTRY  = HIGH(3);                                                03680000
+   END;                                                                 03690000
+ ELSE                                                                   03700000
+   DO;                                                                  03710000
+     STRTCTRY,                                                          03720000
+     ENDCTRY  = REFCTRY;                                                03730000
+   END;                                                                 03740000
+                                                                        03750000
+ IF REQTYPE = '' THEN                                                   03760000
+   DO;                                                                  03770000
+     STRTTYPE = LOW(4);                                                 03780000
+     ENDTYPE  = HIGH(4);                                                03790000
+   END;                                                                 03800000
+ ELSE                                                                   03810000
+   DO;                                                                  03820000
+     STRTTYPE,                                                          03830000
+     ENDTYPE  = REQTYPE;                                                03840000
+   END;                                                                 03850000
+                                                                        03860000
+ IF COMMAREA.EDQBSLS.SAVEAREA.IOPUCTY ¬= '' THEN                        03870000
+   STRTCTRY = COMMAREA.EDQBSLS.SAVEAREA.IOPUCTY;                        03880000
+ IF COMMAREA.EDQBSLS.SAVEAREA.CSLMTYP ¬= '' THEN                        03890000
+   STRTTYPE = COMMAREA.EDQBSLS.SAVEAREA.CSLMTYP;                        03900000
+ COMMAREA.EDQBSHS.REQ.CRMOSUB = 0;                                      03910000
+                                                                        03920000
+ IF SWITCH_3317_S2 THEN                                                 03930000
+ COMMAREA_NEW = '';                                                     03940000
+                                                                        03950000
+0END RCBCS2M_INITIALISATION;                                            03960000
+1/********************************************************************/ 03970000
+ /*      M A I N   P R O C E S S I N G                               */ 03980000
+ /********************************************************************/ 03990000
+0RCBCS2M_MAIN_PROCESSING : PROC;                                        04000000
+                                                                        04010000
+ COMMAREA.EDQBSLS.SAVEAREA = '';                                        04020000
+ COMMAREA.EDQBSLS.MORE_REC_EXIST = 'N';                                 04030000
+                                                                        04040000
+  IF ¬(REQLSEQ = (REQORIG || REQSEQN))  THEN                            04041003
+  DO;                                                                   04042003
+  IF REQLSEQ ¬= '' THEN                                                 04050000
+    CALL RCBCS2M_FETCH_DETAILS;                                         04060000
+  END;                                                                  04061003
+                                                                        04062014
+    WRK_ORIGIN      = REQORIG;                                          04062119
+    WRK_SEQ_NO      = REQSEQN;                                          04062219
+    CNT = 0;                                          /* SOC RC01369 */ 04063034
+    CALL RCBCS2M_FETCH_LONG_SERIAL;                                     04071019
+    DO WHILE (CNT > 0);                                                 04072019
+    WRK_ORIGIN  = SUBSTR(WRK_LONG_ARR(CNT),1,2);                        04073014
+    WRK_SEQ_NO  = SUBSTR(WRK_LONG_ARR(CNT),3);        /* EOC RC01369 */ 04074034
+    CALL RCBCS2M_READ_LIST;                                             04075014
+    CNT = CNT - 1;                                    /* SOC RC01369 */ 04076034
+    END;                                              /* EOC RC01369 */ 04077034
+                                                                        04116005
+    COMMAREA.EDQBSLS.NUMRECS = I;                                       04120000
+                                                                        04130000
+ IF I = 91 & ¬SWITCH_EOC_LIST THEN                                      04140000
+   DO;                                                                  04150000
+                                                                        04160000
+     COMMAREA.EDQBSLS.SAVEAREA.CSLMTYP = WRK_CSLMTYP;                   04170000
+     COMMAREA.EDQBSLS.SAVEAREA.IOPUCTY = WRK_IOPUCTY;                   04180000
+     COMMAREA.EDQBSLS.MORE_REC_EXIST   = 'Y';                           04190000
+   END;                                                                 04200000
+                                                                        04210000
+ END RCBCS2M_MAIN_PROCESSING;                                           04220000
+1/*********************************************************************/04230000
+ /*                                                                   */04240000
+ /* MODULE NAME      : RCBCS2M_FETCH_DETAILS                          */04250000
+ /*                                                                   */04260000
+ /* DESCRIPTION      : RETRIEVE LONG SERIAL COUNT FROM T125           */04270000
+ /*                                                                   */04280000
+ /*********************************************************************/04290000
+0RCBCS2M_FETCH_DETAILS: PROC;                                           04300000
+                                                                        04310000
+   WRK_LONG_COUNT = 0;                                                  04320000
+                                                                        04330000
+ EXEC SQL                                                               04340000
+      SELECT COUNT(*) INTO :WRK_LONG_COUNT                              04350000
+       FROM  RCBV0125_DMMY_REAL  T125                                   04360000
+      WHERE  T125.COUNTRY_NUMBER     BETWEEN :STRTCTRY                  04370000
+                                     AND     :ENDCTRY                   04380000
+        AND  T125.PRODUCT_TYPE       BETWEEN :STRTTYPE                  04390000
+                                     AND     :ENDTYPE                   04400000
+        AND  T125.REAL_SERIAL_NUMBER = :REQLSEQ                         04410000
+        WITH UR;                                                        04420000
+                                                                        04430000
+    SELECT(SQLCA.SQLCODE);                                              04440000
+     WHEN(0)                                                            04450000
+      DO;                                                               04460000
+        IF WRK_LONG_COUNT > 0 THEN                                      04480000
+           DO;                                                          04490000
+           WRK_ORIGIN  = SUBSTR(REQLSEQ,1,2);                           04500000
+           WRK_SEQ_NO  = SUBSTR(REQLSEQ,3);                             04510000
+           CALL RCBCS2M_READ_LIST;                                      04520000
+           END;                                                         04530000
+      END;                                                              04540000
+      OTHERWISE                                                         04550000
+     DO;                                                                04560000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     04570000
+       WRK_TABLE = 'LONG_SERIAL_COUNT';                                 04580000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 04590000
+     END;                                                               04600000
+      END;                                                              04610000
+  END RCBCS2M_FETCH_DETAILS;                                            04620000
+                                                       /* SOC RC01369 */04620134
+1/*********************************************************************/04621005
+ /*                                                                   */04622005
+ /* MODULE NAME      : FETCH_LONG_SERIAL                              */04623005
+ /*                                                                   */04624005
+ /* DESCRIPTION      : RETRIEVE LONG SERIAL VALUES BASED ON DUMMY     */04625005
+ /*                  : ORIGIN AND SEQUENCE NUMBER                     */04626005
+ /*                                                                   */04627005
+ /*********************************************************************/04628005
+ RCBCS2M_FETCH_LONG_SERIAL: PROC;                                       04629005
+                                                                        04629105
+  EXEC SQL                                                              04629505
+    OPEN GET_LONG_SERIAL;                                               04629605
+                                                                        04629705
+    SELECT(SQLCA.SQLCODE);                                              04629805
+     WHEN(0);                                                           04629905
+   OTHERWISE                                                            04630005
+     DO;                                                                04630105
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     04630205
+       WRK_TABLE = 'OPEN_GET_LONGSERIAL';                               04630324
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 04630405
+     END;                                                               04630505
+     END;                                                               04630605
+                                                                        04630705
+      SWITCH_EOC_GETLNGSR = FALSE;                                      04630805
+      DO WHILE(¬SWITCH_EOC_GETLNGSR);                                   04630917
+        EXEC SQL                                                        04631115
+        FETCH GET_LONG_SERIAL INTO :TMP_LONG_SERIAL;                    04631215
+        SELECT(SQLCA.SQLCODE);                                          04631316
+         WHEN(0)                                                        04631415
+         DO;                                                            04631515
+           SWITCH_DUP_FND = FALSE;                                      04631614
+           SWITCH_SSN_CHECK = TRUE;                                     04631725
+           DO J = 1 TO CNT;                                             04631825
+              IF TMP_LONG_SERIAL = WRK_LONG_ARR(J)                      04631925
+                THEN DO;                                                04632025
+                  SWITCH_DUP_FND = TRUE;                                04632125
+                  J = CNT + 1;                                          04632225
+                END;                                                    04632325
+           END;                                                         04632425
+           IF (SWITCH_DUP_FND | TMP_LONG_SERIAL = REQLSEQ) THEN;        04632525
+           ELSE DO;                                                     04632625
+              CNT = CNT + 1;                                            04632725
+              WRK_LONG_ARR(CNT) =  TMP_LONG_SERIAL;                     04632825
+           END;                                                         04632925
+           SWITCH_EOC_GETLNGSR= FALSE;                                  04633025
+         END;                                                           04633114
+         WHEN(100)                                                      04633214
+         DO;                                                            04633314
+           IF CNT = 0 THEN                                              04633417
+           DO;                                                          04633514
+            CNT = CNT + 1;                                              04633614
+            WRK_LONG_ARR(CNT) = WRK_ORIGIN || WRK_SEQ_NO;               04633715
+           END;                                                         04633817
+           SWITCH_EOC_GETLNGSR= TRUE;                                   04633914
+         END;                                                           04634114
+         OTHERWISE                                                      04634214
+         DO;                                                            04634314
+             WRK_SQLCODE = SQLCA.SQLCODE;                               04634414
+             WRK_TABLE = 'FETCH_GET_LONGSERIAL';                        04634514
+             CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           04634614
+         END;                                                           04634714
+        END;                                                            04634814
+     END;                                                               04634914
+                                                                        04637809
+  EXEC SQL                                                              04637909
+    CLOSE GET_LONG_SERIAL;                                              04638009
+                                                                        04638109
+    SELECT(SQLCA.SQLCODE);                                              04638209
+     WHEN(0);                                                           04638309
+     OTHERWISE                                                          04638409
+     DO;                                                                04638509
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     04638609
+       WRK_TABLE = 'CLOSE_GET_LONGSERIAL';                              04638724
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 04638809
+     END;                                                               04638909
+    END;                                                                04639009
+                                                                        04639109
+  END RCBCS2M_FETCH_LONG_SERIAL;                       /* EOC RC01369 */04639234
+1/*********************************************************************/04639300
+ /*                                                                   */04640000
+ /* MODULE NAME      : RCBCS2M_READ_LIST                              */04650000
+ /*                                                                   */04660000
+ /* DESCRIPTION      : PROCESS ALL ROWS FROM RCBT0050_HW_PR AND       */04670000
+ /*                    RCBT0051_PI_HW_PR FOR THE GIVEN SERIAL NUMBER  */04680000
+ /*                                                                   */04690000
+ /*********************************************************************/04700000
+0RCBCS2M_READ_LIST: PROC;                                               04710000
+     EXEC SQL                        /* INIT CURSOR LIST_CURSOR    */   04720000
+          OPEN LIST_CURSOR;                                             04730000
+                                                                        04740000
+     SELECT(SQLCA.SQLCODE);                                             04750000
+       WHEN (0);                                                        04760000
+       OTHERWISE                                                        04770000
+         DO;                                                            04780000
+           RCBCQES.MESSAGE_NUMBER = 'C208';                             04790000
+           WRK_SQLCODE = SQLCA.SQLCODE;                                 04800000
+           WRK_TABLE = DATE10;                                          04810000
+           CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);             04820000
+         END;                                                           04830000
+     END;                                                               04840000
+                                                                        04841001
+ SWITCH_EOC_LIST = FALSE;                                               04850000
+ DO WHILE(¬SWITCH_EOC_LIST & I < 91);                                   04860001
+ EXEC SQL                                                               04870000
+      FETCH LIST_CURSOR                                                 04880000
+       INTO :WRK_CSLMTYP  :WRK_INDNULL                                  04890000
+           ,:WRK_IOLCPLM  :WRK_INDNULL                                  04900000
+           ,:WRK_IHSINBR  :WRK_INDNULL                                  04910000
+           ,:WRK_IOPUCTY  :WRK_INDNULL                                  04920000
+           ,:WRK_SSRCIND  :WRK_INDNULL                                  04930000
+           ,:WRK_CSLMMOD  :WRK_INDNULL                                  04940000
+           ,:WRK_ICUSWHU  :WRK_INDNULL                                  04950000
+           ,:WRK_ICUSANO  :WRK_INDNULL                                  04960000
+           ,:WRK_INSTALL  :WRK_INDNULL                                  04970000
+           ,:WRK_WED      :WRK_INDNULL                                  04980000
+           ,:WRK_SOURCE   :WRK_INDNULL                                  04990000
+           ,:WRK_WARLBTY  :WRK_INDNULL;                                 05000001
+                                                                        05010000
+ SELECT(SQLCA.SQLCODE);                                                 05020000
+   WHEN(0)                                                              05030000
+     DO;                                                                05040000
+        I=I+1;                                                          05050000
+        IF I <= 90 THEN                                                 05060001
+        DO;                                           /* SOC RC01369 */ 05061034
+        IF SWITCH_SSN_CHECK = TRUE THEN                                 05062028
+        CALL RCBCS2M_MOVE_LIST_CHECK;                                   05063028
+        ELSE                                          /* EOC RC01369 */ 05091034
+        CALL RCBCS2M_MOVE_LIST;                                         05091130
+        END;                                              /* RC01369 */ 05091234
+     END;                                                               05091331
+   WHEN(100)                                                            05092027
+                                                                        05100001
+       SWITCH_EOC_LIST = TRUE;                                          05110000
+                                                                        05120001
+   OTHERWISE                                                            05130000
+     DO;                                                                05140000
+       RCBCQES.MESSAGE_NUMBER = 'C209';                                 05150000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     05160000
+       WRK_TABLE = 'LIST_CURSOR2';                                      05170000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 05180000
+     END;                                                               05190000
+ END;                                                                   05200000
+                                                                        05210001
+ END;                                                                   05220000
+                                                                        05230000
+ EXEC SQL                                                               05240000
+    CLOSE  LIST_CURSOR;                                                 05250000
+                                                                        05260000
+ SELECT(SQLCA.SQLCODE);                                                 05270000
+   WHEN (0);                                                            05280000
+   OTHERWISE                                                            05290000
+     DO;                                                                05300000
+       RCBCQES.MESSAGE_NUMBER = 'C210';                                 05310000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     05320000
+       WRK_TABLE = 'LIST_CURSOR3';                                      05330000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 05340000
+     END;                                                               05350000
+ END;                                                                   05360001
+ END RCBCS2M_READ_LIST;                                                 05370000
+                                                       /* SOC RC01369 */05380034
+1/*********************************************************************/05381028
+ /*                                                                   */05382028
+ /* MODULE NAME      : RCBCS2M_MOVE_LIST_CHECK                        */05383028
+ /*                                                                   */05384028
+ /* DESCRIPTION      : PROCESS ALL ROWS FROM RCBT0050_HW_PR AND       */05385028
+ /*                    RCBT0051_PI_HW_PR FOR THE GIVEN SERIAL NUMBER  */05386028
+ /*                                                                   */05387028
+ /*********************************************************************/05388028
+0RCBCS2M_MOVE_LIST_CHECK: PROC;                                         05389028
+                                                                        05389128
+ EXEC SQL                                                               05389231
+   SELECT DUMMY_ORIGIN                                                  05389331
+         ,DUMMY_SEQUENCE_NUM                                            05389431
+   INTO :TMP_ORIGIN, :TMP_SEQ_NBR                                       05389531
+   FROM RCBV0125_DMMY_REAL T125                                         05389631
+   WHERE T125.COUNTRY_NUMBER               = :WRK_IOPUCTY               05389732
+   AND T125.PRODUCT_TYPE                   = :WRK_CSLMTYP               05389832
+   AND SUBSTR(T125.REAL_SERIAL_NUMBER,1,2) = :WRK_IOLCPLM               05389931
+   AND SUBSTR(T125.REAL_SERIAL_NUMBER,3)   = :WRK_IHSINBR               05390032
+ ;                                                                      05390131
+ SELECT(SQLCA.SQLCODE);                                                 05390231
+   WHEN (0)                                                             05390331
+     DO;                                                                05390431
+       IF (TMP_ORIGIN = REQORIG & TMP_SEQ_NBR = REQSEQN) THEN           05390531
+         CALL RCBCS2M_MOVE_LIST;                                        05390731
+       ELSE I=I-1;                                                      05390833
+     END;                                                               05391033
+   WHEN(100);                                                           05391133
+   OTHERWISE                                                            05391233
+     DO;                                                                05391333
+       RCBCQES.MESSAGE_NUMBER = 'C266';                                 05391433
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     05391533
+       WRK_TABLE = 'RCBT0125_DMMY_REAL';                                05391633
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 05391733
+     END;                                                               05391833
+ END;                                                                   05391933
+ END RCBCS2M_MOVE_LIST_CHECK;                          /* EOC RC01369 */05392034
+1/*********************************************************************/05393000
+ /*                                                                   */05400000
+ /* MODULE NAME      : RCBCS2M_MOVE_LIST                              */05410004
+ /*                                                                   */05420000
+ /* DESCRIPTION      : PROCESS ALL ROWS FROM RCBT0050_HW_PR AND       */05430000
+ /*                    RCBT0051_PI_HW_PR FOR THE GIVEN SERIAL NUMBER  */05440000
+ /*                                                                   */05450000
+ /*********************************************************************/05460000
+0RCBCS2M_MOVE_LIST: PROC;                                               05470000
+                                                                        05480000
+ COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.CSLMTYP = WRK_CSLMTYP;               05490000
+ COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IOLCPLM = WRK_IOLCPLM;               05500000
+ COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IHSINBR = WRK_IHSINBR;               05510000
+ COMMAREA.EDQBSLS.ARRAY(I).IOPUCTY         = WRK_IOPUCTY;               05520000
+ IF SWITCH_3317_S2 THEN                                                 05530000
+  DO;                                                                   05540000
+   CALL RCBCS2M_SELECT_T125;                                            05550001
+  END;                                                                  05560000
+ SELECT(WRK_SOURCE);                                                    05570000
+   WHEN ('BAU')                                     /* BAU DATA       */05580000
+     DO;                                                                05590000
+       IF WRK_SSRCIND = 'S' THEN                                        05600000
+         COMMAREA.EDQBSLS.ARRAY(I).SSRCIND = ' ';                       05610000
+         COMMAREA.EDQBSLS.ARRAY(I).SSRCIND = WRK_SSRCIND;               05620000
+       CALL RCBCS2M_READ_HW_CUST;                                       05630000
+       CALL RCBCS2M_READ_HW_REAL;                                       05640000
+     END;                                                               05650000
+   WHEN ('PI')                                      /* PI DATA        */05660000
+     DO;                                                                05670000
+       COMMAREA.EDQBSLS.ARRAY(I).CUSCODE.ICUSHWU = WRK_ICUSWHU;         05700000
+                                                                        05720001
+       IF WRK_WARLBTY  = 'LEN'  THEN                                    05730001
+        DO;                                                             05740001
+         CALL RCBCS2M_CHECK_LENOVO;                                     05750000
+                                                                        05760001
+         COMMAREA.EDQBSLS.ARRAY(I).SSRCIND = WRK_SSRCIND;               05790000
+                                                                        05800001
+        END;                                                            05810000
+       ELSE                                                             05820000
+        DO;                                                             05830000
+         EXEC SQL                                                       05840000
+          SELECT AUTHORISATION_CODE                                     05850000
+            INTO :WRK_AUTHORISATION_CODE :WRK_INDNULL                   05860000
+          FROM   RCBV0241_PI_CTR  T241                                  05870000
+          WHERE  T241.COUNTRY_NUMBER  = :WRK_IOPUCTY                    05880000
+             AND  T241.PRODUCT_TYPE    = :WRK_CSLMTYP                   05890000
+             AND T241.ORIGIN = :WRK_ORIGIN                              05950000
+             AND T241.SEQUENCE_NUMBER = :WRK_SEQ_NO                     05960000
+                                                                        05970001
+             AND  :DATE10        BETWEEN T241.EFFECTIVE_DATE            05980000
+                                 AND T241.END_DATE                      05990000
+          WITH UR;                                                      06000000
+                                                                        06010000
+          SELECT(SQLCA.SQLCODE);                                        06020000
+            WHEN(0);                                                    06030000
+            WHEN(100);                                                  06040000
+            OTHERWISE                                                   06050000
+             DO;                                                        06060000
+              RCBCQES.MESSAGE_NUMBER = 'C270';                          06070000
+              WRK_SQLCODE = SQLCA.SQLCODE;                              06080000
+              WRK_TABLE = 'RCBT0241_PI_CTR';                            06090000
+              CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);          06100000
+             END;                                                       06110000
+          END;                                                          06120000
+        IF  WRK_AUTHORISATION_CODE = 'PA' THEN                          06130000
+         COMMAREA.EDQBSLS.ARRAY(I).SSRCIND = 'D';                       06160000
+        ELSE                                                            06180000
+         COMMAREA.EDQBSLS.ARRAY(I).SSRCIND = WRK_SSRCIND;               06210000
+       END;                                                             06230000
+       CALL RCBCS2M_READ_PI_CUST;                                       06260000
+       COMMAREA.EDQBSLS.ARRAY(I).CSLMMOD = WRK_CSLMMOD;                 06290000
+     END;                                                               06310000
+   OTHERWISE;                                                           06320000
+ END;                                                                   06330000
+                                                                        06340000
+ END RCBCS2M_MOVE_LIST;                                                 06350000
+1/*********************************************************************/06360001
+ /*                                                                   */06370001
+ /* MODULE NAME      : RCBCS2M_SELECT_T125                            */06380001
+ /*                                                                   */06390001
+ /* DESCRIPTION      : SELECT APPROPRIATE LONG SERIAL FROM T125 FOR   */06400001
+ /*                    CORRESPONDING DUMMY SERIAL NUMBER              */06410001
+ /*                                                                   */06420001
+ /*********************************************************************/06430001
+0RCBCS2M_SELECT_T125: PROC;                                             06440001
+                                                                        06450001
+ WRK_LONG_SERIAL = '';                                                  06460001
+ TMP_ORIGIN = '';                                                       06460128
+ TMP_SEQ_NBR = '';                                                      06460228
+ EXEC SQL                                                               06470001
+  SELECT REAL_SERIAL_NUMBER                                             06480001
+    INTO :WRK_LONG_SERIAL                                               06490001
+    FROM RCBV0125_DMMY_REAL T125                                        06500001
+    WHERE T125.COUNTRY_NUMBER      = :WRK_IOPUCTY                       06510001
+      AND T125.PRODUCT_TYPE        = :WRK_CSLMTYP                       06520001
+      AND T125.DUMMY_ORIGIN        = :WRK_IOLCPLM                       06530001
+      AND T125.DUMMY_SEQUENCE_NUM  = :WRK_IHSINBR                       06540001
+ ;                                                                      06550001
+                                                                        06560001
+ SELECT(SQLCA.SQLCODE);                                                 06570001
+   WHEN (0)                                                             06590001
+     DO;                                                                06600001
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IOLCPLM = WRK_IOLCPLM;         06610001
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IHSINBR = WRK_IHSINBR;         06620001
+       IF SWITCH_3317_S2 THEN                                           06630001
+       COMMAREA_NEW.EDQBSLS1.ARRAY(I).IHSITOS.SEDQGSN = WRK_LONG_SERIAL;06640001
+     END;                                                               06650001
+   WHEN (100)                                                           06660001
+     DO;                                                                06670001
+      WRK_LONG_SERIAL = WRK_ORIGIN||WRK_SEQ_NO;                         06680001
+      EXEC SQL                                                          06690001
+        SELECT DUMMY_ORIGIN                                             06700001
+              ,DUMMY_SEQUENCE_NUM                                       06710001
+        INTO :TMP_ORIGIN, :TMP_SEQ_NBR                                  06720001
+        FROM RCBV0125_DMMY_REAL T125                                    06730001
+        WHERE T125.COUNTRY_NUMBER      = :WRK_IOPUCTY                   06740001
+        AND T125.PRODUCT_TYPE        = :WRK_CSLMTYP                     06750001
+        AND SUBSTR(T125.REAL_SERIAL_NUMBER,1,2) = :WRK_IOLCPLM          06760001
+        AND SUBSTR(T125.REAL_SERIAL_NUMBER,3) = :WRK_IHSINBR            06770001
+      ;                                                                 06780001
+      SELECT(SQLCA.SQLCODE);                                            06790001
+      WHEN (0)                                                          06800001
+      DO;                                                               06810001
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IOLCPLM = TMP_ORIGIN;          06831025
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IHSINBR = TMP_SEQ_NBR;         06832025
+       IF SWITCH_3317_S2 THEN                                           06840001
+       COMMAREA_NEW.EDQBSLS1.ARRAY(I).IHSITOS.SEDQGSN = WRK_LONG_SERIAL;06850001
+     END;                                                               06860001
+      /* TOS NOT FOUND */                                               06870001
+     WHEN(100)                                                          06880001
+     DO;                                                                06890001
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IOLCPLM = WRK_IOLCPLM;         06900001
+       COMMAREA.EDQBSLS.ARRAY(I).IHSITOS.IHSINBR = WRK_IHSINBR;         06910001
+       IF SWITCH_3317_S2 THEN                                           06920001
+       COMMAREA_NEW.EDQBSLS1.ARRAY(I).IHSITOS.SEDQGSN = WRK_IOLCPLM||   06930001
+                                                   WRK_IHSINBR;         06940001
+       IF (LENGTH(TRIM(WRK_IHSINBR)) = 7 &                              06950001
+                            SUBSTR(WRK_IHSINBR,1,2) = '00') THEN        06960001
+       IF SWITCH_3317_S2 THEN                                           06970001
+         COMMAREA_NEW.EDQBSLS1.ARRAY(I).IHSITOS.SEDQGSN=WRK_IOLCPLM||   06980001
+                                      SUBSTR(WRK_IHSINBR,3,5);          06990001
+     END;                                                               07000001
+     OTHERWISE                                                          07010001
+     DO;                                                                07020001
+       RCBCQES.MESSAGE_NUMBER = 'C266';                                 07030001
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     07040001
+       WRK_TABLE = 'RCBT0125_DMMY_REAL';                                07050001
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 07060001
+     END;                                                               07070001
+   END;                                                                 07080001
+     END;                                                               07090001
+   OTHERWISE                                                            07100001
+     DO;                                                                07110001
+       RCBCQES.MESSAGE_NUMBER = 'C265';                                 07120001
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     07130001
+       WRK_TABLE = 'RCBT0125_DMMY_REAL';                                07140001
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 07150001
+     END;                                                               07160001
+ END;                                                                   07170001
+0END RCBCS2M_SELECT_T125;                                               07180001
+1/*********************************************************************/07190000
+ /*                                                                   */07200000
+ /* MODULE NAME      : RCBCS2M_READ_HW_CUST                           */07210000
+ /*                                                                   */07220000
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0190    */07230000
+ /*                    AND RCBT0010                                   */07240000
+ /*                                                                   */07250000
+ /*********************************************************************/07260000
+0RCBCS2M_READ_HW_CUST : PROC;                                           07270000
+                                                                        07280000
+ EXEC SQL                                                               07290000
+      SELECT T190.CUSTOMER_NUMBER,                                      07300000
+             T010.CUSTOMER_NAME                                         07310000
+       INTO :TB_RCBV190.CUSTOMER_NUMBER :WRK_INDNULL,                   07320000
+            :TB_RCBV010.CUSTOMER_NAME   :WRK_INDNULL                    07330000
+      FROM   RCBV0190_HW_CUST  T190,                                    07340000
+             RCBV0010_CUSTOMER T010                                     07350000
+      WHERE  T190.COUNTRY_NUMBER   = :WRK_IOPUCTY                       07360000
+        AND  T190.PRODUCT_TYPE     = :WRK_CSLMTYP                       07370000
+        AND  T190.ORIGIN           = :WRK_ORIGIN                        07380000
+        AND  T190.SEQUENCE_NUMBER  = :WRK_SEQ_NO                        07390000
+        AND  T190.TYPE_OF_RELATION = 'U'                                07400000
+        AND :DATE10          BETWEEN T190.EFFECTIVE_DATE                07410000
+                                 AND T190.END_DATE                      07420000
+        AND  T010.COUNTRY_NUMBER   = T190.COUNTRY_NUMBER                07430000
+        AND  T010.CUSTOMER_NUMBER  = T190.CUSTOMER_NUMBER               07440000
+        AND :DATE10          BETWEEN T010.EFFECTIVE_DATE                07450000
+                                 AND T010.END_DATE                      07460000
+      WITH UR;                                                          07470000
+                                                                        07480000
+ SELECT(SQLCA.SQLCODE);                                                 07490000
+   WHEN(0)                                                              07500000
+     DO;                                                                07510000
+       COMMAREA.EDQBSLS.ARRAY(I).CUSCODE.ICUSHWU =                      07520000
+                                         TB_RCBV190.CUSTOMER_NUMBER;    07530000
+       COMMAREA.EDQBSLS.ARRAY(I).CUSTNAM = TB_RCBV010.CUSTOMER_NAME;    07540000
+     END;                                                               07550000
+   WHEN(100);                                                           07560000
+   OTHERWISE                                                            07570000
+     DO;                                                                07580000
+       RCBCQES.MESSAGE_NUMBER = 'C211';                                 07590000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     07600000
+       WRK_TABLE = 'RCBV0010_CUSTOMER';                                 07610000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 07620000
+     END;                                                               07630000
+ END;                                                                   07640000
+                                                                        07650000
+ END RCBCS2M_READ_HW_CUST;                                              07660000
+1/*********************************************************************/07670000
+ /*                                                                   */07680000
+ /* MODULE NAME      : RCBCS2M_READ_HW_REAL                           */07690000
+ /*                                                                   */07700000
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0300    */07710000
+ /*                                                                   */07720000
+ /*                                                                   */07730000
+ /*********************************************************************/07740000
+0RCBCS2M_READ_HW_REAL : PROC;                                           07750000
+                                                                        07760000
+ EXEC SQL                                                               07770000
+      SELECT T300.MODEL_NUMBER                                          07780000
+       INTO :TB_RCBV300.MODEL_NUMBER    :WRK_INDNULL                    07790000
+      FROM   RCBV0300_HW_REAL  T300                                     07800000
+      WHERE  T300.COUNTRY_NUMBER   = :WRK_IOPUCTY                       07810000
+        AND  T300.PRODUCT_TYPE     = :WRK_CSLMTYP                       07820000
+        AND  T300.ORIGIN           = :WRK_ORIGIN                        07830000
+        AND  T300.SEQUENCE_NUMBER  = :WRK_SEQ_NO                        07840000
+        AND :DATE10          BETWEEN T300.EFFECTIVE_DATE                07850000
+                                 AND T300.END_DATE                      07860000
+      WITH UR;                                                          07870000
+                                                                        07880000
+ SELECT(SQLCA.SQLCODE);                                                 07890000
+   WHEN(0)                                                              07900000
+     DO;                                                                07910000
+     COMMAREA.EDQBSLS.ARRAY(I).CSLMMOD = TB_RCBV300.MODEL_NUMBER;       07920000
+     END;                                                               07930000
+   WHEN(100);                                                           07940000
+   OTHERWISE                                                            07950000
+     DO;                                                                07960000
+       RCBCQES.MESSAGE_NUMBER = 'C212';                                 07970000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     07980000
+       WRK_TABLE = 'RCBV0300_HW_REAL';                                  07990000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 08000000
+     END;                                                               08010000
+ END;                                                                   08020000
+                                                                        08030000
+ END RCBCS2M_READ_HW_REAL;                                              08040000
+1/*********************************************************************/08050000
+ /*                                                                   */08060000
+ /* MODULE NAME      : RCBCS2M_READ_PI_CUST                           */08070000
+ /*                                                                   */08080000
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0011    */08090000
+ /*                    OR RCBT0010                                    */08100000
+ /*                                                                   */08110000
+ /*********************************************************************/08120000
+0RCBCS2M_READ_PI_CUST : PROC;                                           08130000
+                                                                        08140000
+ EXEC SQL                                                               08150000
+      SELECT CUSTOMER_NAME                                              08160000
+       INTO :TB_RCBV011.CUSTOMER_NAME  :WRK_INDNULL                     08170000
+      FROM   RCBV0011_PI_CUST  T011                                     08180000
+      WHERE  T011.COUNTRY_NUMBER     = :WRK_IOPUCTY                     08190000
+        AND  T011.CUSTOMER_NUMBER    = :WRK_ICUSWHU                     08200000
+        AND  T011.CUSTOMER_NR_EXTEND = :WRK_ICUSANO                     08210000
+      WITH UR;                                                          08220000
+                                                                        08230000
+ SELECT(SQLCA.SQLCODE);                                                 08240000
+   WHEN(0)                                                              08250000
+     DO;                                                                08260000
+     COMMAREA.EDQBSLS.ARRAY(I).CUSTNAM = TB_RCBV011.CUSTOMER_NAME;      08270000
+     END;                                                               08280000
+   WHEN(100)                                                            08290000
+     DO;                                                                08300000
+       EXEC SQL                                                         08310000
+            SELECT CUSTOMER_NAME                                        08320000
+             INTO :TB_RCBV010.CUSTOMER_NAME  :WRK_INDNULL               08330000
+            FROM   RCBV0010_CUSTOMER  T010                              08340000
+            WHERE  T010.COUNTRY_NUMBER  = :WRK_IOPUCTY                  08350000
+              AND  T010.CUSTOMER_NUMBER = :WRK_ICUSWHU                  08360000
+              AND  :DATE10        BETWEEN T010.EFFECTIVE_DATE           08370000
+                                      AND T010.END_DATE                 08380000
+            WITH UR;                                                    08390000
+                                                                        08400000
+       SELECT(SQLCA.SQLCODE);                                           08410000
+         WHEN(0)                                                        08420000
+           DO;                                                          08430000
+         COMMAREA.EDQBSLS.ARRAY(I).CUSTNAM = TB_RCBV010.CUSTOMER_NAME;  08440000
+           END;                                                         08450000
+         WHEN(100);                                                     08460000
+         OTHERWISE                                                      08470000
+           DO;                                                          08480000
+             RCBCQES.MESSAGE_NUMBER = 'C213';                           08490000
+             WRK_SQLCODE = SQLCA.SQLCODE;                               08500000
+             WRK_TABLE = 'RCBV0010_CUSTOMER';                           08510000
+             CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           08520000
+           END;                                                         08530000
+       END;                                                             08540000
+     END;                                                               08550000
+   OTHERWISE                                                            08560000
+     DO;                                                                08570000
+       RCBCQES.MESSAGE_NUMBER = 'C213';                                 08580000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     08590000
+       WRK_TABLE = 'RCBV0011_PI_CUST';                                  08600000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 08610000
+     END;                                                               08620000
+ END;                                                                   08630000
+                                                                        08640000
+ END RCBCS2M_READ_PI_CUST;                                              08650000
+1/*********************************************************************/08660000
+ /*                                                                   */08670000
+ /* MODULE NAME      : RCBCS2M_CHECK_LENOVO                           */08680001
+ /*                                                                   */08690000
+ /* DESCRIPTION      : CHECK THAT THE RETRIEVED PI DATA IS EITHER AN  */08700000
+ /*                    IBM MACHINE OR A LENOVO MACHINE AND SET THE    */08710000
+ /*                    SOURCE INDICATOR ACCORDINGLY.                  */08720000
+ /*                                                                   */08730000
+ /*                    THIS USES THE PLINCL RCBLENO WHICH CALCULATES  */08740000
+ /*                    THE LENOVO TRANSACTION INDICATOR (LTI).        */08750000
+ /*                    - A VALUE OF BLANK MEANS IT IS NOT LENOVO      */08760000
+ /*                      THERFORE LEAVE THE SOURCE INDICATOR AS IS    */08770000
+ /*                    - A VALUE OF '1' MEANS LENOVO BASE WARRANTY    */08780000
+ /*                      CHANGE THE SOURCE INSICATOR TO 'Y'           */08790000
+ /*                    - A VALUE OF '2' MEANS LENOVO SERVICE OFFERING */08800000
+ /*                      CHANGE THE SOURCE INSICATOR TO 'Z'           */08810000
+ /*                                                                   */08820000
+ /*********************************************************************/08830000
+0RCBCS2M_CHECK_LENOVO : PROC;                                           08840000
+                                                                        08850000
+ EXEC SQL                                                               08860000
+      SELECT AUTHORISATION_CODE,                                        08870000
+             EFFECTIVE_DATE    ,                                        08880000
+             END_DATE                                                   08890000
+       INTO :WRK_AUTHORISATION_CODE :WRK_INDNULL                        08900000
+           ,:WRK_EFFECTIVE_DATE     :WRK_INDNULL                        08910000
+           ,:WRK_END_DATE           :WRK_INDNULL                        08920000
+      FROM   RCBV0241_PI_CTR  T241                                      08930000
+      WHERE  T241.COUNTRY_NUMBER  = :WRK_IOPUCTY                        08940000
+        AND  T241.PRODUCT_TYPE    = :WRK_CSLMTYP                        08950000
+        AND  T241.ORIGIN           = :WRK_ORIGIN                        08960000
+        AND  T241.SEQUENCE_NUMBER  = :WRK_SEQ_NO                        08970000
+        AND  :DATE10        BETWEEN T241.EFFECTIVE_DATE                 08980000
+                                AND T241.END_DATE                       08990000
+      WITH UR;                                                          09000000
+                                                                        09010000
+ SELECT(SQLCA.SQLCODE);                                                 09020000
+   WHEN(0);                                                             09030000
+   WHEN(100);                                                           09040000
+   OTHERWISE                                                            09050000
+     DO;                                                                09060000
+       RCBCQES.MESSAGE_NUMBER = 'C215';                                 09070000
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     09080000
+       WRK_TABLE = 'RCBT0241_PI_CTR';                                   09090000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 09100000
+     END;                                                               09110000
+ END;                                                                   09120000
+                                                                        09130000
+ WRK_LENOVO_TI = CALCULATE_LTI (WRK_WED,                                09140000
+                                WRK_AUTHORISATION_CODE,                 09150000
+                                WRK_EFFECTIVE_DATE,                     09160000
+                                WRK_END_DATE,                           09170000
+                                DATE10,                                 09180000
+                                WRK_WARLBTY);                           09190001
+                                                                        09200000
+ SELECT(WRK_LENOVO_TI);                                                 09210000
+   WHEN(' ');                                                           09220000
+   WHEN('1')                                                            09230000
+     WRK_SSRCIND = 'Y';                                                 09240000
+   WHEN('2')                                                            09250000
+     WRK_SSRCIND = 'Z';                                                 09260000
+   OTHERWISE;                                                           09270000
+ END;                                                                   09280000
+                                                                        09290000
+ END RCBCS2M_CHECK_LENOVO;                                              09300000
+ %INCLUDE RCBLENO;                                                      09310000
+1/********************************************************************/ 09320000
+ /*      F I N A L    P R O C E S S I N G                            */ 09330000
+ /********************************************************************/ 09340000
+0RCBCS2M_FINALISATION : PROC;                                           09350000
+0SELECT (RESPONSE);                                                     09360000
+    WHEN (DFHRESP(NORMAL))                                              09370000
+    DO;                                                                 09380000
+                                                                        09390000
+       IF COMMAREA.EDQBSLS.NUMRECS = 0 THEN                             09400000
+          COMMAREA.EDQBSHS.REQ.CRMORET = '9';                           09410000
+       ELSE                                                             09420000
+          COMMAREA.EDQBSHS.REQ.CRMORET = '0';                           09430000
+    END;                                                                09440000
+    WHEN (DFHRESP(INVREQ))                                              09450000
+    DO;                                                                 09460000
+       COMMAREA.EDQBSHS.CRMORET = '3';                                  09470000
+       RCBCQES.MESSAGE_NUMBER = 'C206';                                 09480000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 09490000
+    END;                                                                09500000
+    OTHERWISE                                                           09510000
+    DO;                                                                 09520000
+       COMMAREA.EDQBSHS.CRMORET = '3';                                  09530000
+       RCBCQES.MESSAGE_NUMBER = 'C207';                                 09540000
+       CALL RCBCS2M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 09550000
+    END;                                                                09560000
+ END;                                                                   09570000
+                                                                        09580000
+ IF SWITCH_0211_S2 THEN                                                 09590000
+   DO;                                                                  09600000
+     COMMAREA_OLD = '';                                                 09610000
+     COMMAREA_OLD = COMMAREA;                                           09620000
+   END;                                                                 09630000
+ ELSE                                                                   09640000
+ IF SWITCH_3317_S2 THEN                                                 09650000
+   DO;                                                                  09660000
+     COMMAREA_NEW.EDQBSHS1 = COMMAREA.EDQBSHS, BY NAME;                 09670000
+     COMMAREA_NEW.EDQBSLS1 = COMMAREA.EDQBSLS, BY NAME;                 09680000
+     COMMAREA_NEW.EDQBSHS1.REQ.SEDQGSN = REQLSEQ;                       09690000
+   END;                                                                 09700000
+                                                                        09710000
+0EXEC CICS RETURN                                                       09720000
+    RESP(RESPONSE);                                                     09730000
+0END RCBCS2M_FINALISATION;                                              09740000
+1/********************************************************************/ 09750000
+ /*      E R R O R   L O G G I N G                                   */ 09760000
+ /********************************************************************/ 09770000
+0RCBCS2M_LOG_ERROR : PROC(ERR_SQLCODE,ERR_TABLE);                       09780000
+                                                                        09790000
+ DCL ERR_TABLE   CHAR(18);                                              09800000
+ DCL ERR_SQLCODE FIXED BIN(31);                                         09810000
+                                                                        09820000
+ SELECT(ERR_SQLCODE);                                                   09830000
+    WHEN (0);                                                           09840000
+    WHEN (100)                                                          09850000
+    DO;                                                                 09860001
+       COMMAREA.EDQBSHS.REQ.CRMORET = '9';                              09880000
+    END;                                                                09890001
+    WHEN (-923)                                                         09900000
+    DO;                                                                 09910001
+       COMMAREA.EDQBSHS.REQ.CRMORET = '8';                              09930000
+    END;                                                                09940001
+    WHEN (9999)                                                         09950000
+    DO;                                                                 09960001
+       COMMAREA.EDQBSHS.REQ.CRMORET = '4';                              09980000
+    END;                                                                09990001
+    OTHERWISE                                                           10000000
+    DO;                                                                 10010001
+       COMMAREA.EDQBSHS.REQ.CRMORET = '7';                              10030000
+    END;                                                                10040001
+ END;                                                                   10050000
+                                                                        10060000
+0COMMAREA.EDQBSHS.REQ.NTBLNME = ERR_TABLE;                              10100000
+ COMMAREA.EDQBSHS.REQ.CRMOSUB = ERR_SQLCODE;                            10110000
+                                                                        10130000
+0RCBCQES.MESSAGE_TYPE  = 'IS';                                          10140000
+ RCBCQES.LANGUAGE_CODE = 'EN';                                          10150000
+ RCBCQES.PROGRAM_ID    = 'RCBCS2M';                                     10160000
+ CALL RCBCQEM(RCBCQES_PTR);                                             10170000
+                                                                        10180001
+ IF SWITCH_0211_S2 THEN                                                 10190000
+   DO;                                                                  10200000
+     COMMAREA_OLD = '';                                                 10210001
+     COMMAREA_OLD = COMMAREA;                                           10220000
+   END;                                                                 10230000
+ ELSE                                                                   10240000
+ IF SWITCH_3317_S2 THEN                                                 10250000
+   DO;                                                                  10260000
+     COMMAREA_NEW.EDQBSHS1 = COMMAREA.EDQBSHS, BY NAME;                 10280000
+     COMMAREA_NEW.EDQBSLS1 = COMMAREA.EDQBSLS, BY NAME;                 10290000
+     COMMAREA_NEW.EDQBSHS1.REQ.SEDQGSN = REQLSEQ;                       10300000
+                                                                        10500000
+ EXEC CICS RETURN;                                                      10510000
+0END RCBCS2M_LOG_ERROR;                                                 10520000
+-/*-----------------------------------------------------------------@*/ 10530000
+ /* IDENTIFIER : $DTSEP                                              */ 10540000
+ /* FUNCTION   : ADD SEPARATORS TO DATE OR TIME STRINGS              */ 10550000
+ /* DESCRIPTION: IF YEAR HAS 4 DIGITS, YYYYMMDD DATE FORMAT REQUIRED */ 10560000
+ /*      OTHERWISE WHICHEVER 6-DIGITS DATE OR TIME FORMAT IS ALLOWED */ 10570000
+ /*----------------------------------------------------------------@@*/ 10580000
+ $DTSEP:  PROC(DATE_IN,SEP)                                             10590000
+          RETURNS(CHAR(10)  VAR)  REORDER;                              10600000
+    DCL DATE_IN    CHAR(*);                                             10610000
+    DCL SEP        CHAR(01);                                            10620000
+    DCL DATE_OUT   CHAR(10)  VAR  INIT('');                             10630000
+    DCL LIN        FIXED BIN(15)  INIT(0);                              10640000
+    LIN = LENGTH(DATE_IN);                                              10650000
+    DATE_OUT = DATE_IN || (2)' ';                                       10660000
+    SUBSTR(DATE_OUT,LIN-3,3) =                                          10670000
+            SEP || SUBSTR(DATE_IN,LIN-3,2);                             10680000
+    SUBSTR(DATE_OUT,LIN,3)   =                                          10690000
+            SEP || SUBSTR(DATE_IN,LIN-1,2);                             10700000
+    RETURN(DATE_OUT);                                                   10710000
+  END  $DTSEP;                                                          10720000
+1/*******************************************************************/  10730000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  10740000
+ /*******************************************************************/  10750000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  10760000
+  $DAIMOD (RCBCS2M);                     /* MODULE TO BE COMPILED   */  10770000
+0/*******************************************************************/  10780000
+ /* END OF ABR BLOCK '                                              */  10790000
+ /*******************************************************************/  10800000
+0 END RCBCS2M;                                                          10810000

@@ -1,0 +1,308 @@
+ /* RCBC99P - PARAMETER TABLE SETUP                                  */ 00010001
+ /********************************************************************/ 00020001
+ /*                                                                  */ 00030001
+ /* TRANSACTION CODE    : RC99                                       */ 00040001
+ /*                                                                  */ 00050001
+ /* PROGRAM NAME        : RCBC99M                                    */ 00060001
+ /*                                                                  */ 00070001
+ /* TYPE                : CICS/VS                                    */ 00080001
+ /*                                                                  */ 00090001
+ /* DESCRIPTION         : _ MAIN AUTHORISATION CHECKING PROGRAM      */ 00100001
+ /*                                                                  */ 00110001
+ /* LINKED TRANSACTION  : - RC99                                     */ 00120001
+ /*                                                                  */ 00130001
+ /* MESSAGES            :                                            */ 00140001
+ /*                                                                  */ 00150001
+ /*                                                                  */ 00160001
+ /*  MAINTENANCE LOG :                                               */ 00170001
+ /*  ---------------                                                 */ 00180001
+ /*                                                                  */ 00190001
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00200001
+ /*  --------------------------------------------------------------  */ 00210001
+ /*  2003-11-16 | RB01261      | MAKE COUNTRY NUMBER CHANGEABLE      */ 00220010
+ /*  2003-07-19 | RB01268      | USER CANCELLATION OF SERVICEPACS    */ 00221010
+ /*  2007-12-28 | CEDS00000366 | SECURITY OPTIONS FIX                */ 00222016
+ /*  2013-06-28 | CEDS00000639 | ONLINE ACCESS RESTRICTION FOR       */ 00230021
+ /*             |              | OPTION 8                            */ 00231021
+ /*  2014-05-05 | RB01338      | CEDS 3.3 A21 RELEASE - RACF USER    */ 00231134
+ /*             |              | GROUP FOR TS ACCESS MANAGEMENT TEAM */ 00231234
+ /*                                                                  */ 00232024
+ /********************************************************************/ 00240001
+1RCBC99M: PROC(COMMPTR)                                                 00250001
+          OPTIONS (MAIN)                                                00260001
+          REORDER;                                                      00270001
+0/********************************************************************/ 00280001
+ /*  EXTERNAL ENTRIES                                                */ 00290001
+ /********************************************************************/ 00300001
+ DCL RCB004N ENTRY EXTERNAL;                                            00310001
+                                                                        00320001
+0/********************************************************************/ 00330003
+ /*  COMMUNICATION AREA                                              */ 00340001
+ /********************************************************************/ 00350001
+     %INCLUDE (RCBCP2S);                                                00360001
+     %INCLUDE (RCBCHDS);,                                               00370001
+     %INCLUDE (RCBC00S);;                                               00380001
+0/********************************************************************/ 00390001
+ /*  DB2 STRUCTURES                                                  */ 00400001
+ /********************************************************************/ 00410001
+ DCL 1 RCB500S,                                                         00420001
+      %INCLUDE RCB500S;;                                                00430001
+ DCL 1 RCB500SI,                                                        00440001
+      %INCLUDE RCB500SI;;                                               00450001
+0/********************************************************************/ 00460001
+ /*  INTERFACE AREAS                                                 */ 00470001
+ /********************************************************************/ 00480001
+ DCL 1 DATE_AREA,                                                       00490001
+     %INCLUDE (RCBZ03S);;                                               00500001
+ DCL 1 RCBZ02S,                                                         00510001
+      %INCLUDE RCBZ02S;;                                                00520001
+ DCL 1 SQLCA_R      BASED(ADDR(RCBZ02S.RETURN_SQL))                     00530001
+                    LIKE SQLCA;                                         00540001
+ DCL 1 PARM_INT_AREA,                                                   00550001
+      %INCLUDE RCBZ01S;;                                                00560001
+-/********************************************************************/ 00570001
+ /****   DECLARATIONS OF DB2 SQLCA                                ****/ 00580001
+ /********************************************************************/ 00590001
+  EXEC SQL  INCLUDE  SQLCA                  ;/*                      */ 00600001
+0/********************************************************************/ 00610001
+ /*  WORKING DECLARATIONS                                            */ 00620001
+ /********************************************************************/ 00630001
+ DCL USR_OK_FLAG      BIT(1)  INIT('0'B);                               00660002
+ DCL SEC_PARM         BIT(16) INIT('0'B);                               00670001
+ DCL SEC_BIT(16)      BIT(1) DEF(SEC_PARM);                             00680001
+ DCL SEC_VALUE        CHAR(160) INIT('');                               00690011
+ DCL 1 P_VALUE(32)    BASED(ADDR(SEC_VALUE)),                           00700011
+       3 P_CTY        CHAR(3) INIT(''),                                 00710001
+       3 P_AUTH       BIT(16) INIT('0'B);                               00720001
+ DCL WRK_PARM         PIC '999' INIT(0);                                00740001
+ DCL WRK_PARM_FB      FIXED BIN(31) INIT(0);                            00750001
+ DCL WRK_ASCA_DATE    CHAR(10) INIT('');                                00760001
+ DCL WRK_DATE_1       CHAR(10) INIT('');                                00770001
+ DCL WRK_TIME_IN      CHAR(26) INIT('');                                00780001
+ DCL COMMAREA_STRING  CHAR(5984) INIT('');                              00790001
+0/********************************************************************/ 00800001
+ /*                 BUILD IN FUNCTIONS                               */ 00810001
+ /********************************************************************/ 00820001
+0DCL (LENGTH,                                                           00830001
+      STRING,                                                           00840001
+      SUBSTR,                                                           00850001
+      VERIFY,                                                           00860001
+      DECIMAL,                                                          00870001
+      DATETIME,                                                         00880001
+      CHAR,                                                             00890001
+      NULL,                                                             00900001
+      CSTG,                                                             00910001
+      STG,                                                              00920001
+      ADDR)   BUILTIN;                                                  00930001
+1/********************************************************************/ 00940001
+ /*                   M A I N   P R O C E S S I N G                  */ 00950001
+ /*                                                                  */ 00960001
+ /********************************************************************/ 00970001
+                                                                        00980001
+ /*ADMIN_FLAG     = FALSE;*/                              /* RB01338 */ 00990031
+ ASCA_STOP_FLAG = FALSE;                                                01000001
+ CTY_OK_FLAG    = FALSE;                                                01010001
+ OK_FLAG        = FALSE;                                                01020001
+ UPD_OK_FLAG    = FALSE;                                                01030001
+ USR_OK_FLAG    = FALSE;                                                01040002
+ RCB025_FLAG    = FALSE;                                                01050002
+ RCB098_FLAG    = FALSE;                                                01060002
+                                                                        01070001
+ CALL RCBC99M_VALIDATE;                                                 01080001
+                                                                        01090003
+ EXEC CICS RETURN;                                                      01100003
+                                                                        01110001
+1/********************************************************************/ 01120001
+ /*      VALIDATE INPUT                                              */ 01130001
+ /********************************************************************/ 01140001
+0RCBC99M_VALIDATE: PROC;                                                01150001
+                                                                        01160001
+ IF VERIFY(WRK_COUNTRY_NUMBER, '0123456789') = 0                        01170002
+ THEN                                                                   01180001
+   CTY_OK_FLAG = TRUE;                                                  01190001
+                                                                        01200001
+ CALL RCBC99M_GET_T500_1;                                               01210001
+                                                                        01220001
+ IF USR_OK_FLAG = TRUE THEN                                             01230002
+ DO;                                                                    01240002
+   CALL RCBC99M_SEC_CHECK;                                              01250002
+   CALL RCBC99M_GET_T500;                                               01260002
+   CALL RCBC99M_ADD_DATE;                                               01270002
+                                                                        01280002
+   IF WRK_DATE_1 < WRK_DATE THEN ASCA_STOP_FLAG = TRUE;                 01290002
+                            ELSE ASCA_STOP_FLAG = FALSE;                01300002
+ END;                                                                   01310002
+                                                                        01320001
+0END RCBC99M_VALIDATE;                                                  01330001
+1/********************************************************************/ 01340001
+ /*      GET PARAMETERS RCB025 AND RCB098                            */ 01350001
+ /********************************************************************/ 01360001
+0RCBC99M_GET_T500: PROC;                                                01370001
+                                                                        01380001
+ EXEC SQL                                                               01390001
+   SELECT PARAMETER_VALUE                                               01400001
+   INTO :RCB500S.PARAMETER_VALUE                                        01410001
+   FROM RCBV0500_PARM                                                   01420001
+   WHERE PARAMETER_NUMBER   = 'RCB025'                                  01430001
+     AND PARAMETER_KEY      = :WRK_COUNTRY_NUMBER;                      01440001
+                                                                        01450001
+ SELECT(SQLCA.SQLCODE);                                                 01460001
+   WHEN(0)                                                              01470001
+   DO;                                                                  01480001
+     WRK_PARM    = SUBSTR(RCB500S.PARAMETER_VALUE,1,3);                 01490001
+     WRK_PARM_FB = WRK_PARM;                                            01500001
+     RCB025_FLAG   = TRUE;                                              01510001
+   END;                                                                 01520001
+                                                                        01530001
+   OTHERWISE                                                            01540001
+   DO;                                                                  01550001
+     RCB025_FLAG = FALSE;                                               01560001
+   END;                                                                 01570001
+ END;                                                                   01580001
+                                                                        01590001
+ EXEC SQL                                                               01600001
+   SELECT PARAMETER_VALUE                                               01610001
+   INTO :RCB500S.PARAMETER_VALUE                                        01620001
+   FROM RCBV0500_PARM                                                   01630001
+   WHERE PARAMETER_NUMBER   = 'RCB098'                                  01640001
+     AND PARAMETER_KEY      = :WRK_COUNTRY_NUMBER;                      01650001
+                                                                        01660001
+ SELECT(SQLCA.SQLCODE);                                                 01670001
+   WHEN(0)                                                              01680001
+   DO;                                                                  01690001
+     WRK_ASCA_DATE = SUBSTR(RCB500S.PARAMETER_VALUE,1,10);              01700001
+     RCB098_FLAG   = TRUE;                                              01710001
+   END;                                                                 01720001
+                                                                        01730001
+   OTHERWISE                                                            01740001
+   DO;                                                                  01750001
+     RCB098_FLAG = FALSE;                                               01760001
+   END;                                                                 01770001
+ END;                                                                   01780001
+                                                                        01790001
+0END RCBC99M_GET_T500;                                                  01800001
+1/********************************************************************/ 01810001
+ /*      GET PARAMETER RCB100                                        */ 01820001
+ /********************************************************************/ 01830001
+0RCBC99M_GET_T500_1: PROC;                                              01840001
+                                                                        01850001
+ EXEC SQL                                                               01860001
+   SELECT PARAMETER_VALUE                                               01870001
+   INTO :RCB500S.PARAMETER_VALUE                                        01880001
+   FROM RCBV0500_PARM                                                   01890001
+   WHERE PARAMETER_NUMBER   = 'RCB100'                                  01900001
+     AND PARAMETER_KEY      = :HEADER.USERID;                           01910001
+                                                                        01920001
+ SELECT(SQLCA.SQLCODE);                                                 01930001
+   WHEN(0)                                                              01940001
+   DO;                                                                  01950001
+     USR_OK_FLAG = TRUE;                                                01960002
+     SEC_VALUE = SUBSTR(RCB500S.PARAMETER_VALUE,1,160);                 01970011
+   END;                                                                 01980001
+                                                                        01990001
+   OTHERWISE                                                            02000005
+   DO;                                                                  02010001
+     USR_OK_FLAG = FALSE;                                               02020002
+     OK_FLAG     = FALSE;                                               02030002
+   END;                                                                 02040001
+ END;                                                                   02041003
+                                                                        02050001
+0END RCBC99M_GET_T500_1;                                                02060001
+1/********************************************************************/ 02070001
+ /*      SECURITY CHECKING                                           */ 02080001
+ /********************************************************************/ 02090001
+0RCBC99M_SEC_CHECK: PROC;                                               02100001
+                                                                        02110001
+                                                                        02120001
+ IF P_CTY(1) = 'ALL' THEN                                               02130001
+ DO;                                                                    02140001
+   OK_FLAG  = TRUE;                                                     02150001
+   SEC_PARM = P_AUTH(1);                                                02160001
+ /*IF SEC_BIT(16) = TRUE THEN  */                     /* SOC RB01338 */ 02170031
+ /*DO;                         */                                       02180025
+ /*  ADMIN_FLAG = TRUE;        */                                       02190025
+ /*END;                        */                     /* EOC RB01338 */ 02200031
+ END;                                                                   02210001
+                                                                        02220001
+ ELSE DO I = 1 TO 32;                                                   02230011
+   IF P_CTY(I)  = WRK_COUNTRY_NUMBER THEN                               02240003
+   DO;                                                                  02250001
+     OK_FLAG  = TRUE;                                                   02260001
+     SEC_PARM = P_AUTH(I);                                              02270001
+     I        = 33;                                                     02280011
+   END;                                                                 02290001
+ END;                                                                   02300001
+                                                                        02310001
+ IF OK_FLAG    = TRUE                                                   02320027
+ /* & ADMIN_FLAG = FALSE    */                             /* RB01338 */02321031
+  & SEL_OPT   ¬= 'I' THEN                                               02322028
+ DO;                                                                    02330001
+   OK_FLAG = FALSE;                                                     02340001
+   IF SEC_BIT(1) = TRUE                                                 02350001
+    & SEL_OPT    = '1' THEN OK_FLAG = TRUE;                             02360001
+   IF SEC_BIT(2) = TRUE                                                 02370001
+    & SEL_OPT    = '2' THEN OK_FLAG = TRUE;                             02380001
+   IF SEC_BIT(3) = TRUE                                                 02390001
+    & SEL_OPT    = '3' THEN OK_FLAG = TRUE;                             02400001
+   IF SEC_BIT(4) = TRUE                                                 02410001
+    & SEL_OPT    = '4' THEN OK_FLAG = TRUE;                             02420001
+   IF SEC_BIT(5) = TRUE                                                 02430001
+    & SEL_OPT    = '5' THEN OK_FLAG = TRUE;                             02440001
+   IF SEC_BIT(6) = TRUE                                                 02450001
+    & SEL_OPT    = '6' THEN OK_FLAG = TRUE;                             02460001
+   IF SEC_BIT(7) = TRUE                                                 02470001
+    & SEL_OPT    = '7' THEN OK_FLAG = TRUE;                             02480001
+ /*IF SEC_BIT(8) = TRUE                              SOC CEDS00000639 */02490020
+   IF (SEC_BIT(8) = TRUE | SEC_BIT(9) = TRUE | SEC_BIT(10) = TRUE       02491019
+       | SEC_BIT(13) = TRUE)                      /* EOC CEDS00000639 */02492020
+    & SEL_OPT    = '8' THEN OK_FLAG = TRUE;                             02500001
+   IF SEC_BIT(9) = TRUE                                                 02510001
+  /*& SEL_OPT    = '9' THEN OK_FLAG = TRUE;       /* SOC CEDS00000366 */02520018
+    & SEL_OPT    = '10' THEN OK_FLAG = TRUE;      /* EOC CEDS00000366 */02521018
+   IF SEC_BIT(10) = TRUE                                                02530001
+  /*& SEL_OPT     = '10' THEN OK_FLAG = TRUE;     /* SOC CEDS00000366 */02540018
+    & SEL_OPT     = '11' THEN OK_FLAG = TRUE;     /* EOC CEDS00000366 */02541018
+   IF SEC_BIT(11) = TRUE                                                02550001
+  /*& SEL_OPT     = '11' THEN OK_FLAG = TRUE;     /* SOC CEDS00000366 */02560018
+    & SEL_OPT     = '9' THEN OK_FLAG = TRUE;      /* EOC CEDS00000366 */02561018
+   IF SEC_BIT(13) = TRUE                                                02570017
+    & SEL_OPT     = '13' THEN OK_FLAG = TRUE;                           02580017
+   IF SEC_BIT(8) = TRUE                           /* SOC CEDS00000639 */02581023
+    & SEL_OPT    = '14'  THEN OK_FLAG = TRUE;     /* EOC CEDS00000639 */02582020
+                                                                        02590001
+ /*IF SEL_OPT     = '11'                          /* SOC CEDS00000366 */02600018
+   IF SEL_OPT     = '9'                           /* EOC CEDS00000366 */02601018
+    & SEC_BIT(11) = TRUE                                                02610017
+    & SEC_BIT(12) = TRUE THEN UPD_OK_FLAG = TRUE;                       02620018
+ END;                                                                   02630001
+                                                                        02640001
+0END RCBC99M_SEC_CHECK;                                                 02650001
+1/********************************************************************/ 02660001
+ /*      VALIDATE DATE ADD                                           */ 02670001
+ /********************************************************************/ 02680001
+0RCBC99M_ADD_DATE: PROC;                                                02690001
+                                                                        02700001
+ DATE_AREA                = '';                                         02710001
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';                                      02720001
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';                                      02730001
+ DATE_AREA.WD_FUNCTION    = 'C';                                        02740001
+ DATE_AREA.WD_PERIOD_TYPE = 'D';                                        02750001
+ DATE_AREA.WD_PERIOD      = WRK_PARM_FB;                                02760001
+ DATE_AREA.WD_IN_DATE     = WRK_ASCA_DATE;                              02770001
+ CALL RCB004N (ADDR(DATE_AREA));                                        02780001
+                                                                        02790001
+ IF DATE_AREA.WD_STATUS = ' ' THEN                                      02800001
+ DO;                                                                    02810001
+   WRK_DATE_1 = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);                     02820001
+ END;                                                                   02830001
+                                                                        02840001
+0END RCBC99M_ADD_DATE;                                                  02850001
+1/*******************************************************************/  02860001
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  02870001
+ /*******************************************************************/  02880001
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  02890001
+  $DAIMOD (RCBC99M);                     /* MODULE TO BE COMPILED   */  02900001
+0/*******************************************************************/  02910001
+ /* END OF ABR BLOCK '                                              */  02920001
+ /*******************************************************************/  02930001
+0 END RCBC99M;                                                          02940001

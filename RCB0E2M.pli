@@ -1,0 +1,663 @@
+ /* RCB0E2M - COMMON ERROR ROUTINE (IMS)                             */ 00019920
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCB0E2M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLISQL                                        */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : COMMON                                        */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THE COMMON ERROR ROUTINE HANDLES ALL          */ 00140000
+ /*                    UNEXPECTED IMS AND DB2 STATUS CODES, AND ALL  */ 00150000
+ /*                    OTHER ERRORS, WHICH SHOULD CAUSE A PROGRAM TO */ 00160000
+ /*                    ABEND RUNNING IN AN IMS ENVIRONMENT           */ 00170000
+ /*                                                                  */ 00180000
+ /* INPUT            : PARAMETER INTERFACE (FROM CALLING PROGRAM)    */ 00190000
+ /*                                                                  */ 00200000
+ /* OUTPUT           : MESSAGES TO - TERMINAL                        */ 00210000
+ /*                                - SECONDARY LOG                   */ 00220000
+ /*                                - SYSPRINT                        */ 00230000
+ /*                                                                  */ 00240000
+ /*                                                                  */ 00250000
+ /* EXTERNAL MODULES : DSNTIAR (SQL MSG TRANSLATION)                 */ 00260000
+ /*                    PLITDLI (DFSLI000)                            */ 00270000
+ /*                                                                  */ 00280000
+ /*                                                                  */ 00290000
+ /* MESSAGES         : E001,...,E011                                 */ 00300000
+ /*                                                                  */ 00310000
+ /* DEPENDENCIES     : NONE                                          */ 00320000
+ /*                                                                  */ 00330000
+ /* MAINTENANCE LOG  :                                               */ 00340000
+ /* ---------------                                                  */ 00350000
+ /*                                                                  */ 00360000
+ /*  DATE      | WORK-ITEMNO. | DESCRIPTION                          */ 00370000
+ /*  --------------------------------------------------------------  */ 00380000
+ /* 1991-09-30 | ----         | CEDS INITIAL DEVELOPMENT             */ 00390000
+ /* 1997-04-11 | PTM1036      | CORRECTED PROLOG                     */ 00400000
+ /* 1997-05-05 | PTM1038      | CORRECT NAMES                        */ 00410000
+ /*            |              |                                      */ 00420000
+ /********************************************************************/ 00430000
+1RCB0E2M: PROC    (PTR_INT_AREA)                                        00440000
+          REORDER;                                                      00450000
+1/********************************************************************/ 00460000
+ /*  PARAMETERS                                                      */ 00470000
+ /********************************************************************/ 00480000
+0DCL PTR_INT_AREA             PTR;                                      00490000
+1/********************************************************************/ 00500000
+ /* EXTERNAL ENTRIES                                                 */ 00510000
+ /********************************************************************/ 00520000
+0DCL DSNTIAR   ENTRY  EXTERNAL  OPTIONS (ASM INTER RETCODE);            00530000
+0DCL PLITDLI   ENTRY  EXTERNAL;                                         00540000
+0/********************************************************************/ 00550000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00560000
+ /********************************************************************/ 00570000
+0DCL 1 PARM_INT_AREA  BASED (PTR_INT_AREA),                             00580000
+     %INCLUDE (RCBZ01S);;                                               00590000
+1/********************************************************************/ 00600000
+ /*  IMS CONSTANTS                                                   */ 00610000
+ /********************************************************************/ 00620000
+0DCL 1 IMS_CONSTANTS,                                                   00630000
+       %INCLUDE (RCBZ04S);;                                             00640000
+0/********************************************************************/ 00650000
+ /* IMS PCB STRUCTURES                                               */ 00660000
+ /********************************************************************/ 00670000
+0DCL 1 PCB_IO         BASED (PARM_INT_AREA.PTR_PCB_IO),                 00680000
+       %INCLUDE (RCBZ15S);;                                             00690000
+ DCL 1 PCB_ALT        BASED (PARM_INT_AREA.PTR_PCB_ALT),                00700000
+       %INCLUDE (RCBZ16S);;                                             00710000
+ DCL 1 PCB_ERR        BASED (PARM_INT_AREA.PTR_ERROR),                  00720000
+       %INCLUDE (RCBZ16S);;                                             00730000
+ DCL 1 SAVE_PCB_ERR,                                                    00740000
+       %INCLUDE (RCBZ16S);;                                             00750000
+ DCL 1 PCB_IMS        BASED (PARM_INT_AREA.PTR_ERROR),                  00760000
+       %INCLUDE (RCBZ10S);;                                             00770000
+0/********************************************************************/ 00780000
+ /*  BIT SWITCHES                                                    */ 00790000
+ /********************************************************************/ 00800000
+0DCL FALSE              BIT (1)            INIT ('0'B);                 00810000
+ DCL TRUE               BIT (1)            INIT ('1'B);                 00820000
+0DCL SWITCH_PARM_OK     BIT (1)            INIT ('0'B);                 00830000
+0DCL BATCH              BIT (1)            INIT ('1'B);                 00840000
+0/********************************************************************/ 00850000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 00860000
+ /********************************************************************/ 00870000
+0DCL WRK_COUNT                  FIXED BIN(15);                          00880000
+ DCL WRK_LEVEL                  FIXED BIN(15);                          00890000
+0DCL WRK_LEN_DATA               FIXED BIN(31,0) INIT(80);               00900000
+0DCL WRK_SQL_INDEX              FIXED BIN(15);                          00910000
+0DCL 1 WRK_MSG_SQL,                                                     00920000
+       3 LENGTH                 FIXED BIN(15,0) UNAL INIT((7*80)),      00930000
+       3 SQLTEXT (7)            CHAR(80) INIT('');                      00940000
+0DCL 1 WRK_MSG,                                                         00950000
+       3 LL                     FIXED BIN (31),                         00960000
+       3 ZZ                     CHAR (2)        INIT (LOW(2)),          00970000
+       3 NEWLINE                CHAR (1)        INIT ('*'),             00980000
+       3 TEXT                   CHAR (650);                             00990000
+0DCL 1 MSG_SYSTEM,                                                      01000000
+       %INCLUDE (RCB0M0S);;                               /* PTM1038 */ 01010000
+0DCL 1 MSG_MPP_ID,                                                      01020000
+       3 TRANSACTION            CHAR(05) INIT(' TXN='),                 01030000
+       3 TXN_CODE               CHAR(08),                               01040000
+       3 PROGRAM                CHAR(05) INIT(' PGM='),                 01050000
+       3 PGM_NAME               CHAR(08),                               01060000
+       3 MODULE                 CHAR(05) INIT(' MOD='),                 01070000
+       3 MOD_NAME               CHAR(08);                               01080000
+0DCL 1 MSG_BATCH_ID,                                                    01090000
+       3 PROGRAM                CHAR(05) INIT(' PGM='),                 01100000
+       3 PGM_NAME               CHAR(08),                               01110000
+       3 MODULE                 CHAR(05) INIT(' MOD='),                 01120000
+       3 MOD_NAME               CHAR(08);                               01130000
+0DCL 1 MSG_MOD_PATH,                                                    01140000
+       3 MODULE                 CHAR(05) INIT(' MOD='),                 01150000
+       3 MOD_NAME               CHAR(08);                               01160000
+0DCL 1 MSG_PARM_ERR1,                                                   01170000
+       3 MSG_DSCR_SHORT         CHAR(41)                                01180000
+                    INIT('NO PROGRAM OR MODULE PATH IN ROUTINE CALL'),  01190000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01200000
+0DCL 1 MSG_PARM_ERR2,                                                   01210000
+       3 MSG_DSCR_SHORT         CHAR(40)                                01220000
+                    INIT('NO DATABASE INFORMATION IN ROUTINE CALL,'),   01230000
+       3 ERR                    CHAR(05) INIT(' ERR='),                 01240000
+       3 ERR_TYPE               CHAR(08),                               01250000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01260000
+0DCL 1 MSG_PARM_ERR3,                                                   01270000
+       3 MSG_DSCR_SHORT         CHAR(19)                                01280000
+                    INIT('INVALID ERROR-TYPE '),                        01290000
+       3 ERR_TYPE               CHAR(08),                               01300000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01310000
+0DCL 1 MSG_PGM_END,                                                     01320000
+       3 MSG_DSCR_SHORT         CHAR(20)                                01330000
+                    INIT('PROGRAM ABNORMAL END'),                       01340000
+       3 SEMI_COL               CHAR(01) INIT(';');                     01350000
+0DCL 1 MSG_PGM_ID,                                                      01360000
+       3 MSG_DSCR_SHORT         CHAR(30)                                01370000
+                    INIT('ROUTINE CALL IDENTIFICATION : '),             01380000
+       3 CALL_ID                CHAR(04);                               01390000
+0DCL 1 MSG_PGM_PATH,                                                    01400000
+       3 MSG_DSCR_SHORT         CHAR(20)                                01410000
+                    INIT('ROUTINE CALL PATH : ');                       01420000
+0DCL 1 MSG_SEQ_ID,                                                      01430000
+       3 MSG_DSCR_SHORT         CHAR(30)                                01440000
+                    INIT('KEY SEQUENCE FIELD AT ABEND : '),             01450000
+       3 SEQ_KEY                CHAR(30),                               01460000
+       3 LAST_REF               CHAR(25);                               01470000
+0DCL 1 MSG_IO_ERR,                                                      01480000
+       3 ID_TEXT                CHAR(11) INIT('I/O-ERROR :'),           01490000
+       3 TERMINAL               CHAR(04) INIT(' LT='),                  01500000
+       3 LT_NAME                CHAR(08),                               01510000
+       3 ST                     CHAR(08) INIT(' STATUS='),              01520000
+       3 ST_CODE                CHAR(02);                               01530000
+0DCL 1 MSG_ALT_ERR,                                                     01540000
+       3 ID_TEXT                CHAR(11) INIT('ALT-ERROR :'),           01550000
+       3 TERMINAL               CHAR(04) INIT(' LT='),                  01560000
+       3 LT_NAME                CHAR(08),                               01570000
+       3 ST                     CHAR(08) INIT(' STATUS='),              01580000
+       3 ST_CODE                CHAR(02);                               01590000
+0DCL 1 MSG_IMS_ERR,                                                     01600000
+       3 ID_TEXT                CHAR(11) INIT('IMS-ERROR :'),           01610000
+       3 DATABASE               CHAR(04) INIT(' DB='),                  01620000
+       3 DBD_NAME               CHAR(08),                               01630000
+       3 ST                     CHAR(08) INIT(' STATUS='),              01640000
+       3 ST_CODE                CHAR(02),                               01650000
+       3 SEGMENT                CHAR(06) INIT(' SEGM='),                01660000
+       3 SEG_NAME               CHAR(08),                               01670000
+       3 KEYFEEDBACK            CHAR(07) INIT(' KEYFB='),               01680000
+       3 KEY_AREA               CHAR(100);                              01690000
+0DCL 1 MSG_DB2_ERR,                                                     01700000
+       3 ID_TEXT                CHAR(11) INIT('DB2-ERROR :'),           01710000
+       3 RETURN_CODE            CHAR(08) INIT(' SQL-RC='),              01720000
+       3 SQL_CODE               PIC 'S9999',                            01730000
+       3 DESCR_ERR              CHAR(13) INIT(' DESCRIPTION='),         01740000
+       3 MSG_SQL_ERR            CHAR(70),                               01750000
+       3 MSG                    CHAR(09) INIT(' MESSAGE='),             01760000
+       3 MSG_SQL(7),                                                    01770000
+         5 NEWLINE              CHAR(01) INIT ('*'),                    01780000
+         5 SQLTEXT              CHAR(80);                               01790000
+0DCL 1 MSG_ABEND,                                                       01800000
+       3 PROGRAM                CHAR(08) INIT('PROGRAM '),              01810000
+       3 PGM_NAME               CHAR(08),                               01820000
+       3 TRANSATION             CHAR(16) INIT(' IN TRANSACTION '),      01830000
+       3 TXN_CODE               CHAR(08),                               01840000
+       3 ABEND                  CHAR(15) INIT(' ABNORMAL ENDED');       01850000
+1/********************************************************************/ 01860000
+ /*  BUILTIN FUNCTIONS                                               */ 01870000
+ /********************************************************************/ 01880000
+0DCL LENGTH     BUILTIN;                                                01890000
+ DCL LOW        BUILTIN;                                                01900000
+ DCL NULL       BUILTIN;                                                01910000
+ DCL PLIDUMP    BUILTIN;                                                01920000
+ DCL PLIRETC    BUILTIN;                                                01930000
+ DCL STORAGE    BUILTIN;                                                01940000
+ DCL STRING     BUILTIN;                                                01950000
+1/********************************************************************/ 01960000
+ /* ON ERROR CONDITIONS                                              */ 01970000
+ /********************************************************************/ 01980000
+0ON ERROR                                                               01990000
+ BEGIN;                                                                 02000000
+   ON ERROR SYSTEM;                                                     02010000
+0  CALL PLITDLI (ONE,ROLL);                                             02020000
+0  IF BATCH                                                             02030000
+   THEN                                                                 02040000
+     CALL PLIDUMP('TFC');                                               02050000
+0  CALL PLIRETC (16);                                                   02060000
+ END;                                                                   02070000
+1/********************************************************************/ 02080000
+ /* DB2/SQL SQLCA                                                    */ 02090000
+ /********************************************************************/ 02100000
+0EXEC SQL                                                               02110000
+   INCLUDE SQLCA                                                        02120000
+   ;                                                                    02130000
+0DCL SQLCA_R    BASED (PARM_INT_AREA.PTR_ERROR)                         02140000
+     LIKE SQLCA ;                                                       02150000
+1/********************************************************************/ 02160000
+ /* INITIALISE VARIABLES                                             */ 02170000
+ /********************************************************************/ 02180000
+0SWITCH_PARM_OK = TRUE;                                                 02190000
+0WRK_LEVEL  = PARM_INT_AREA.ID_MOD_LEVEL;                               02200000
+0MSG_SYSTEM = '';                                                       02210000
+0MSG_SYSTEM.MESSAGE_TYPE = 'IS';                                        02220000
+ MSG_SYSTEM.MSG_MOD_NAME = 'RCB0E2M';                                   02230000
+ MSG_SYSTEM.TEXT_G3      = ' : ';                                       02240000
+0MSG_PARM_ERR2.ERR_TYPE  = PARM_INT_AREA.ERR_TYPE;                      02250000
+ MSG_PARM_ERR3.ERR_TYPE  = PARM_INT_AREA.ERR_TYPE;                      02260000
+ MSG_PGM_ID.CALL_ID      = PARM_INT_AREA.CALL_ID;                       02270000
+1/********************************************************************/ 02280000
+ /*                 S T A R T   P R O C E S S I N G                  */ 02290000
+ /********************************************************************/ 02300000
+0/************************************/                                 02310000
+ /* CHECK PCB_ERR FOR IMS/DB2 ERRORS */                                 02320000
+ /************************************/                                 02330000
+0IF ((PARM_INT_AREA.PTR_ERROR = NULL) &                                 02340000
+     (PARM_INT_AREA.ERR_TYPE = 'IMS_IO' |                               02350000
+      PARM_INT_AREA.ERR_TYPE = 'IMS_ALT' |                              02360000
+      PARM_INT_AREA.ERR_TYPE = 'IMS_DB' |                               02370000
+      PARM_INT_AREA.ERR_TYPE = 'DB2'))                                  02380000
+ THEN                                                                   02390000
+   DO;                                                                  02400000
+     SWITCH_PARM_OK = FALSE;    /* NO BASE PTR FOR PCB/SQLCA IN ERROR */02410000
+   END;                                                                 02420000
+0/***********************************/                                  02430000
+ /* DETERMINE MPP OR BATCH ORIENTED */                                  02440000
+ /***********************************/                                  02450000
+0IF ((PARM_INT_AREA.TXN_CODE    ¬= ''  ) &                              02460000
+     (PARM_INT_AREA.PTR_PCB_IO  ¬= NULL) &                              02470000
+     (PARM_INT_AREA.PTR_PCB_ALT ¬= NULL))                               02480000
+ THEN                                                                   02490000
+   DO;                                                                  02500000
+     BATCH = '0'B;                                                      02510000
+     CALL RCB0E2M_MPP;                                                  02520000
+   END;                                                                 02530000
+ ELSE                                                                   02540000
+   DO;                                                                  02550000
+     CALL RCB0E2M_BATCH;                                                02560000
+   END;                                                                 02570000
+0/***************/                                                      02580000
+ /* FORCE ABEND */                                                      02590000
+ /***************/                                                      02600000
+  IF BATCH                                                              02610000
+  THEN DO;                                                              02620000
+    IF PARM_INT_AREA.CALL_ID = '#000'   |                               02630000
+       PARM_INT_AREA.ERR_TYPE ¬= 'OTHER'                                02640000
+    THEN                                                                02650000
+      DO;                                                               02660000
+        CALL PLIDUMP('TFCHB');                                          02670000
+      END;                                                              02680000
+  END;                                                                  02690000
+  CALL PLIRETC (16);                                                    02700000
+  SIGNAL ERROR;                                                         02710000
+1/********************************************************************/ 02720000
+ /*                                                                  */ 02730000
+ /* MODULE NAME : RCB0E2M_MPP                                        */ 02740000
+ /*                                                                  */ 02750000
+ /* DESCRIPTION : HANDLE THE ERRORS IN A MPP PROGRAM                 */ 02760000
+ /*                                                                  */ 02770000
+ /********************************************************************/ 02780000
+ /*  THE MPP ERRORS CAN CURRENTLY NOT BE INVOKED                     */ 02790000
+ /*    MSGS FIRST TO TERMINAL, THEN TO ALTPCB                        */ 02800000
+ /********************************************************************/ 02810000
+0RCB0E2M_MPP : PROC;                                                    02820000
+0MSG_MPP_ID.TXN_CODE = PARM_INT_AREA.TXN_CODE;                          02830000
+ MSG_MPP_ID.PGM_NAME = PARM_INT_AREA.ID_SOURCE_PROG;                    02840000
+ MSG_MPP_ID.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL);           02850000
+ MSG_ABEND.PGM_NAME  = PARM_INT_AREA.ID_SOURCE_PROG;                    02860000
+ MSG_ABEND.TXN_CODE  = PARM_INT_AREA.TXN_CODE;                          02870000
+0SAVE_PCB_ERR        = PCB_ERR;                                         02880000
+0/**********************************/                                   02890000
+ /* SEND ABEND MESSAGE TO TERMINAL */                                   02900000
+ /**********************************/                                   02910000
+ IF PARM_INT_AREA.ERR_TYPE ¬=  'IMS_IO'                                 02920000
+ THEN DO;                                                               02930000
+0  MSG_SYSTEM.MESSAGE_NUMBER = 'E006';                                  02940000
+   MSG_SYSTEM.MSG_PRIORITY = '3';                                       02950000
+0  WRK_MSG.TEXT = ' ';                                                  02960000
+   WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PGM_PATH);             02970000
+   WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PGM_PATH) + 5;        02980000
+0  CALL PLITDLI(FOUR,                                                   02990000
+                ISRT,                                                   03000000
+                PARM_INT_AREA.PTR_PCB_IO,                               03010000
+                WRK_MSG,                                                03020000
+                'DFSMO1  ');                                            03030000
+   IF PCB_IO.ST_CODE ¬= '  '                                            03040000
+   THEN                                                                 03050000
+     SIGNAL ERROR;                                                      03060000
+0  WRK_COUNT = 1;                                                       03070000
+0  DO WHILE (WRK_COUNT <= WRK_LEVEL);                                   03080000
+     MSG_MOD_PATH.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_COUNT);     03090000
+0    WRK_MSG.TEXT = ' ';                                                03100000
+     WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_MOD_PATH);           03110000
+     WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_MOD_PATH) + 5;      03120000
+0    CALL PLITDLI(THREE,                                                03130000
+                  ISRT,                                                 03140000
+                  PARM_INT_AREA.PTR_PCB_IO,                             03150000
+                  WRK_MSG);                                             03160000
+     IF PCB_IO.ST_CODE ¬= '  '                                          03170000
+     THEN                                                               03180000
+       SIGNAL ERROR;                                                    03190000
+0    WRK_COUNT = WRK_COUNT + 1;                                         03200000
+   END;                                                                 03210000
+0  MSG_SYSTEM.MESSAGE_NUMBER = 'E011';                                  03220000
+   MSG_SYSTEM.MSG_PRIORITY = '1';                                       03230000
+0  WRK_MSG.TEXT = ' ';                                                  03240000
+   WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_ABEND);                03250000
+   WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_ABEND) + 5;           03260000
+0  CALL PLITDLI(FOUR,                                                   03270000
+                ISRT,                                                   03280000
+                PARM_INT_AREA.PTR_PCB_IO,                               03290000
+                WRK_MSG);                                               03300000
+   IF PCB_IO.ST_CODE ¬= '  '                                            03310000
+   THEN                                                                 03320000
+     SIGNAL ERROR;                                                      03330000
+0  CALL PLITDLI(TWO,                                                    03340000
+                PURG,                                                   03350000
+                PARM_INT_AREA.PTR_PCB_IO);                              03360000
+   IF PCB_IO.ST_CODE ¬= '  '                                            03370000
+   THEN                                                                 03380000
+     SIGNAL ERROR;                                                      03390000
+ END;                                                                   03400000
+0/************************************/                                 03410000
+ /* SEND MESSAGES TO ALT DESTINATION */                                 03420000
+ /************************************/                                 03430000
+ IF PARM_INT_AREA.ERR_TYPE ¬=  'IMS_ALT'                                03440000
+ THEN DO;                                                               03450000
+0  MSG_SYSTEM.MESSAGE_NUMBER = 'E004';                                  03460000
+   MSG_SYSTEM.MSG_PRIORITY = '1';                                       03470000
+0  WRK_MSG.TEXT = ' ';                                                  03480000
+   WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PGM_END)||             03490000
+                  STRING(MSG_MPP_ID);                                   03500000
+   WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PGM_END) +            03510000
+                  STORAGE(MSG_MPP_ID) + 5;                              03520000
+0  CALL PLITDLI(FOUR,                                                   03530000
+                ISRT,                                                   03540000
+                PARM_INT_AREA.PTR_PCB_ALT,                              03550000
+                WRK_MSG,                                                03560000
+                'DFSMO2  ');                                            03570000
+   IF PCB_ALT.ST_CODE ¬= '  '                                           03580000
+   THEN                                                                 03590000
+     SIGNAL ERROR;                                                      03600000
+0  MSG_SYSTEM.MESSAGE_NUMBER = 'E005';                                  03610000
+   MSG_SYSTEM.MSG_PRIORITY = '3';                                       03620000
+0  WRK_MSG.TEXT = ' ';                                                  03630000
+   WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PGM_ID);               03640000
+   WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PGM_ID) + 5;          03650000
+0  CALL PLITDLI(THREE,                                                  03660000
+                ISRT,                                                   03670000
+                PARM_INT_AREA.PTR_PCB_ALT,                              03680000
+                WRK_MSG);                                               03690000
+   IF PCB_ALT.ST_CODE ¬= '  '                                           03700000
+   THEN                                                                 03710000
+     SIGNAL ERROR;                                                      03720000
+0  MSG_SYSTEM.MESSAGE_NUMBER = 'E006';                                  03730000
+   MSG_SYSTEM.MSG_PRIORITY = '3';                                       03740000
+0  WRK_MSG.TEXT = ' ';                                                  03750000
+   WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PGM_PATH);             03760000
+   WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PGM_PATH) + 5;        03770000
+0  CALL PLITDLI(THREE,                                                  03780000
+                ISRT,                                                   03790000
+                PARM_INT_AREA.PTR_PCB_ALT,                              03800000
+                WRK_MSG);                                               03810000
+   IF PCB_ALT.ST_CODE ¬= '  '                                           03820000
+   THEN                                                                 03830000
+     SIGNAL ERROR;                                                      03840000
+0  WRK_COUNT = 1;                                                       03850000
+0  DO WHILE (WRK_COUNT <= WRK_LEVEL);                                   03860000
+     MSG_MOD_PATH.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_COUNT);     03870000
+0    WRK_MSG.TEXT = ' ';                                                03880000
+     WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_MOD_PATH);           03890000
+     WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_MOD_PATH) + 5;      03900000
+0    CALL PLITDLI(THREE,                                                03910000
+                  ISRT,                                                 03920000
+                  PARM_INT_AREA.PTR_PCB_ALT,                            03930000
+                  WRK_MSG);                                             03940000
+     IF PCB_ALT.ST_CODE ¬= '  '                                         03950000
+     THEN                                                               03960000
+       SIGNAL ERROR;                                                    03970000
+0    WRK_COUNT = WRK_COUNT + 1;                                         03980000
+   END;                                                                 03990000
+0  /************************/                                           04000000
+   /* CHECK IDENTIFICATION */                                           04010000
+   /************************/                                           04020000
+0  IF (PARM_INT_AREA.ID_SOURCE_PROG    = '' |                           04030000
+       STRING(PARM_INT_AREA.ID_MOD_PATH) = '' )                         04040000
+   THEN                                                                 04050000
+     DO;                                                                04060000
+0      MSG_SYSTEM.MESSAGE_NUMBER = 'E001';                              04070000
+       MSG_SYSTEM.MSG_PRIORITY = '3';                                   04080000
+0      WRK_MSG.TEXT = ' ';                                              04090000
+       WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PARM_ERR1)||       04100000
+                      STRING(MSG_MPP_ID);                               04110000
+       WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PARM_ERR1) +      04120000
+                      STORAGE(MSG_MPP_ID) + 5;                          04130000
+0      CALL PLITDLI(THREE,                                              04140000
+                    ISRT,                                               04150000
+                    PARM_INT_AREA.PTR_PCB_ALT,                          04160000
+                    WRK_MSG);                                           04170000
+       IF PCB_ALT.ST_CODE ¬= '  '                                       04180000
+       THEN                                                             04190000
+         SIGNAL ERROR;                                                  04200000
+     END;                                                               04210000
+0  /*****************************************/                          04220000
+   /* DETERMINE ERROR TYPE AND HANDLE ERROR */                          04230000
+   /*****************************************/                          04240000
+0  IF (SWITCH_PARM_OK)                                                  04250000
+   THEN                                                                 04260000
+     DO;                                                                04270000
+       SELECT (PARM_INT_AREA.ERR_TYPE);                                 04280000
+       WHEN ('IMS_IO')                                                  04290000
+         DO;                                                            04300000
+0          MSG_IO_ERR.LT_NAME = SAVE_PCB_ERR.LT_NAME;                   04310000
+           MSG_IO_ERR.ST_CODE = SAVE_PCB_ERR.ST_CODE;                   04320000
+0          MSG_SYSTEM.MESSAGE_NUMBER = 'E007';                          04330000
+           MSG_SYSTEM.MSG_PRIORITY = '1';                               04340000
+0          WRK_MSG.TEXT = ' ';                                          04350000
+           WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_IO_ERR);       04360000
+           WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_IO_ERR) + 5;  04370000
+0          CALL PLITDLI(THREE,                                          04380000
+                        ISRT,                                           04390000
+                        PARM_INT_AREA.PTR_PCB_ALT,                      04400000
+                        WRK_MSG);                                       04410000
+           IF PCB_ALT.ST_CODE ¬= '  '                                   04420000
+           THEN                                                         04430000
+             SIGNAL ERROR;                                              04440000
+                                                                        04450000
+         END;                                                           04460000
+       WHEN ('IMS_DB')                                                  04470000
+         DO;                                                            04480000
+0          MSG_IMS_ERR.DBD_NAME = PCB_IMS.DBD_NAME;                     04490000
+           MSG_IMS_ERR.ST_CODE = PCB_IMS.ST_CODE;                       04500000
+           MSG_IMS_ERR.SEG_NAME = PCB_IMS.SEG_NAME;                     04510000
+           MSG_IMS_ERR.KEY_AREA = PCB_IMS.KEY_AREA;                     04520000
+0          MSG_SYSTEM.MESSAGE_NUMBER = 'E009';                          04530000
+           MSG_SYSTEM.MSG_PRIORITY = '1';                               04540000
+0          WRK_MSG.TEXT = ' ';                                          04550000
+           WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_IMS_ERR);      04560000
+           WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_IMS_ERR) -    04570000
+                          LENGTH(PCB_IMS.KEY_AREA) +                    04580000
+                          PCB_IMS.KEY_LEN        + 5;                   04590000
+0          CALL PLITDLI(THREE,                                          04600000
+                        ISRT,                                           04610000
+                        PARM_INT_AREA.PTR_PCB_ALT,                      04620000
+                        WRK_MSG);                                       04630000
+           IF PCB_ALT.ST_CODE ¬= '  '                                   04640000
+           THEN                                                         04650000
+             SIGNAL ERROR;                                              04660000
+         END;                                                           04670000
+       WHEN ('DB2')                                                     04680000
+         DO;                                                            04690000
+           /********************************************/               04700000
+           /* GET DB2 INFORMATION OF SQLCA (PTR_ERROR) */               04710000
+           /********************************************/               04720000
+0          CALL DSNTIAR (SQLCA_R,WRK_MSG_SQL,WRK_LEN_DATA);             04730000
+0          MSG_DB2_ERR.SQLTEXT(*) = WRK_MSG_SQL.SQLTEXT(*);             04740000
+           MSG_DB2_ERR.SQL_CODE  = SQLCA_R.SQLCODE;                     04750000
+           MSG_DB2_ERR.MSG_SQL_ERR = SQLCA_R.SQLERRM;                   04760000
+0          MSG_SYSTEM.MESSAGE_NUMBER = 'E009';                          04770000
+           MSG_SYSTEM.MSG_PRIORITY = '1';                               04780000
+0          WRK_MSG.TEXT = ' ';                                          04790000
+           WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_DB2_ERR);      04800000
+           WRK_MSG.LL = STORAGE(MSG_DB2_ERR)              -             04810000
+                          STORAGE(MSG_DB2_ERR.MSG_SQL)    +             04820000
+                          WRK_MSG_SQL.LENGTH              +             04830000
+                          (WRK_MSG_SQL.LENGTH/WRK_LEN_DATA + 1) + 5;    04840000
+0          CALL PLITDLI(THREE,                                          04850000
+                        ISRT,                                           04860000
+                        PARM_INT_AREA.PTR_PCB_ALT,                      04870000
+                        WRK_MSG);                                       04880000
+           IF PCB_ALT.ST_CODE ¬= '  '                                   04890000
+           THEN                                                         04900000
+             SIGNAL ERROR;                                              04910000
+         END;                                                           04920000
+       WHEN ('OTHER');                                                  04930000
+       OTHERWISE                                                        04940000
+         DO;                                                            04950000
+           MSG_SYSTEM.MESSAGE_NUMBER = 'E003';                          04960000
+           MSG_SYSTEM.MSG_PRIORITY = '1';                               04970000
+0          WRK_MSG.TEXT = ' ';                                          04980000
+           WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PARM_ERR3)||   04990000
+                          STRING(MSG_MPP_ID);                           05000000
+           WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PARM_ERR3) +  05010000
+                          STORAGE(MSG_MPP_ID)  + 5;                     05020000
+0          CALL PLITDLI(THREE,                                          05030000
+                        ISRT,                                           05040000
+                        PARM_INT_AREA.PTR_PCB_ALT,                      05050000
+                        WRK_MSG);                                       05060000
+           IF PCB_ALT.ST_CODE ¬= '  '                                   05070000
+           THEN                                                         05080000
+             SIGNAL ERROR;                                              05090000
+         END;                                                           05100000
+       END;                                                             05110000
+     END;                                                               05120000
+   ELSE                                                                 05130000
+     DO;                                                                05140000
+       MSG_SYSTEM.MESSAGE_NUMBER = 'E002';                              05150000
+       MSG_SYSTEM.MSG_PRIORITY = '1';                                   05160000
+0      WRK_MSG.TEXT = ' ';                                              05170000
+       WRK_MSG.TEXT = STRING(MSG_SYSTEM)||STRING(MSG_PARM_ERR2)||       05180000
+                      STRING(MSG_MPP_ID);                               05190000
+       WRK_MSG.LL = STORAGE(MSG_SYSTEM) + STORAGE(MSG_PARM_ERR2) +      05200000
+                      STORAGE(MSG_MPP_ID) + 5;                          05210000
+0      CALL PLITDLI(THREE,                                              05220000
+                    ISRT,                                               05230000
+                    PARM_INT_AREA.PTR_PCB_ALT,                          05240000
+                    WRK_MSG);                                           05250000
+       IF PCB_ALT.ST_CODE ¬= '  '                                       05260000
+       THEN                                                             05270000
+         SIGNAL ERROR;                                                  05280000
+     END;                                                               05290000
+0  CALL PLITDLI(TWO,                                                    05300000
+                PURG,                                                   05310000
+                PARM_INT_AREA.PTR_PCB_ALT);                             05320000
+   IF PCB_ALT.ST_CODE ¬= '  '                                           05330000
+   THEN                                                                 05340000
+     SIGNAL ERROR;                                                      05350000
+ END;                                                                   05360000
+ END RCB0E2M_MPP;                                                       05370000
+1/********************************************************************/ 05380000
+ /*                                                                  */ 05390000
+ /* MODULE NAME : RCB0E2M_BATCH                                      */ 05400000
+ /*                                                                  */ 05410000
+ /* DESCRIPTION : HANDLE THE ERRORS IN A BATCH PROGRAM               */ 05420000
+ /*                                                                  */ 05430000
+ /********************************************************************/ 05440000
+0RCB0E2M_BATCH : PROC;                                                  05450000
+0MSG_BATCH_ID.PGM_NAME = PARM_INT_AREA.ID_SOURCE_PROG;                  05460000
+ MSG_BATCH_ID.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL);         05470000
+0/*************************/                                            05480000
+ /* SEND INITIAL MESSAGES */                                            05490000
+ /*************************/                                            05500000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E004';                                    05510000
+ MSG_SYSTEM.MSG_PRIORITY   = '1';                                       05520000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_END,MSG_BATCH_ID) (A);               05530000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E005';                                    05540000
+ MSG_SYSTEM.MSG_PRIORITY   = '3';                                       05550000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_ID) (A);                             05560000
+0MSG_SYSTEM.MESSAGE_NUMBER = 'E006';                                    05570000
+ MSG_SYSTEM.MSG_PRIORITY   = '3';                                       05580000
+0PUT SKIP EDIT (MSG_SYSTEM,MSG_PGM_PATH) (A);                           05590000
+0WRK_COUNT = 1;                                                         05600000
+0DO WHILE (WRK_COUNT <= WRK_LEVEL);                                     05610000
+   MSG_MOD_PATH.MOD_NAME = PARM_INT_AREA.ID_MOD_PATH (WRK_COUNT);       05620000
+0  PUT SKIP EDIT (MSG_SYSTEM,MSG_MOD_PATH) (A);                         05630000
+0  WRK_COUNT = WRK_COUNT + 1;                                           05640000
+ END;                                                                   05650000
+0IF PARM_INT_AREA.SEQUENCE_KEY ¬= '' |                                  05660000
+    PARM_INT_AREA.LAST_REFERENCE ¬= ''                                  05670000
+ THEN DO;                                                               05680000
+   MSG_SYSTEM.MESSAGE_NUMBER = 'E020';                                  05690000
+   MSG_SYSTEM.MSG_PRIORITY = '3';                                       05700000
+   MSG_SEQ_ID.SEQ_KEY = PARM_INT_AREA.SEQUENCE_KEY;                     05710000
+   MSG_SEQ_ID.LAST_REF = PARM_INT_AREA.LAST_REFERENCE;                  05720000
+   PUT SKIP EDIT (MSG_SYSTEM,MSG_SEQ_ID) (A);                           05730000
+ END;                                                                   05740000
+0/************************/                                             05750000
+ /* CHECK IDENTIFICATION */                                             05760000
+ /************************/                                             05770000
+0IF (PARM_INT_AREA.ID_SOURCE_PROG       = '' |                          05780000
+     STRING (PARM_INT_AREA.ID_MOD_PATH) = '' )                          05790000
+ THEN                                                                   05800000
+   DO;                                                                  05810000
+     MSG_SYSTEM.MESSAGE_NUMBER = 'E001';                                05820000
+     MSG_SYSTEM.MSG_PRIORITY   = '3';                                   05830000
+0    PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR1,MSG_BATCH_ID) (A);         05840000
+   END;                                                                 05850000
+0/*****************************************/                            05860000
+ /* DETERMINE ERROR TYPE AND HANDLE ERROR */                            05870000
+ /*****************************************/                            05880000
+0IF (SWITCH_PARM_OK)                                                    05890000
+ THEN                                                                   05900000
+   DO;                                                                  05910000
+     SELECT (PARM_INT_AREA.ERR_TYPE);                                   05920000
+     WHEN ('IMS_IO')        /* ERROR ON CHECKPOINT */                   05930000
+       DO;                                                              05940000
+0        MSG_IO_ERR.LT_NAME = PCB_ERR.LT_NAME;                          05950000
+         MSG_IO_ERR.ST_CODE = PCB_ERR.ST_CODE;                          05960000
+0        MSG_SYSTEM.MESSAGE_NUMBER = 'E007';                            05970000
+         MSG_SYSTEM.MSG_PRIORITY   = '1';                               05980000
+0        PUT SKIP (2) EDIT (MSG_SYSTEM,MSG_IO_ERR) (A);                 05990000
+       END;                                                             06000000
+      /* IMS_ALT DOES NOT APPLY TO BATCH RUNS */                        06010000
+     WHEN ('IMS_DB')                                                    06020000
+       DO;                                                              06030000
+0        MSG_IMS_ERR.DBD_NAME = PCB_IMS.DBD_NAME;                       06040000
+         MSG_IMS_ERR.ST_CODE  = PCB_IMS.ST_CODE;                        06050000
+         MSG_IMS_ERR.SEG_NAME = PCB_IMS.SEG_NAME;                       06060000
+         MSG_IMS_ERR.KEY_AREA = PCB_IMS.KEY_AREA;                       06070000
+0        MSG_SYSTEM.MESSAGE_NUMBER = 'E008';                            06080000
+         MSG_SYSTEM.MSG_PRIORITY   = '1';                               06090000
+0        PUT SKIP (2) EDIT (MSG_SYSTEM,MSG_IMS_ERR) (A);                06100000
+       END;                                                             06110000
+     WHEN ('DB2')                                                       06120000
+       DO;                                                              06130000
+         /******************************************/                   06140000
+         /* GET DB2 INFORMATION OF SQLCA (ERR_PTR) */                   06150000
+         /******************************************/                   06160000
+0        CALL DSNTIAR (SQLCA_R,WRK_MSG_SQL,WRK_LEN_DATA);               06170000
+0        MSG_DB2_ERR.SQLTEXT(*)  = WRK_MSG_SQL.SQLTEXT(*);              06180000
+         MSG_DB2_ERR.SQL_CODE    = SQLCA_R.SQLCODE;                     06190000
+         MSG_DB2_ERR.MSG_SQL_ERR = SQLCA_R.SQLERRM;                     06200000
+0        MSG_SYSTEM.MESSAGE_NUMBER = 'E010';                            06210000
+         MSG_SYSTEM.MSG_PRIORITY   = '1';                               06220000
+0        PUT SKIP (2) EDIT (MSG_SYSTEM,                                 06230000
+                            MSG_DB2_ERR.ID_TEXT,                        06240000
+                            MSG_DB2_ERR.RETURN_CODE,                    06250000
+                            MSG_DB2_ERR.SQL_CODE,                       06260000
+                            MSG_DB2_ERR.DESCR_ERR) (A);                 06270000
+0        PUT SKIP EDIT (MSG_DB2_ERR.MSG_SQL_ERR,                        06280000
+                        MSG_DB2_ERR.MSG) (A);                           06290000
+         WRK_SQL_INDEX = 1;                                             06300000
+         DO WHILE (WRK_SQL_INDEX <= 7 &                                 06310000
+                   MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX) ¬= '');           06320000
+0            PUT SKIP EDIT (MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX)) (A);    06330000
+0            WRK_SQL_INDEX = WRK_SQL_INDEX + 1;                         06340000
+         END;                                                           06350000
+       END;                                                             06360000
+     WHEN ('OTHER');                                                    06370000
+     OTHERWISE                                                          06380000
+       DO;                                                              06390000
+         MSG_SYSTEM.MESSAGE_NUMBER = 'E003';                            06400000
+         MSG_SYSTEM.MSG_PRIORITY   = '1';                               06410000
+0        PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR3,MSG_BATCH_ID) (A);     06420000
+                                                                        06430000
+       END;                                                             06440000
+     END;                                                               06450000
+   END;                                                                 06460000
+ ELSE                                                                   06470000
+   DO;                                                                  06480000
+     MSG_SYSTEM.MESSAGE_NUMBER = 'E002';                                06490000
+     MSG_SYSTEM.MSG_PRIORITY   = '1';                                   06500000
+0    PUT SKIP EDIT (MSG_SYSTEM,MSG_PARM_ERR2,MSG_BATCH_ID) (A);         06510000
+   END;                                                                 06520000
+0CLOSE FILE (SYSPRINT);                                                 06530000
+0END RCB0E2M_BATCH;                                                     06540000
+1/*******************************************************************/  06550000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  06560000
+ /*******************************************************************/  06570000
+0%INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */  06580000
+ $DAIMOD (RCB0E2M);                      /* MODULE TO BE COMPILED   */  06590000
+0/*******************************************************************/  06600000
+ /* END OF ABR BLOCK                                                */  06610000
+ /*******************************************************************/  06620000
+0END RCB0E2M;                                                           06630000

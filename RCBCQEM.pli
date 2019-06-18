@@ -1,0 +1,250 @@
+ /* RCBCQEM - ERROR LOGGING MODULE                                   */ 00019819
+ /*                                                                  */ 00020000
+ /*                                                                  */ 00030000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060000
+ /*                                                                  */ 00070000
+ /********************************************************************/ 00080000
+ /* PROGRAM          : RCBCQEM                                       */ 00090000
+ /*                                                                  */ 00100000
+ /* LANGUAGE         : PLICSQL                                       */ 00110000
+ /*                                                                  */ 00120000
+ /* TYPE             : LINKABLE MODULE                               */ 00130000
+ /*                                                                  */ 00140000
+ /* DESCRIPTION      : TO LOG ERRORS FROM CEDS ONLINE PROGRAMS       */ 00150000
+ /*                                                                  */ 00160000
+ /* INPUT            : POINTER TO ERROR STRUCTURE                    */ 00170000
+ /*                                                                  */ 00180000
+ /* OUTPUT           :                                               */ 00190000
+ /*                                                                  */ 00200000
+ /* EXTERNAL MODULES :                                               */ 00210000
+ /*                                                                  */ 00220000
+ /* MESSAGES         : 100                                           */ 00230000
+ /*                                                                  */ 00240000
+ /* DEPENDENCIES     : NONE                                          */ 00250000
+ /*                                                                  */ 00260000
+ /* MAINTENANCE LOG  :                                               */ 00270000
+ /* ---------------                                                  */ 00280000
+ /*                                                                  */ 00290000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00300000
+ /* --------------------------------------------------------------   */ 00310000
+ /*  1997-04-22 | PTM1036      | USE STANDARD PROLOGS                */ 00320000
+ /*             |              |                                     */ 00330000
+ /********************************************************************/ 00340000
+1RCBCQEM: PROC (RCBCQES_PTR)                                            00350000
+          REORDER;                                                      00360000
+0/********************************************************************/ 00370000
+ /*  BMS RELATED CONSTANTS                                           */ 00380000
+ /********************************************************************/ 00390000
+ %INCLUDE DFHBMSCA;                                                     00400000
+0/********************************************************************/ 00410000
+ /*  ATTENTION IDENTIFIER CONSTANTS                                  */ 00420000
+ /********************************************************************/ 00430000
+ %INCLUDE DFHAID;                                                       00440000
+0/********************************************************************/ 00450000
+ /*                 P A R A M E T E R S                              */ 00460000
+ /********************************************************************/ 00470000
+0DCL RCBCQES_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00480000
+ DCL 1 RCBCQES       BASED(RCBCQES_PTR),                                00490000
+      %INCLUDE RCBCQES;;                                                00500000
+0DCL 1 RCBCQES_SQLCA BASED(RCBCQES.SQLCA_PTR)                           00510000
+      LIKE SQLCA;                                                       00520000
+1/********************************************************************/ 00530000
+ /* EXTERNAL ENTRIES                                                 */ 00540000
+ /********************************************************************/ 00550000
+0DCL DSNTIAR   ENTRY  EXTERNAL  OPTIONS (ASM INTER RETCODE);            00560000
+1/********************************************************************/ 00570000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00580000
+ /********************************************************************/ 00590000
+0EXEC SQL INCLUDE SQLCA;                                                00600000
+0/********************************************************************/ 00610000
+ /* DB2 TABLE STRUCTURES                                             */ 00620000
+ /********************************************************************/ 00630000
+ DCL 1 TB_RCBV510,                                                      00640000
+      %INCLUDE (RCB510S);;                                              00650000
+ DCL 1 TB_RCBV510_I,                                                    00660000
+      %INCLUDE (RCB510SI);;                                             00670000
+0/********************************************************************/ 00680000
+ /*  MESSAGE STRUCTURE LOGGING  TRANSIENT DATASET                    */ 00690000
+ /********************************************************************/ 00700000
+0DCL 1 TD_LOG_MESSAGE,                                                  00710000
+       %INCLUDE(RCBCP5S);;          /*       PTM0882                */  00720000
+  DCL LENGTH_TD_MESS FIXED BIN(15) INIT(80);   /* MESSAGE LENGTH    */  00730000
+0/********************************************************************/ 00740000
+ /*  WORK DECLARATIONS                                               */ 00750000
+ /********************************************************************/ 00760000
+ DCL WRK_CURR_IND        CHAR(1)       INIT('0');                       00770000
+ DCL WRK_LEN_DATA        FIXED BIN(31,0) INIT(80);                      00780000
+ DCL WRK_SQL_INDEX       FIXED BIN(15);                                 00790000
+ DCL 1 WRK_MSG_SQL,                                                     00800000
+       3 LENGTH          FIXED BIN(15,0) UNAL INIT((7*80)),             00810000
+       3 SQLTEXT (7)     CHAR(80) INIT('');                             00820000
+ DCL I                   FIXED BIN(15);                                 00830000
+ DCL 1 MSG_DB2_ERR,                                                     00840000
+       3 MSG_SQL(7),                                                    00850000
+         5 NEWLINE       CHAR(01) INIT ('*'),                           00860000
+         5 SQLTEXT       CHAR(80);                                      00870000
+0/********************************************************************/ 00880000
+ /*  RETURN CODES                                                    */ 00890000
+ /********************************************************************/ 00900000
+ DCL RESPONSE     FIXED BINARY(31);  /*RETURN CODE                   */ 00910000
+0/********************************************************************/ 00920000
+ /*  BUILTIN FUNCTIONS                                               */ 00930000
+ /********************************************************************/ 00940000
+0DCL (ADDR,                                                             00950000
+      STRING,                                                           00960000
+      NULL,                                                             00970000
+      LENGTH,                                                           00980000
+      SUBSTR)                                                           00990000
+                BUILTIN;                                                01000000
+1/********************************************************************/ 01010000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01020000
+ /********************************************************************/ 01030000
+0EXEC CICS                                 /* GET ADDRESS OF EIB INFO*/ 01040000
+    ADDRESS EIB(DFHEIPTR);                                              01050000
+0IF RCBCQES.SEARCH.MESSAGE_TYPE   = '' |   /* CHECK INPUT PARAMETERS */ 01060000
+    RCBCQES.SEARCH.MESSAGE_NUMBER = '' |   /* FILLED                 */ 01070000
+    RCBCQES.SEARCH.LANGUAGE_CODE  = '' |                                01080000
+    RCBCQES.SEARCH.PROGRAM_ID     = '' THEN                             01090000
+ DO;                                                                    01100000
+    RCBCQES.SEARCH.MESSAGE_TYPE   = 'IS';                               01110000
+    RCBCQES.SEARCH.MESSAGE_NUMBER = 'C100';                             01120000
+    RCBCQES.SEARCH.LANGUAGE_CODE  = 'EN';                               01130000
+    RCBCQES.SEARCH.PROGRAM_ID     = 'RCBCQEM';                          01140000
+    CALL RCBCQEM_WRITE_TDQ;                                             01150000
+ END;                                                                   01160000
+ ELSE                                                                   01170000
+ DO;                                                                    01180000
+    IF RCBCQES_SQLCA.SQLCODE ¬= -922 &     /* DO NOT ATTEMPT FURTHER */ 01190000
+       RCBCQES_SQLCA.SQLCODE ¬= -923 &     /* DB2 CALLS AFTER THESE  */ 01200000
+       RCBCQES_SQLCA.SQLCODE ¬= -924 THEN  /* ERRORS AS RESULTS ARE  */ 01210000
+       CALL RCBCQEM_READ_MSG_DESCR;        /* UNPREDICTABLE          */ 01220000
+0   IF RCBCQES_SQLCA.SQLCODE < 0 THEN                                   01230000
+       CALL RCBCQEM_FORMAT_SQLCA;                                       01240000
+    ELSE                                                                01250000
+    DO;                                                                 01260000
+       IF RCBCQES_SQLCA.SQLCODE > 9993 THEN/* NON DB2 ERROR          */ 01270000
+       DO;                                                              01280000
+          TD_LOG_MESSAGE.TD_ERROR_MESS = RCBCQES_SQLCA.SQLERRM;         01290000
+          CALL RCBCQEM_WRITE_TDQ;                                       01300000
+       END;                                                             01310000
+    END;                                                                01320000
+ END;                                                                   01330000
+1/********************************************************************/ 01340000
+ /*     READ RCBT0510_MSG_DESCR TABLE FOR DESCRIPTION OF ERROR       */ 01350000
+ /********************************************************************/ 01360000
+0RCBCQEM_READ_MSG_DESCR : PROC;                                         01370000
+0EXEC SQL                                                               01380000
+     SELECT                                                             01390000
+         DESCRIPTION_SHORT                                              01400000
+        ,DESCRIPTION_LONG                                               01410000
+     INTO                                                               01420000
+         :TB_RCBV510.DESCRIPTION_SHORT                                  01430000
+        ,:TB_RCBV510.DESCRIPTION_LONG                                   01440000
+     FROM RCBV0510_MSG_DESCR                                            01450000
+     WHERE                                                              01460000
+       MESSAGE_TYPE    = :SEARCH.MESSAGE_TYPE  AND                      01470000
+       MESSAGE_NUMBER  = :SEARCH.MESSAGE_NUMBER AND                     01480000
+       LANGUAGE_CODE   = :SEARCH.LANGUAGE_CODE;                         01490000
+ SELECT (SQLCA.SQLCODE);                                                01500000
+    WHEN (0)                                                            01510000
+    DO;                                                                 01520000
+       IF TB_RCBV510.DESCRIPTION_SHORT ¬= '' THEN                       01530000
+       DO;                                                              01540000
+          TD_LOG_MESSAGE.TD_ERROR_MESS =                                01550000
+                           SUBSTR(TB_RCBV510.DESCRIPTION_SHORT,1,51);   01560000
+          CALL RCBCQEM_WRITE_TDQ;                                       01570000
+          IF SUBSTR(TB_RCBV510.DESCRIPTION_SHORT,52) ¬= '' THEN         01580000
+          DO;                                                           01590000
+             TD_LOG_MESSAGE.TD_ERROR_MESS =                             01600000
+                       SUBSTR(TB_RCBV510.DESCRIPTION_SHORT,52,9) || ''; 01610000
+             CALL RCBCQEM_WRITE_TDQ;                                    01620000
+          END;                                                          01630000
+       END;                                                             01640000
+       IF TB_RCBV510.DESCRIPTION_LONG ¬= '' THEN                        01650000
+       DO;                                                              01660000
+          TD_LOG_MESSAGE.TD_ERROR_MESS =                                01670000
+                           SUBSTR(TB_RCBV510.DESCRIPTION_LONG,1,51);    01680000
+          CALL RCBCQEM_WRITE_TDQ;                                       01690000
+          I = 52;                                                       01700000
+          DO WHILE (I < 251 &                                           01710000
+                    SUBSTR(TB_RCBV510.DESCRIPTION_LONG,I) ¬= '');       01720000
+             TD_LOG_MESSAGE.TD_ERROR_MESS =                             01730000
+                       SUBSTR(TB_RCBV510.DESCRIPTION_LONG,I,51) || '';  01740000
+             CALL RCBCQEM_WRITE_TDQ;                                    01750000
+             I = I + 51;                                                01760000
+          END;                                                          01770000
+       END;                                                             01780000
+    END;                                                                01790000
+    WHEN (+100)                                                         01800000
+    DO;                                                                 01810000
+       TD_LOG_MESSAGE.TD_ERROR_MESS = 'MESSAGE NOT FOUND. UPDATE ' ||   01820000
+                                      'TABLE RCBT0510_MSG_DESCR';       01830000
+       CALL RCBCQEM_WRITE_TDQ;                                          01840000
+    END;                                                                01850000
+    OTHERWISE                                                           01860000
+    DO;                                                                 01870000
+       TD_LOG_MESSAGE.TD_ERROR_MESS = 'INVALID SQLCODE FROM READ ' ||   01880000
+                                      'OF RCBT0510_MSG_DESCR';          01890000
+       RCBCQES_SQLCA.SQLCODE         = SQLCA.SQLCODE;                   01900000
+       RCBCQES.SEARCH.PROGRAM_ID     = 'RCBCQEM';                       01910000
+       CALL RCBCQEM_WRITE_TDQ;                                          01920000
+    END;                                                                01930000
+ END;                                                                   01940000
+0END RCBCQEM_READ_MSG_DESCR;                                            01950000
+1/********************************************************************/ 01960000
+ /*     GET DB2 INFORMATION OF SQLCA                                 */ 01970000
+ /********************************************************************/ 01980000
+0RCBCQEM_FORMAT_SQLCA : PROC;                                           01990000
+0CALL DSNTIAR (RCBCQES_SQLCA,WRK_MSG_SQL,WRK_LEN_DATA);                 02000000
+0MSG_DB2_ERR.SQLTEXT(*)  = WRK_MSG_SQL.SQLTEXT(*);                      02010000
+ WRK_SQL_INDEX = 1;                                                     02020000
+ DO WHILE (WRK_SQL_INDEX <= 7 &                                         02030000
+           MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX) ¬= '');                   02040000
+    TD_LOG_MESSAGE.TD_ERROR_MESS =                                      02050000
+                       SUBSTR(MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX),1,51); 02060000
+    CALL RCBCQEM_WRITE_TDQ;                                             02070000
+    IF SUBSTR(MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX),52) ¬= '' THEN         02080000
+    DO;                                                                 02090000
+       TD_LOG_MESSAGE.TD_ERROR_MESS =                                   02100000
+                 SUBSTR(MSG_DB2_ERR.SQLTEXT(WRK_SQL_INDEX),52) || '';   02110000
+       CALL RCBCQEM_WRITE_TDQ;                                          02120000
+    END;                                                                02130000
+    WRK_SQL_INDEX = WRK_SQL_INDEX + 1;                                  02140000
+ END;                                                                   02150000
+0END RCBCQEM_FORMAT_SQLCA;                                              02160000
+1/********************************************************************/ 02170000
+ /*     WRITE THE ERROR MESSAGE TO THE CICS TEMPORARY DATA QUEUE     */ 02180000
+ /********************************************************************/ 02190000
+0RCBCQEM_WRITE_TDQ : PROC;                                              02200000
+0TD_LOG_MESSAGE.TRANS_ID     = EIBTRNID;                                02210000
+ TD_LOG_MESSAGE.DATESTAMP    = EIBDATE;                                 02220000
+ TD_LOG_MESSAGE.TIMESTAMP    = EIBTIME;                                 02230000
+ TD_LOG_MESSAGE.PROGRAM_ID   = RCBCQES.PROGRAM_ID;                      02240000
+ TD_LOG_MESSAGE.MESS_NBR     = SUBSTR(RCBCQES.MESSAGE_NUMBER,2,3);      02250000
+ TD_LOG_MESSAGE.MESS_CHAR    = 'C';                                     02260000
+ TD_LOG_MESSAGE.SQL_CODE     = RCBCQES_SQLCA.SQLCODE;                   02270000
+ TD_LOG_MESSAGE.TD_INDICATOR = WRK_CURR_IND;                            02280000
+0IF WRK_CURR_IND = '0' THEN                                             02290000
+    WRK_CURR_IND = '1';                                                 02300000
+ EXEC CICS                                                              02310000
+   WRITEQ TD                                                            02320000
+   QUEUE('RCBE')                                                        02330000
+   FROM(TD_LOG_MESSAGE)                                                 02340000
+   LENGTH(LENGTH_TD_MESS)                                               02350000
+   RESP(RESPONSE);                                                      02360000
+ SELECT(RESPONSE);                                                      02370000
+   WHEN(DFHRESP(NORMAL));                                               02380000
+   OTHERWISE;                                                           02390000
+ END;                                                                   02400000
+0END RCBCQEM_WRITE_TDQ;                                                 02410000
+1/*******************************************************************/  02420000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  02430000
+ /*******************************************************************/  02440000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  02450000
+  $DAIMOD (RCBCQEM);                     /* MODULE TO BE COMPILED   */  02460000
+0/*******************************************************************/  02470000
+ /* END OF ABR BLOCK '                                              */  02480000
+ /*******************************************************************/  02490000
+0 END RCBCQEM;                                                          02500000

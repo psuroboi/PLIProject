@@ -1,0 +1,569 @@
+ /* RCBBK6U - USER EXIT FOR WSU/MSU UPGRADED CONTRACT                */ 00013020
+ /********************************************************************/ 00020006
+ /*                                                                  */ 00030006
+ /* MODULE NAME      : RCBBK6U                                       */ 00040006
+ /*                                                                  */ 00050006
+ /* PROGRAM NAME     : RCBBK6U                                       */ 00060006
+ /*                                                                  */ 00070006
+ /* LANGUAGE         : PLISQL                                        */ 00080006
+ /*                                                                  */ 00090006
+ /* TYPE             : LINKABLE MODULE                               */ 00100006
+ /*                                                                  */ 00110006
+ /* DESCRIPTION      : USER EXIT TO ALLOW GE0 TO UPDATE THE CONTENTS */ 00120006
+ /*                    OF THE WSU/MSU UPGRADED CONTRACT RECORD       */ 00130006
+ /*                                                                  */ 00140006
+ /* NOTE 1           :-IF YOU WANT TO USE THIS EXIT BE SURE TO SET   */ 00150006
+ /*                    SWITCH_USER_EXIT TO TRUE                      */ 00160006
+ /*                   -AS FLEXIBILITY IS GIVEN TO UPDATE THE ENTIRE  */ 00170006
+ /*                    UPGRADED KX0 RECORD, SHOULD BE TAKEN CARE     */ 00180006
+ /*                    WHILE CODING THE USER EXIT                    */ 00190006
+ /*                                                                  */ 00200006
+ /* INPUT            : - SWITCH_USER_EXIT                            */ 00210006
+ /*                    - CHIS UPGRADED DATA RECORD ('C002')          */ 00220006
+ /*                    - KB0 EXTENSION FIELDS                        */ 00230006
+ /*                    - COPY OF RCBBKZ0 RECORD                      */ 00240006
+ /*                    - PTR_INT_AREA                                */ 00250006
+ /*                                                                  */ 00260006
+ /* OUTPUT           : - SWITCH_USER_EXIT                            */ 00270006
+ /*                    - CHIS UPGRADE DATA RECORD ('C002')           */ 00280006
+ /*                    - PTR_INT_AREA                                */ 00290006
+ /*                                                                  */ 00300006
+ /* BRIEF NOTE ABOUT THE INPUT/OUTPUT RECORD VARIABLES :             */ 00310006
+ /*                                                                  */ 00320006
+ /* RCBBKX0_C002       >-CONTAINS THE WSU/MSU UPGRADED RECORD        */ 00330006
+ /*                     -INPUT/OUTPUT                                */ 00340006
+ /*                                                                  */ 00350006
+ /* RCBBKB0_EXTENSION ->-CONTAINS THE EXTRA FILEDS SUPPLIED IN KB0   */ 00360006
+ /*                      FILE, AS KX0 FILE STRUCTURE DOES'NT CONTAIN */ 00370006
+ /*                      THOSE INFORMATION                           */ 00380006
+ /*                     -INPUT ONLY                                  */ 00390006
+ /*                                                                  */ 00400006
+ /* RCBBKZ0_C002_COPY ->-CONTAINS COPY OF KZ0 RECORD                 */ 00410006
+ /*                     -BLANK IF WSU DOES NOT HAVE CORRESPONDING    */ 00420006
+ /*                      CONTRACT IN KZ0                             */ 00430006
+ /*                     -ALWAYS THERE WILL BE A CORRESPONDING KZ0 REC*/ 00440006
+ /*                      FOR MSU UPGRADES                            */ 00450006
+ /*                     -INPUT ONLY                                  */ 00460006
+ /*                                                                  */ 00470006
+ /* EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE              */ 00480006
+ /*                                                                  */ 00490006
+ /* MESSAGES         : ----                                          */ 00500006
+ /*                                                                  */ 00510006
+ /* DEPENDENCIES     : NONE                                          */ 00520006
+ /*                                                                  */ 00530006
+ /* FREQUENCY        : ----                                          */ 00540006
+ /*                                                                  */ 00550006
+ /*  MAINTENANCE LOG :                                               */ 00560006
+ /*  ---------------                                                 */ 00570006
+ /*                                                                  */ 00580006
+ /*  DATE       | WORK-ITEMNO.| DESCRIPTION                          */ 00590006
+ /*  --------------------------------------------------------------  */ 00600006
+ /* 2009-06-26 | RB01301      | CEDS ALIGNMENT TO CHIS810 - BAU      */ 00610006
+ /*            |              | SERVICE EXTENSIONS                   */ 00620006
+ /* 2010-03-09 | PCR036       | (FGR) WSU/MSU SUPPORT ACTIVATED      */ 00630006
+ /* 2010-03-09 | R09-0082     | (FGR) ADD NEW COVERAGES              */ 00640006
+ /* 2010-05-11 | T0263        | COMMENTING OUT DEFAULT COVERAGE VALUE*/ 00641010
+ /* 2010-09-09 | T80281       | IF UPGRADE SLC IS NOT FOUND THEN USE */ 00644011
+ /*                           | THE MAINTENANCE SLC IN CASE OF       */ 00645011
+ /*                           | UPGRADE TYPE = 'M'                      00646011
+ /********************************************************************/ 00650006
+1RCBBK6U: PROC    (PTR_SWITCH_USER_EXIT,                                00660006
+                   PTR_RCBBKX0_C002,                                    00670006
+                   PTR_RCBBKB0_EXTENSION,                               00680006
+                   PTR_RCBBKZ0_C002_COPY,                               00690006
+                   PTR_INT_AREA)                                        00700006
+          REORDER;                                                      00710006
+0DEFAULT RANGE (*)        STATIC;                                       00720006
+1/********************************************************************/ 00730006
+ /*  PARAMETERS                                                      */ 00740006
+ /********************************************************************/ 00750006
+0DCL PTR_SWITCH_USER_EXIT    PTR;                                       00760006
+0DCL PTR_RCBBKX0_C002        PTR;                                       00770006
+0DCL PTR_RCBBKB0_EXTENSION   PTR;                                       00780006
+0DCL PTR_RCBBKZ0_C002_COPY   PTR;                                       00790006
+0DCL PTR_INT_AREA            PTR;          /* INTERFACE AREA         */ 00800006
+1/********************************************************************/ 00810006
+ /*  EXTERNAL ENTRIES                                                */ 00820006
+ /********************************************************************/ 00830006
+0DCL RCB0E1M   ENTRY  EXTERNAL;            /* COMMON ERROR ROUTINE   */ 00840006
+                                                       /* SOC PCR036 */ 00850006
+ DCL RCBISRM   ENTRY  EXTERNAL;            /* RETRIEVE SERVICE COND  */ 00860006
+ DCL RCBIBOM   ENTRY  EXTERNAL;            /* RETRIEVE SERVICE COND  */ 00870006
+ DCL RCB0M1M   ENTRY  EXTERNAL;            /* COMMON MESSAGE ROUTINE */ 00880006
+                                                       /* EOC PCR036 */ 00890006
+0/********************************************************************/ 00900006
+ /* ON ERROR CONDITIONS                                              */ 00910006
+ /********************************************************************/ 00920006
+0%INCLUDE (RCB0E0M);                                                    00930006
+  END;                                                                  00940006
+ /********************************************************************/ 00950006
+ /*                                                                  */ 00960006
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 00970006
+ /* AND CALL THE ERROR ROUTINE:                                      */ 00980006
+ /*                                                                  */ 00990006
+ /*                                                                  */ 01000006
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 01010006
+ /*                                                                  */ 01020006
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 01030006
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 01040006
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 01050006
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 01060006
+ /*                                                                  */ 01070006
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 01080006
+ /*                                                                  */ 01090006
+ /********************************************************************/ 01100006
+0/********************************************************************/ 01110006
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 01120006
+ /********************************************************************/ 01130006
+0DCL SWITCH_USER_EXIT BIT (1)  BASED (PTR_SWITCH_USER_EXIT);            01140006
+                                                                        01150006
+ DCL 1 PARM_RCBBKX0_C002       BASED (PTR_RCBBKX0_C002),                01160006
+       %INCLUDE (RCBBKAS3);;                                            01170006
+                                                                        01180006
+ DCL 1 PARM_RCBBKZ0_C002_COPY  BASED (PTR_RCBBKZ0_C002_COPY),           01190006
+       %INCLUDE (RCBBKAS3);;                                            01200006
+                                                                        01210006
+ DCL 1 PARM_RCBBKB0_EXTENSION  BASED (PTR_RCBBKB0_EXTENSION),           01220006
+       3 UPGRADE_TYPE     CHAR(01),                                     01230006
+       3 IOBJNIK          CHAR(15),                                     01240006
+       3 IUSCNIK          CHAR(15);                                     01250006
+                                                                        01260006
+ DCL 1 PARM_INT_AREA           BASED (PTR_INT_AREA),                    01270006
+      %INCLUDE (RCBZ01S);;                                              01280006
+1/********************************************************************/ 01290006
+ /* DB2 TABLE STRUCTURES                                             */ 01300006
+ /********************************************************************/ 01310006
+                                                       /* SOC PCR036 */ 01320006
+ DCL 1 TB_RCBV470,                                                      01330006
+      %INCLUDE (RCB470S);;                                              01340006
+ DCL 1 TB_RCBV470_I,                                                    01350006
+      %INCLUDE (RCB470SI);;                                             01360006
+                                                                        01370006
+ DCL 1 TB_RCBV640,                                                      01380006
+      %INCLUDE (RCB640S);;                                              01390006
+ DCL 1 TB_RCBV640_I,                                                    01400006
+      %INCLUDE (RCB640SI);;                                             01410006
+ DCL PTR_RETURN_AREA         PTR;          /* INTERFACE AREA         */ 01420006
+ DCL 1 RETURN_AREA,                            /* RETURN AREA        */ 01430006
+       %INCLUDE (RCBZ02S);;                                             01440006
+                                                                        01450006
+                                                       /* EOC PCR036 */ 01460006
+1/********************************************************************/ 01470006
+ /*  BIT SWITCHES                                                    */ 01480006
+ /********************************************************************/ 01490006
+0DCL TRUE     BIT (1) INIT ('1'B);                                      01500006
+ DCL FALSE    BIT (1) INIT ('0'B);                                      01510006
+0/********************************************************************/ 01520006
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01530006
+ /********************************************************************/ 01540006
+0DCL 1 WORK_FIELDS,                                                     01550006
+       3 WRK_LEVEL      FIXED BIN (15),                                 01560006
+       3 WRK_INDNULL    FIXED BIN (15);                                 01570006
+                                                       /* SOC PCR036 */ 01580006
+ DCL I        FIXED BIN (31);                                           01590006
+0DCL 1 WORK_FIELDS_LOCAL,                                               01600006
+                          /* THE COVERAGES LISTED HERE ARE ALIGNED TO*/ 01610006
+                          /* COVERAGES USED IN THE RCBTSER TABLE     */ 01620006
+                          /* BUT ARE NOT CONSISTENT WITH SLC-IN T470 */ 01630006
+                          /*  RCBTSER   = DXHH   (5X11)              */ 01640006
+                          /*  RCBT0470  = HHXD   (11X5)              */ 01650006
+       3 WRK_KNOWN_COVERAGES CHAR (40)                                  01660006
+                      INIT('7X24 7X18 7X12 6X18 6X12 5X18 5X11 5X9'),   01670006
+       3 WRK_WARN_TEXT  CHAR(25),                                       01680006
+       3 WRK_SDM        CHAR(03),                                       01690006
+       3 WRK_UPG_SLC    CHAR(03),                                       01700006
+       3 WRK_TIER       CHAR(03),                                       01710006
+       3 WRK_COVERAGE   CHAR(04),                                       01720006
+       3 WRK_HRS_FROM   PIC'99',                                        01730006
+       3 WRK_HRS_TO     PIC'99',                                        01740006
+       3 WRK_LOWEST_HOURS PIC'99',                                      01750006
+       3 WRK_HOURS      PIC'99',                                        01760006
+       3 WRK_DAYS       PIC'9';                                         01770007
+                                                       /* EOC PCR036 */ 01780006
+1/********************************************************************/ 01790006
+ /*  BUILTIN FUNCTIONS                                               */ 01800006
+ /********************************************************************/ 01810006
+0DCL (ADDR,                                                             01820006
+      SUBSTR,                                                           01830006
+      NULL)   BUILTIN;                                                  01840006
+1/********************************************************************/ 01850006
+ /* DB2/SQL SQLCA                                                    */ 01860006
+ /********************************************************************/ 01870006
+0 EXEC SQL                                                              01880006
+    INCLUDE SQLCA                                                       01890006
+    ;                                                                   01900006
+1/********************************************************************/ 01910006
+ /*                 S T A R T   P R O C E S S I N G                  */ 01920006
+ /********************************************************************/ 01930006
+0                                        /* SET LEVEL AND MOD NAME   */ 01940006
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01950006
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01960006
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = 'RCBBK6U';                     01970006
+                                                                        01980006
+0                                        /* USER DEFINED PROCESS     */ 01990006
+ /********************************************************************/ 02000006
+ /*        BASIC LOGIC FOR DETERMINATION UPGRADE SERVICE CONDITIONS  */ 02010006
+ /*                                                                  */ 02020006
+ /*    <WSU/MSU>   <WSU>           <MSU>                             */ 02030006
+ /*      CHIS       CHIS       ORIGINAL CONTRACT                     */ 02040006
+ /*        |          |              |                               */ 02050006
+ /*    (IOBJNIK)  (IUSCNIK)     (CALCULATED)                         */ 02060006
+ /*        |          |              |                               */ 02070006
+ /*        |          '..............'                               */ 02080006
+ /*        |                 |                                       */ 02090006
+ /*      TIER            COVERAGE                                    */ 02100006
+ /*        |   (RCBTSER)     |                                       */ 02110006
+ /*        '.................'                                       */ 02120006
+ /*                 |                                                */ 02130006
+ /*             UPGRADE-SLC                                          */ 02140006
+ /*                 |                                                */ 02150006
+ /*        .........'.........                                       */ 02160006
+ /*        |                 |                                       */ 02170006
+ /*       (FROM RCBT0470/0475)                                       */ 02180006
+ /*        |                 |                                       */ 02190006
+ /*  COVERAGE HOURS         SDM                                      */ 02200006
+ /*                          |                                       */ 02210006
+ /*                  (FROM RCBT0640/0645)                            */ 02220006
+ /*                          |                                       */ 02230006
+ /*                          ST                                      */ 02240006
+ /*                                                                  */ 02250006
+ /********************************************************************/ 02260006
+                                                                        02270006
+ SWITCH_USER_EXIT = TRUE;                                               02280006
+ PTR_RETURN_AREA   = ADDR(RETURN_AREA);                                 02290006
+                                                                        02300006
+                                                       /* SOC PCR036 */ 02310006
+ SELECT (PARM_RCBBKB0_EXTENSION.UPGRADE_TYPE);                          02320006
+ WHEN ('M')                                                             02330006
+     DO;                                                                02340006
+        /* TRANSLATE CHIS TIER AND CALCULATED COVERAGE TO UPGRADE SLC*/ 02350006
+     WRK_TIER     = SUBSTR(PARM_RCBBKB0_EXTENSION.IOBJNIK,5,3);         02360006
+     WRK_COVERAGE = R002_CALCULATE_COVERAGE();                          02370006
+     END;                                                               02380006
+ WHEN ('W')                                                             02390006
+     DO;                                                                02400006
+         /* TRANSLATE TIER AND COVERAGE TO SR SLC */                    02410006
+     WRK_TIER     = SUBSTR(PARM_RCBBKB0_EXTENSION.IOBJNIK,5,3);         02420006
+     WRK_COVERAGE = SUBSTR(PARM_RCBBKB0_EXTENSION.IUSCNIK,4,4);         02430006
+     END;                                                               02440006
+ OTHERWISE DO;                                                          02450006
+    /* WRONG UPGRADE_TYPE */                                            02460006
+     CALL RCBBK6U_ERROR (NULL,                                          02470006
+                         'OTHER',                                       02480006
+                         '#001');                                       02490006
+     END;                                                               02500006
+ END;                                                                   02510006
+0WRK_UPG_SLC  = R001_DETERMINE_SLC(WRK_TIER,WRK_COVERAGE);              02520006
+ IF WRK_UPG_SLC = '---'         /*UPGRADE SLC COULD NOT BE DETERMINED*/ 02530006
+ THEN DO;                       /*UPGRADE NOT APPLIED                */ 02540006
+  /* CHANGE T80281 */                                                   02541011
+     IF PARM_RCBBKB0_EXTENSION.UPGRADE_TYPE=  'M'                       02542011
+     THEN DO;                                                           02543011
+         /* RESET THE MSU VALUES    */                                  02549015
+                                                                        02549115
+         CALL R018_RESET_MSU_VALUES                                     02549215
+                                                                        02549311
+         END;                                                           02549411
+  /* CHANGE T80281 */                                                   02549611
+     WRK_WARN_TEXT =  WRK_TIER||'/'||WRK_COVERAGE;                      02550006
+     CALL RCBBK6U_WARNING ('L001',                                      02560006
+                           WRK_WARN_TEXT);                              02570006
+     END;                                                               02580006
+ ELSE DO;                       /*APPLY UPGRADE                      */ 02590006
+     PARM_RCBBKX0_C002.SERVICE_LVL_CODE = WRK_UPG_SLC;                  02600013
+        /* ADD THE COVERAGE HOURS FROM CALCULATED UPGRADE SLC        */ 02610006
+     CALL R016_FILL_COVERAGE_HOURS(WRK_UPG_SLC);                        02620006
+     WRK_SDM = TB_RCBV470.SERVICE_DLVR_METHD;                           02630006
+        /* DETERMINE THE OLD CHIS-SERVICE TYPE (REQUIRED ?)          */ 02640006
+     CALL R017_FILL_SERV_TYPE (WRK_SDM);                                02650006
+     END;                                                               02660006
+1/********************************************************************/ 02670006
+ /*                                                                  */ 02680006
+ /* MODULE NAME      : R001_DETERMINE_SLC                            */ 02690006
+ /*                                                                  */ 02700006
+ /* DESCRIPTION      : TRANSLATE TIER AND COVERAGE USING EMEA LOCAL  */ 02710006
+ /*                    TABLE RCBTSER                                 */ 02720006
+ /* OUTPUT           : RETURS THE SLC FOUND OR '---'                 */ 02730006
+ /*                                                                  */ 02740006
+ /* EXAMPLE FROM RCBTSER                                             */ 02750006
+ /*                                                                  */ 02760006
+ /*       TIER             COVERAGE         SR_SLC                   */ 02770006
+ /*       ---------+---------+---------+---------+--                 */ 02780006
+ /*       A                5X11             M1H                      */ 02790006
+ /*       A                5X9              M1A                      */ 02800006
+ /*       A                6X18             M1B                      */ 02810006
+ /*       C01              5X11             M5D                      */ 02820006
+ /*       C01              5X9              M5C                      */ 02830006
+ /*       C01              6X18             M5E                      */ 02840006
+ /*       C01              7X24             M5F                      */ 02850006
+ /*       .                                                          */ 02860006
+ /*       Z                6X18             M1Y                      */ 02870006
+ /*       .                                                          */ 02880006
+ /*       4                6X18             M0D                      */ 02890006
+ /********************************************************************/ 02900006
+ R001_DETERMINE_SLC: PROCEDURE (TIER,COVERAGE) RETURNS(CHAR(03));       02910006
+ DCL TIER     CHAR(03),                                                 02920006
+     COVERAGE CHAR(04),                                                 02930006
+     WRK_SLC  CHAR(03);                                                 02940006
+ EXEC SQL                                                               02950006
+      SELECT SR_SLC                                                     02960006
+        INTO :WRK_SLC                                                   02970006
+        FROM RCBVSER                                                    02980006
+       WHERE TIER     = :TIER                                           02990006
+         AND COVERAGE = :COVERAGE;                                      03000006
+                                                                        03010006
+ SELECT(SQLCODE);                                                       03020006
+ WHEN (0) RETURN(WRK_SLC);                                              03030006
+ WHEN(100) RETURN('---');                     /*  NO SLC FOUND       */ 03040006
+ OTHERWISE                                                              03050006
+     DO;                                                                03060006
+     CALL RCBBK6U_ERROR (ADDR (SQLCA),                                  03070006
+                          'DB2',                                        03080006
+                          '#002');                                      03090006
+     END;                                                               03100006
+ END;                                                                   03110006
+ END R001_DETERMINE_SLC;                                                03120006
+1/********************************************************************/ 03130006
+ /*                                                                  */ 03140006
+ /* MODULE NAME      : R002_CALCULATE_COVERAGE                       */ 03150006
+ /*                                                                  */ 03160006
+ /* DESCRIPTION      : DETERMINE COVERAGE TYPE BASED ON EXPLICIT     */ 03170006
+ /*                    COVERAGE HOURS                                */ 03180006
+ /*                    ONLY APPLICABLE IN CASE OF MSU AND HOURS FROM */ 03190006
+ /*                    ORIGINAL CONTRACT ARE USED                    */ 03200006
+ /*                                                                  */ 03210006
+ /* OUTPUT           : RETURNS THE CALCULATED COVERAGE, OR           */ 03220006
+ /*      IF THE CALCULATED COVERAGE IS NOT KNOWN A MESSAGE IS ISSUED */ 03230006
+ /*      END A DEFAULT COVERAGE OF "5X9" (LOWEST) IS RETURNED        */ 03240006
+ /*                                                   /* SOC R09-0082*/ 03250006
+ /********************************************************************/ 03260006
+0R002_CALCULATE_COVERAGE: PROC RETURNS(CHAR(04));                       03270006
+ DCL  COVERAGE        CHAR  (4);                                        03280006
+ DCL  DAYS            CHAR  (1);                                        03290006
+ DCL  HOURS           CHAR  (2);                                        03300006
+     /* CALCULATE COVERAGE DAYS   */                                    03310006
+ WRK_DAYS = 7;                                                          03320006
+ DO I = 1 TO 7;                                                         03330006
+   IF PARM_RCBBKZ0_C002_COPY.DAGRMFR(I) = '00.00.00'                    03340006
+   &  PARM_RCBBKZ0_C002_COPY.DAGRMTO(I) = '00.00.00' THEN               03350006
+      WRK_DAYS = WRK_DAYS - 1;                                          03360006
+ END;                                                                   03370006
+                                                                        03380006
+  /* CALCULATE LOWEST COVERAGE HOURS  */                                03390006
+ WRK_LOWEST_HOURS = 24;                                                 03400006
+ DO I = 1 TO 7;                         /* DETERMINE LOWEST NUMBER */   03410006
+                                        /* USED ON ONE OF THE DAYS */   03420006
+   WRK_HRS_FROM = SUBSTR(PARM_RCBBKZ0_C002_COPY.DAGRMFR(I),1,2);        03430006
+   WRK_HRS_TO   = SUBSTR(PARM_RCBBKZ0_C002_COPY.DAGRMTO(I),1,2);        03440006
+   WRK_HOURS    = WRK_HRS_TO - WRK_HRS_FROM;                            03450006
+   IF WRK_HOURS ¬= 0 & WRK_HOURS < WRK_LOWEST_HOURS                     03460006
+   THEN WRK_LOWEST_HOURS = WRK_HOURS;                                   03470006
+ END;                                                                   03480006
+ DAYS = WRK_DAYS;                                                       03490006
+ HOURS = WRK_LOWEST_HOURS;                                              03500006
+ COVERAGE = DAYS||'X'||HOURS  ; /*  (ENSURE NXNN  FORMAT */             03510006
+ IF  (SUBSTR(COVERAGE, 3,1)  = "0" )     THEN  DO;                      03511009
+ SUBSTR(COVERAGE,3,1)  = SUBSTR(COVERAGE,4,1)  ;                        03512009
+ SUBSTR(COVERAGE,4,1) = " " ;                                           03513009
+ END;                                                                   03514009
+                                                     /* EOC R09-0082*/  03515010
+                                                     /* SOC T0263   */  03520010
+ /*                                                                     03521010
+ IF INDEX(WRK_KNOWN_COVERAGES,COVERAGE) = 0                             03530010
+ THEN DO;                                                               03540006
+     WRK_WARN_TEXT = COVERAGE;                                          03550006
+     CALL RCBBK6U_WARNING ('L002',                                      03560006
+                           WRK_WARN_TEXT);                              03570006
+     COVERAGE = '5X9';  */                     /* SET TO DEFAULT     */ 03580010
+ /*                                                                     03581010
+ END;                                                                   03590010
+ */                                               /*     EOC T0263  */  03591010
+ RETURN (COVERAGE);                                                     03600006
+ END R002_CALCULATE_COVERAGE;                                           03610006
+1/********************************************************************/ 03620006
+ /*                                                                  */ 03630006
+ /* MODULE NAME      :  R016_FILL_COVERAGE_HOURS                     */ 03640006
+ /*                                                                  */ 03650006
+ /* DESCRIPTION      : TRANSLATE SERVICE LEVEL CODE INTO COVERAGE    */ 03660006
+ /*                    HOURS                                         */ 03670006
+ /*                                                                  */ 03680006
+ /********************************************************************/ 03690006
+ R016_FILL_COVERAGE_HOURS: PROC (SERVICE_LVL_CODE);                     03700006
+                                                                        03710006
+ DCL SERVICE_LVL_CODE   CHAR(03);                                       03720006
+                                                                        03730006
+ TB_RCBV470                  = '';                                      03740006
+ TB_RCBV470_I                = '';                                      03750006
+ TB_RCBV470.SERVICE_LVL_CODE = SERVICE_LVL_CODE;                        03760006
+                                                                        03770006
+ CALL RCBISRM (ADDR(TB_RCBV470),                                        03780006
+               ADDR(TB_RCBV470_I),                                      03790006
+               ADDR(RETURN_AREA),                                       03800006
+               PTR_INT_AREA);                                           03810006
+                                                                        03820006
+ SELECT (RETURN_AREA.RETURN_CODE);                                      03830006
+ WHEN (0)                                                               03840006
+   DO;                                                                  03850006
+     PARM_RCBBKX0_C002.DAGRMFR(1) = TB_RCBV470.COVERAGE_START_1;        03860006
+     PARM_RCBBKX0_C002.DAGRMTO(1) = TB_RCBV470.COVERAGE_END_1;          03870006
+     PARM_RCBBKX0_C002.DAGRMFR(2) = TB_RCBV470.COVERAGE_START_2;        03880006
+     PARM_RCBBKX0_C002.DAGRMTO(2) = TB_RCBV470.COVERAGE_END_2;          03890006
+     PARM_RCBBKX0_C002.DAGRMFR(3) = TB_RCBV470.COVERAGE_START_3;        03900006
+     PARM_RCBBKX0_C002.DAGRMTO(3) = TB_RCBV470.COVERAGE_END_3;          03910006
+     PARM_RCBBKX0_C002.DAGRMFR(4) = TB_RCBV470.COVERAGE_START_4;        03920006
+     PARM_RCBBKX0_C002.DAGRMTO(4) = TB_RCBV470.COVERAGE_END_4;          03930006
+     PARM_RCBBKX0_C002.DAGRMFR(5) = TB_RCBV470.COVERAGE_START_5;        03940006
+     PARM_RCBBKX0_C002.DAGRMTO(5) = TB_RCBV470.COVERAGE_END_5;          03950006
+     PARM_RCBBKX0_C002.DAGRMFR(6) = TB_RCBV470.COVERAGE_START_6;        03960006
+     PARM_RCBBKX0_C002.DAGRMTO(6) = TB_RCBV470.COVERAGE_END_6;          03970006
+     PARM_RCBBKX0_C002.DAGRMFR(7) = TB_RCBV470.COVERAGE_START_7;        03980006
+     PARM_RCBBKX0_C002.DAGRMTO(7) = TB_RCBV470.COVERAGE_END_7;          03990006
+   END;                                                                 04000006
+ OTHERWISE                                                              04010006
+   DO;                                                                  04020006
+     CALL RCBBK6U_ERROR (ADDR(RETURN_AREA.RETURN_SQL),                  04030006
+                         'DB2',                                         04040006
+                         '#003');                                       04050006
+   END;                                                                 04060006
+ END;                                                                   04070006
+                                                                        04080006
+ END R016_FILL_COVERAGE_HOURS;                                          04090006
+1/********************************************************************/ 04100006
+ /*                                                                  */ 04110006
+ /* MODULE NAME      : SEARCH SERV_TYPE                              */ 04120006
+ /*                                                                  */ 04130006
+ /* DESCRIPTION      : SELECT SERVICE TYPE                           */ 04140006
+ /*                                                                  */ 04150006
+ /********************************************************************/ 04160006
+ R017_FILL_SERV_TYPE : PROC (SDM);                                      04170006
+ DCL SDM       CHAR (03);                                               04180006
+                                                                        04190006
+ TB_RCBV640                    = '';                                    04200006
+ TB_RCBV640_I.INDNULL(*)       = 0;                                     04210006
+ TB_RCBV640.SERVICE_DLVR_METHD = SDM;                                   04220006
+                                                                        04230006
+ CALL RCBIBOM (ADDR(TB_RCBV640),                                        04240006
+               ADDR(TB_RCBV640_I),                                      04250006
+               PTR_RETURN_AREA,                                         04260006
+               PTR_INT_AREA,                                            04270006
+               'SDM');                                                  04280006
+ SELECT(RETURN_AREA.RETURN_CODE);                                       04290006
+   WHEN (0) DO;                                                         04300006
+     PARM_RCBBKX0_C002.CCESTSV = TB_RCBV640.SERVICE_TYPE;               04310006
+   END;                                                                 04320006
+   OTHERWISE DO;                                                        04330006
+     CALL RCBBK6U_ERROR (ADDR (SQLCA),                                  04340006
+                         'DB2',                                         04350006
+                         '#004');                                       04360006
+   END;                                                                 04370006
+ END;                                                                   04380006
+                                                                        04390006
+ END R017_FILL_SERV_TYPE;                                               04400006
+ /* CHANGE T80281 */                                                    04400117
+1/********************************************************************/ 04401012
+ /*                                                                  */ 04402012
+ /* MODULE NAME     : RESET VALUES                                   */ 04403017
+ /*                                                                  */ 04404012
+ /* DESCRIPTION     : COPY VALUES  FROM PARM_RCBBKZ0_C002_COPY       */ 04405017
+ /*                   TO PARM_RCBBKX0_C002                           */ 04406012
+ /*                                                                  */ 04407012
+ /********************************************************************/ 04408012
+ R018_RESET_MSU_VALUES :  PROC;                                         04409015
+                                                                        04409112
+ PARM_RCBBKX0_C002.SERVICE_LVL_CODE =                                   04409215
+                           PARM_RCBBKZ0_C002_COPY.SERVICE_LVL_CODE;     04409315
+                                                                        04409415
+ PARM_RCBBKX0_C002.CCESTSV =                                            04409519
+                           PARM_RCBBKZ0_C002_COPY.CCESTSV;              04409619
+                                                                        04409712
+ PARM_RCBBKX0_C002.DAGRMFR(1) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(1);      04409814
+ PARM_RCBBKX0_C002.DAGRMTO(1) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(1);      04409914
+ PARM_RCBBKX0_C002.DAGRMFR(2) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(2);      04410014
+ PARM_RCBBKX0_C002.DAGRMTO(2) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(2);      04410114
+ PARM_RCBBKX0_C002.DAGRMFR(3) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(3);      04410214
+ PARM_RCBBKX0_C002.DAGRMTO(3) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(3);      04410314
+ PARM_RCBBKX0_C002.DAGRMFR(4) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(4);      04410414
+ PARM_RCBBKX0_C002.DAGRMTO(4) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(4);      04410514
+ PARM_RCBBKX0_C002.DAGRMFR(5) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(5);      04410614
+ PARM_RCBBKX0_C002.DAGRMTO(5) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(5);      04410714
+ PARM_RCBBKX0_C002.DAGRMFR(6) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(6);      04410814
+ PARM_RCBBKX0_C002.DAGRMTO(6) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(6);      04410914
+ PARM_RCBBKX0_C002.DAGRMFR(7) = PARM_RCBBKZ0_C002_COPY.DAGRMFR(7);      04411014
+ PARM_RCBBKX0_C002.DAGRMTO(7) = PARM_RCBBKZ0_C002_COPY.DAGRMTO(7);      04411114
+                                                                        04411212
+ END R018_RESET_MSU_VALUES;                                             04411416
+ /* CHANGE T80281 */                                                    04411517
+1/********************************************************************/ 04412006
+ /*                                                                  */ 04420006
+ /* MODULE NAME      : RCBBK6U_WARNING                               */ 04430006
+ /*                                                                  */ 04440006
+ /* DESCRIPTION      : CALLS THE COMMON WARNING ROUTINE AFTER        */ 04450006
+ /*                    FILLING THE BASIC VARIABLES                   */ 04460006
+ /*                                                                  */ 04470006
+ /********************************************************************/ 04480006
+0RCBBK6U_WARNING: PROC   (MSG_NO,TEXT);                                 04490006
+ DCL MSG_NO       CHAR(4);                                              04500006
+ DCL TEXT         CHAR(25);                                             04510006
+                                                                        04520006
+                                                                        04530006
+ PARM_INT_AREA.MSG_VAR_CODES    = '';                                   04540006
+ PARM_INT_AREA.MESSAGE_TYPE     = 'BU';                                 04550006
+ PARM_INT_AREA.MESSAGE_NUMBER   = MSG_NO;                               04560006
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';                                 04570006
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = PARM_RCBBKX0_C002.IOPUCTY;            04580006
+ PARM_INT_AREA.MSG_VAR_CODE_7   = 'PT';                                 04590006
+ PARM_INT_AREA.MSG_VAR_VALUE_7  = PARM_RCBBKX0_C002.CSLMTYP;            04600006
+ PARM_INT_AREA.MSG_VAR_CODE_8   = 'SQ';                                 04610006
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = PARM_RCBBKX0_C002.IHSIMID;            04620006
+ SELECT (MSG_NO);                                                       04630006
+ WHEN ('L001') DO;                                                      04640006
+    PARM_INT_AREA.MSG_VAR_CODE_9   = 'FV';                              04650006
+    PARM_INT_AREA.MSG_VAR_VALUE_9  = TEXT;                              04660006
+    END;                                                                04670006
+ WHEN ('L002') DO;                                                      04680006
+    PARM_INT_AREA.MSG_VAR_CODE_9   = 'CR';                              04690006
+    PARM_INT_AREA.MSG_VAR_VALUE_9  = PARM_RCBBKZ0_C002_COPY.IAGRNBR;    04700006
+    PARM_INT_AREA.MSG_VAR_CODE_10  = 'FV';                              04710006
+    PARM_INT_AREA.MSG_VAR_VALUE_10 = TEXT;                              04720006
+    END;                                                                04730006
+ END;                                                                   04740006
+ CALL RCB0M1M (PTR_INT_AREA);                                           04750006
+                                                                        04760006
+0END RCBBK6U_WARNING;                                                   04770006
+1/********************************************************************/ 04780006
+ /*                                                                  */ 04790006
+ /* MODULE NAME      : RCBBK6U_ERROR                                 */ 04800006
+ /*                                                                  */ 04810006
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */ 04820006
+ /*                    THE INPUT VARIABLES                           */ 04830006
+ /*                                                                  */ 04840006
+ /********************************************************************/ 04850006
+0RCBBK6U_ERROR: PROC     (PTR_ERROR,                                    04860006
+                          ERR_TYPE,                                     04870006
+                          CALL_ID);                                     04880006
+ DCL PTR_ERROR    PTR;                                                  04890006
+ DCL ERR_TYPE     CHAR(8);                                              04900006
+ DCL CALL_ID      CHAR(4);                                              04910006
+                                                                        04920006
+ PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;                              04930006
+ PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;                               04940006
+ PARM_INT_AREA.CALL_ID        = CALL_ID;                                04950006
+                                                                        04960006
+ CALL RCB0E1M (PTR_INT_AREA);                                           04970006
+                                                                        04980006
+0END RCBBK6U_ERROR;                                                     04990006
+                                                       /* EOC PCR036 */ 05000006
+                                                                        05010006
+                                         /* END USER DEFINED PROCESS */ 05020006
+                                                                        05030006
+0                                        /* RESET LEVEL              */ 05040006
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            05050006
+1/*******************************************************************/  05060006
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  05070006
+ /*******************************************************************/  05080006
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  05090006
+ $DAIMOD (RCBBK6U);                      /* MODULE TO BE COMPILED   */  05100006
+0/*******************************************************************/  05110006
+ /* END OF ABR BLOCK                                                */  05120006
+ /*******************************************************************/  05130006
+0END RCBBK6U;                                                           05140006

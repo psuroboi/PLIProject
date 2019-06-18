@@ -1,0 +1,460 @@
+ /* RCBIK3M - READ SERVICE CONDITIONS FILE                           */ 00010001
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBIK3M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLI                                           */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : READ RECORDS FROM COUNTRY CONDITIONS FILE     */ 00140000
+ /*                                                                  */ 00150000
+ /* INPUT            : - FILES : RCBIK3F0 - SERVICE CONDITIONS FILE  */ 00160000
+ /*                    - ARG   : ACCESS MODE                         */ 00170000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : - FILES : RCBIK3FE - ERROR LOG FILE           */ 00180000
+ /*                  : - ARG   : SERVICE CONDITIONS RECORD           */ 00180000
+ /*                              READ RESULT                         */ 00190000
+ /*                                                                  */ 00190000
+ /* EXTERNAL MODULES : RCBI47M                                       */ 00200000
+ /*                                                                  */ 00220000
+ /* MESSAGES         : NONE                                           */00230000
+ /*                                                                  */ 00310000
+ /* DEPENDENCIES     : NONE                                          */ 00320000
+ /*                                                                  */ 00330000
+ /* MAINTENANCE LOG  :                                               */ 00340000
+ /* ---------------                                                  */ 00350000
+ /*                                                                  */ 00360000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00370000
+ /* --------------------------------------------------------------   */ 00380000
+ /*  09-05-1997 | RC01188      | CEDS FIRST IMPLEMENTATION           */ 00390000
+ /*  22-10-1997 | PTM1090      | RESPONSE QUANT. NOT RIGHT CONVERTED */
+ /*  22-10-1997 | PTM1092      | CHANGE WI IN MAINT LOG IN RC01188   */ 00400000
+ /*  27-11-2001 | RA01229      | SERVICE REFERENCE INTERIM SOLUTION  */ 00400000
+ /*  07-04-2009 | RB01299      | CEDS ALIGNMENT TO CHIS810           */ 00400000
+ /*  08-07-2013 | CEDS00000640 | INTRODUCING NEW RECORD COUNT FIELD  */ 00400000
+ /*             |              | TO MATCH THE TRAILER COUNT          */ 00400000
+ /********************************************************************/ 00410000
+ /* RCBIK3M: PROC (PINP,                              /* SOC RB01299 */ 00420000
+ /*                POUT,                                             */ 00430000
+ /*                PLAM)                                             */ 00440000
+ /*       REORDER;                                                   */ 00440000
+ /*RCBIK3M: PROC (PINP,   */                    /* SOC CEDS00000640  */
+ RCBIK3M: PROC (PCNT,                                                   00420000
+                PINP,                           /* EOC CEDS00000640  */ 00420000
+                POUT,                                                   00430000
+                PLAM,                                                   00440000
+                PARM) REORDER RETURNS(BIT(1));        /* EOC RB01299 */ 00440000
+                                                                        00450000
+1/*-----------------------------------------------------------------*/  00460000
+ /* ARGUMENTS                                                       */  00470000
+ /*-----------------------------------------------------------------*/  00480000
+ DCL   PINP              PTR;               /* POINTER TO INPUT AREA */ 00490000
+ DCL   POUT              PTR;               /* POINTER TO OUTPUT AREA*/ 00490000
+ DCL   PLAM              PTR;               /* POINTER TO RESULT AREA*/ 00500000
+ DCL   PARM              CHAR(09) VARYING;                /* RB01299 */ 00500000
+ DCL   PCNT              FIXED DEC(10,0);            /* CEDS00000640 */ 00500000
+                                                                        00510000
+ DCL 1 INP               BASED (PINP),     %INCLUDE RCBIK2SI; ;         00520000
+ DCL 1 OUT               BASED (POUT),     %INCLUDE RCBIK3SO; ;         00520000
+ DCL 1 OUT_HDR           BASED (POUT),     %INCLUDE RCBBUASH; ;         00520000
+ DCL 1 OUT_TLR           BASED (POUT),     %INCLUDE RCBBUAST; ;         00520000
+                                                      /* SOC RB01299 */
+ DCL 1 OUT_HDR_CHIS810   BASED (POUT),     %INCLUDE RCBBJASH; ;         00520000
+ DCL 1 OUT_TLR_CHIS810   BASED (POUT),     %INCLUDE RCBBJAST; ;         00520000
+                                                      /* EOC RB01299 */
+ DCL 1 LAM_CA            LIKE SQLCA        BASED (PLAM);                00520000
+ /*-----------------------------------------------------------------*/  00460000
+ /* INCLUDE SQLCA                                                   */  00470000
+ /*-----------------------------------------------------------------*/  00480000
+ EXEC SQL INCLUDE SQLCA;                                                00520000
+                                                                        00530000
+ /*-----------------------------------------------------------------*/  00560000
+ /* FILES                                                           */  00570000
+ /*-----------------------------------------------------------------*/  00580000
+ DCL RCBIK30      FILE                 /* SERVICE CONDITIONS FILE   */  00590000
+                  INPUT                                                 00600000
+                  RECORD                                                00610000
+                  ENV(F RECSIZE (142));
+ DCL RCBIK3E      FILE                 /* ERROR LOG FILE            */
+                  OUTPUT
+                  STREAM;
+ /*-----------------------------------------------------------------*/  00620000
+ /* EXTERNAL ENTRIES                                                */  00630000
+ /*-----------------------------------------------------------------*/  00640000
+ DCL RCBI47M      ENTRY EXTERNAL;                                       00650000
+ /*-----------------------------------------------------------------*/  00670000
+ /* BUILTIN FUNCTIONS                                               */  00680000
+ /*-----------------------------------------------------------------*/  00690000
+ DCL SUBSTR        BUILTIN;                                             00770000
+ DCL ADDR          BUILTIN;                                             00770000
+ DCL VERIFY        BUILTIN;                                             00780000
+ DCL HIGH          BUILTIN;                                             00780000
+ DCL LOW           BUILTIN;                                             00780000
+ /*-----------------------------------------------------------------*/  00790000
+ /* RECORD AREA                                                     */  00800000
+ /*-----------------------------------------------------------------*/  00810000
+ DCL 1 SERV_COND  CHAR(142);           /* AREA TO GET SERV_CONDITION*/  00820000
+ DCL 1 SERV_COND_REC             BASED(ADDR(SERV_COND)),                00820000
+      %INCLUDE RCBIK3S1;;                                               00830000
+ DCL 1 RCBIK30_HEADER            BASED(ADDR(SERV_COND)),
+      %INCLUDE (RCBBUASH);;
+ DCL 1 RCBIK30_TRAILER           BASED(ADDR(SERV_COND)),
+      %INCLUDE (RCBBUAST);;
+                                                      /* SOC RB01299 */
+ DCL 1 RCBIK30_HEADER_CHIS810    BASED(ADDR(SERV_COND)),
+      %INCLUDE (RCBBJASH);;
+ DCL 1 RCBIK30_TRAILER_CHIS810   BASED(ADDR(SERV_COND)),
+      %INCLUDE (RCBBJAST);;
+                                                      /* EOC RB01299 */
+ DCL 1 RCB470S,
+      %INCLUDE RCB470S;;
+ DCL 1 RCB470SI,
+      %INCLUDE RCB470SI;;
+ DCL 1 RCBZ02S,
+      %INCLUDE RCBZ02S;;
+ DCL 1 PARM_INT_AREA,
+      %INCLUDE RCBZ01S;;
+ DCL 1 SQLCA_R                   BASED(ADDR(RCBZ02S.RETURN_SQL))
+                                 LIKE SQLCA;
+ /*-----------------------------------------------------------------*/  00790000
+ /* WORK FIELDS                                                     */  00800000
+ /*-----------------------------------------------------------------*/  00810000
+ /* WORK FIELDS WITH CONSTANT VALUES, STATIC FOR EFFICIENCY         */
+ DCL FALSE               BIT(1)   INIT('0'B) STATIC;                    00970000
+ DCL TRUE                BIT(1)   INIT('1'B) STATIC;                    00970000
+ DCL DIGITS              CHAR(10) INIT('0123456789')  /*DIGIT VALUES */ 00970000
+                                       STATIC;
+ DCL ALPHANUM            CHAR(36)
+     INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') /* ALPHANUM VALUES */
+                                       STATIC;
+ /* WORK FIELDS CHANGED IN PROCEDURE                                */
+ DCL ERROR_IN_FILE       BIT(1) INIT('0'B) STATIC;/*ERROR INDICATOR */  00970000
+ DCL SWITCH_REC_CHIS810  BIT(1) INIT('0'B) STATIC;        /* RB01299 */ 00970000
+1/*-----------------------------------------------------------------*/  00980000
+ /* MAIN LINE                                                       */  00990000
+ /*-----------------------------------------------------------------*/  01000000
+
+ LAM_CA.SQLCODE = 0;                      /* INIT RESULT CODE */
+
+ ON ENDFILE(RCBIK30) BEGIN;               /* HANDLE END OF FILE */      01210000
+   IF ERROR_IN_FILE
+   THEN DO;
+     LAM_CA.SQLCODE = 9999;
+     LAM_CA.SQLERRM = 'ERROR IN SERVICE CONDITIONS FILE';
+   END;
+   ELSE DO;
+     LAM_CA.SQLCODE = 100;
+   END;
+ END;                                                                   01240000
+
+  /* EVALUATE RECEIVED ACCESS MODE */
+ SELECT(INP.ACCMODE);
+
+   WHEN('OPEN') DO;
+     CALL RCBIK3M_OPEN_FILES;
+   END;
+
+   WHEN('FETCH') DO;
+     CALL RCBIK3M_FETCH_RECORD;
+   END;
+
+   WHEN('CLOSE') DO;
+     CALL RCBIK3M_CLOSE_FILES;
+   END;
+
+   OTHERWISE DO;
+     LAM_CA.SQLCODE = 9999;
+     LAM_CA.SQLERRM = 'WRONG INP.ACCMODE USED';
+   END;
+ END;
+
+ RETURN(SWITCH_REC_CHIS810);                            /* RB01299 */
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_OPEN_FILES                            */
+ /*                                                                  */
+ /* DESCRIPTION      : OPEN FILE                                     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_OPEN_FILES : PROC;
+   OPEN FILE (RCBIK30);
+   OPEN FILE (RCBIK3E);
+   ERROR_IN_FILE = FALSE;
+ END RCBIK3M_OPEN_FILES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : FETCH_RCBIK3F0                                */
+ /*                                                                  */
+ /* DESCRIPTION      : FETCH SERVICE CONDITIONS RECORD               */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_FETCH_RECORD : PROC;
+
+   READ FILE(RCBIK30) INTO (SERV_COND);   /* READ FILE */               01250000
+
+   SWITCH_REC_CHIS810 = FALSE;                        /* SOC RB01299 */
+
+   IF PARM = 'CHIS810' THEN
+   DO;                                              /* HEADER RECORD */
+     IF RCBIK30_HEADER_CHIS810.HEADER   = LOW(3) THEN
+     DO;
+       OUT_HDR_CHIS810    = RCBIK30_HEADER_CHIS810, BY NAME;
+       SWITCH_REC_CHIS810 = TRUE;
+       RETURN;
+     END;
+                                                   /* TRAILER RECORD */
+     IF RCBIK30_TRAILER_CHIS810.TRAILER = HIGH(3) THEN
+     DO;
+       OUT_TLR_CHIS810 = RCBIK30_TRAILER_CHIS810, BY NAME;
+       LAM_CA.SQLCODE  = 100;
+       RETURN;
+     END;
+                                                /* VALID DATA RECORD */
+     IF LAM_CA.SQLCODE = 0 & RCBIK3M_RECORD_VALID() THEN
+     DO;
+       CALL RCBIK3M_FILL_OUTPUT_DATA;
+       SWITCH_REC_CHIS810 = TRUE;
+     END;
+   END;
+
+   IF PARM = 'CHIS800' THEN
+   DO;                                                /* EOC RB01299 */
+     IF RCBIK30_HEADER.HEADER      = LOW(3)
+      & RCBIK30_HEADER.DISTRIBUTOR = 'RCBIK3F0' THEN
+     DO;
+       OUT_HDR = RCBIK30_HEADER, BY NAME;
+       RETURN;
+     END;
+
+     IF RCBIK30_TRAILER.TRAILER = HIGH(3) THEN
+     DO;
+       OUT_TLR = RCBIK30_TRAILER, BY NAME;
+       LAM_CA.SQLCODE = 100;
+       RETURN;
+     END;
+
+     DO WHILE (LAM_CA.SQLCODE=0 & ¬RCBIK3M_RECORD_VALID());
+       READ FILE(RCBIK30) INTO (SERV_COND_REC);         /* READ FILE */ 01250000
+       PCNT = PCNT + 1;                              /* CEDS00000640 */
+     END;
+
+     IF (LAM_CA.SQLCODE=0)                     /* VALID RECORD FOUND */
+     THEN DO;
+          CALL RCBIK3M_FILL_OUTPUT_DATA;       /* MOVE VALUES */
+          END;
+   END;                                                   /* RB01299 */
+
+ END RCBIK3M_FETCH_RECORD;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_CLOSE_FILES                           */
+ /*                                                                  */
+ /* DESCRIPTION      : CLOSE FILE                                    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_CLOSE_FILES : PROC;
+   CLOSE FILE (RCBIK30);
+   CLOSE FILE (RCBIK3E);
+
+ END RCBIK3M_CLOSE_FILES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_RECORD_VALID                          */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK CONTENTS SERVICE CONDTIONS RECORD       */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_RECORD_VALID : PROC RETURNS (BIT(1));
+   DCL RESULT BIT(1);
+
+    /* INIT RESULT */
+   RESULT = FALSE;
+
+         /* CHECK WHETHER DATA LINE IS COMMENT LINE AT CHIS800 LEVEL */
+   /* IF SUBSTR(IN_SERVLCD,1,1) ¬= '*'                    /* RB01299 */
+   IF SUBSTR(IN_SERVLCD,1,1) ¬= '*' | PARM = 'CHIS810'    /* RB01299 */
+   THEN DO;
+      /* NO COMMENT LINE, CHECK CONTENTS OF FIELDS */
+     IF VERIFY(IN_CTRYNO,DIGITS)=0      &
+        RCBIK3M_CHECK_SLC(IN_SERVLCD)   &
+        RCBIK3M_CHECK_TIME(IN_MONFROM)  &
+        RCBIK3M_CHECK_TIME(IN_MONTO)    &
+        RCBIK3M_CHECK_TIME(IN_TUEFROM)  &
+        RCBIK3M_CHECK_TIME(IN_TUETO)    &
+        RCBIK3M_CHECK_TIME(IN_WEDFROM)  &
+        RCBIK3M_CHECK_TIME(IN_WEDTO)    &
+        RCBIK3M_CHECK_TIME(IN_THUFROM)  &
+        RCBIK3M_CHECK_TIME(IN_THUTO)    &
+        RCBIK3M_CHECK_TIME(IN_FRIFROM)  &
+        RCBIK3M_CHECK_TIME(IN_FRITO)    &
+        RCBIK3M_CHECK_TIME(IN_SATFROM)  &
+        RCBIK3M_CHECK_TIME(IN_SATTO)    &
+        RCBIK3M_CHECK_TIME(IN_SUNFROM)  &
+        RCBIK3M_CHECK_TIME(IN_SUNTO)
+     THEN DO;
+        RESULT = TRUE;
+     END;
+     ELSE DO;
+       CALL RCBIK3M_DATA_ERROR;
+     END;
+   END;
+   RETURN (RESULT);
+ END RCBIK3M_RECORD_VALID;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_FILL_OUTPUT_DATA                      */
+ /*                                                                  */
+ /* DESCRIPTION      : MOVE VALUES FROM INPUT RECORD TO OUTPUT RECORD*/
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_FILL_OUTPUT_DATA: PROC;
+   OUT.COUNTRY_NUMBER   = IN_CTRYNO;
+   OUT.SERVICE_LVL_CODE = IN_SERVLCD;
+   OUT.MONFROM          = SUBSTR(IN_MONFROM,1,2)
+                        ||SUBSTR(IN_MONFROM,4,2);
+   OUT.MONTO            = SUBSTR(IN_MONTO,1,2)
+                        ||SUBSTR(IN_MONTO,4,2);
+   OUT.TUEFROM          = SUBSTR(IN_TUEFROM,1,2)
+                        ||SUBSTR(IN_TUEFROM,4,2);
+   OUT.TUETO            = SUBSTR(IN_TUETO,1,2)
+                        ||SUBSTR(IN_TUETO,4,2);
+   OUT.WEDFROM          = SUBSTR(IN_WEDFROM,1,2)
+                        ||SUBSTR(IN_WEDFROM,4,2);
+   OUT.WEDTO            = SUBSTR(IN_WEDTO,1,2)
+                        ||SUBSTR(IN_WEDTO,4,2);
+   OUT.THUFROM          = SUBSTR(IN_THUFROM,1,2)
+                        ||SUBSTR(IN_THUFROM,4,2);
+   OUT.THUTO            = SUBSTR(IN_THUTO,1,2)
+                        ||SUBSTR(IN_THUTO,4,2);
+   OUT.FRIFROM          = SUBSTR(IN_FRIFROM,1,2)
+                        ||SUBSTR(IN_FRIFROM,4,2);
+   OUT.FRITO            = SUBSTR(IN_FRITO,1,2)
+                        ||SUBSTR(IN_FRITO,4,2);
+   OUT.SATFROM          = SUBSTR(IN_SATFROM,1,2)
+                        ||SUBSTR(IN_SATFROM,4,2);
+   OUT.SATTO            = SUBSTR(IN_SATTO,1,2)
+                        ||SUBSTR(IN_SATTO,4,2);
+   OUT.SUNFROM          = SUBSTR(IN_SUNFROM,1,2)
+                        ||SUBSTR(IN_SUNFROM,4,2);
+   OUT.SUNTO            = SUBSTR(IN_SUNTO,1,2)
+                        ||SUBSTR(IN_SUNTO,4,2);
+   OUT.COMMENT_TEXT     = IN_COMMTXT;
+ END RCBIK3M_FILL_OUTPUT_DATA;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_CHECK_TIME                            */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK CONTENTS OF TIME FIELD                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_CHECK_TIME : PROC (IN_TIME) RETURNS (BIT(1));
+   DCL IN_TIME CHAR (5);
+   DCL 1 TIME_STRUCT DEFINED IN_TIME,
+         3 HOURS    CHAR (2),
+         3 DELIM    CHAR (1),
+         3 MINUTES  CHAR (2);
+   DCL RESULT BIT(1);
+
+    /* INIT RESULT */
+   RESULT = FALSE;
+
+    /* CHECK WHETHER HOURS AND MINUTES ARE NUMERIC */
+   IF VERIFY(HOURS,DIGITS)=0   &
+      DELIM=':'                &
+      VERIFY(MINUTES,DIGITS)=0
+   THEN DO;
+      /* CHECK NUMERIC RANGES */
+     IF (HOURS   >= '00' &
+         HOURS   <= '23' &
+         MINUTES >= '00' &
+         MINUTES <= '59')
+     |  (HOURS   = '24' &
+         MINUTES = '00')
+     THEN DO;
+       RESULT = TRUE;
+     END;
+   END;
+
+   RETURN (RESULT);
+
+ END RCBIK3M_CHECK_TIME;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_CHECK_SLC                             */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK EXISTENCE OF SLC IN RCBT0470            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_CHECK_SLC : PROC (IN_SERVLCD) RETURNS (BIT(1));
+   DCL IN_SERVLCD CHAR (3);
+   DCL RESULT     BIT(1);
+
+    /* INITIALIZE RESULT */
+   RESULT = FALSE;
+
+   IF VERIFY(IN_SERVLCD,ALPHANUM)=0
+   THEN DO;
+      /* CHECK EXISTENCE IN TABLE 470 */
+     RCB470S.SERVICE_LVL_CODE = IN_SERVLCD;
+     CALL RCBI47M(ADDR(RCB470S),
+                  ADDR(RCB470SI),
+                  ADDR(RCBZ02S),
+                  ADDR(PARM_INT_AREA));
+
+     SELECT (RCBZ02S.RETURN_CODE);
+       WHEN (0) DO;
+           RESULT = TRUE;
+       END;
+       WHEN (4); /* DOES NOT EXIST */
+       OTHERWISE DO;
+          /* UNEXPECTED ERROR */
+         LAM_CA   = SQLCA_R;
+       END;
+     END;
+   END; /* IF VERIFY(IN_SERVLCD,ALPHANUM)=0 */
+
+
+   RETURN (RESULT);
+
+ END RCBIK3M_CHECK_SLC;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBIK3M_DATA_ERROR                            */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE ERROR MESSAGE IN ERROR LOG FILE         */
+ /*                                                                  */
+ /********************************************************************/
+ RCBIK3M_DATA_ERROR : PROC;
+
+   IF ERROR_IN_FILE = FALSE
+   THEN DO;
+      /* FIRST ERROR, OPEN FILE */
+     ERROR_IN_FILE = TRUE;
+   END;
+
+    /* WRITE ERROR MESSAGE */
+   PUT SKIP FILE (RCBIK3E)
+       LIST ('ERROR IN FILE RCBIK3F0, COUNTRY SLC ',
+                       IN_CTRYNO, IN_SERVLCD);
+
+ END RCBIK3M_DATA_ERROR;
+
+ /*-----------------------------------------------------------------*/  03140000
+ /* COMPILE DATE/TIMESTAMP                                          */  03150000
+ /*-----------------------------------------------------------------*/  03160000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 03170000
+ $DAIMOD (RCBIK3M);                    /* MODULE TO BE COMPILED      */ 03180000
+ END RCBIK3M;                                                           03190000

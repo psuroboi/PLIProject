@@ -1,0 +1,836 @@
+ /* RCBCQ7M - CEDS LAM FOR "LC" REQUEST                              */ 00019718
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBCQ7M                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLICSQL                                       */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : CEDS LAM FOR "LC" REQUEST.                    */ 00140000
+ /*                  : THIS PROGRAM IS CALLED BY THE ROOT MODULE     */ 00150000
+ /*                    RCBCQ0M.                                      */ 00160000
+ /*                                                                  */ 00170000
+ /* INPUT            : COMMPTR - COMMUNICATION AREA POINTER          */ 00180000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : -                                             */ 00200000
+ /*                                                                  */ 00210000
+ /* EXTERNAL MODULES : -                                             */ 00220000
+ /*                                                                  */ 00230000
+ /* MESSAGES         : -                                             */ 00240000
+ /*                                                                  */ 00250000
+ /* DEPENDENCIES     : NONE                                          */ 00260000
+ /*                                                                  */ 00270000
+ /* MAINTENANCE LOG  :                                               */ 00280000
+ /* ---------------                                                  */ 00290000
+ /*                                                                  */ 00300000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00310000
+ /* --------------------------------------------------------------   */ 00320000
+ /*  1995-09-23 | WI4321       | CEDS 2.3                            */ 00330000
+ /*             |              |                                     */ 00340000
+ /*  1995-11-20 | PTM0855      | ALLOW DB2 TO RETURN NULL INDICATORS */ 00350000
+ /*  1996-02-06 | PTM0901      | ASSIGN ADDITIONAL SERVICES FLAG     */ 00360000
+ /*             |              | ADDED TO DECLARATION AND FETCH      */ 00370000
+ /*             |              | ON CURSORS                          */ 00380000
+ /*             |              |                                     */ 00390000
+ /*  1996-03-05 | PTM0906      | START AND END DATES NOT IN FILTER   */ 00400000
+ /*  1996-04-22 | PTM0902      | UPGRADE TO CICS 4.1 - MOVE FROM     */ 00410000
+ /*             |              | PLISQL TO PLICSQL LIBRARY.          */ 00420000
+ /*  1997-05-12 | PTM1036      | USE STANDARD PROLOGS                */ 00430000
+ /*             |              |                                     */ 00440000
+ /********************************************************************/ 00450000
+1RCBCQ7M: PROC (RCBCQ7S_PTR)                                            00460000
+          REORDER;                                                      00470000
+0/********************************************************************/ 00480000
+ /*                 P A R A M E T E R S                              */ 00490000
+ /********************************************************************/ 00500000
+0DCL RCBCQ7S_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00510000
+ DCL 1 RCBCQ7S       BASED(RCBCQ7S_PTR),                                00520000
+      %INCLUDE RCBCQ7S;;                                                00530000
+0DCL 1 RCBCQ7S_SQLCA BASED(RCBCQ7S.SQLCA_PTR)                           00540000
+      LIKE SQLCA;                                                       00550000
+1/********************************************************************/ 00560000
+ /*                 S Q L    D E C L A R A T I O N S                 */ 00570000
+ /********************************************************************/ 00580000
+0EXEC SQL INCLUDE SQLCA;                                                00590000
+0/********************************************************************/ 00600000
+ /* DB2 TABLE STRUCTURES                                             */ 00610000
+ /********************************************************************/ 00620000
+ DCL 1 TB_RCBV210,                                                      00630000
+      %INCLUDE (RCB210S);;                                              00640000
+ DCL 1 TB_RCBV210_I,                                                    00650000
+      %INCLUDE (RCB210SI);;                                             00660000
+ DCL 1 TB_RCBV030,                                                      00670000
+      %INCLUDE (RCB030S);;                                              00680000
+ DCL 1 TB_RCBV030_I,                                                    00690000
+      %INCLUDE (RCB030SI);;                                             00700000
+ DCL 1 TB_RCBV035,                                                      00710000
+      %INCLUDE (RCB035S);;                                              00720000
+ DCL 1 TB_RCBV035_I,                                                    00730000
+      %INCLUDE (RCB035SI);;                                             00740000
+ DCL 1 TB_RCBV075,                                                      00750000
+      %INCLUDE (RCB075S);;                                              00760000
+ DCL 1 TB_RCBV075_I,                                                    00770000
+      %INCLUDE (RCB075SI);;                                             00780000
+0/********************************************************************/ 00790000
+ /*         D E F I N E    C U R S O R S                             */ 00800000
+ /********************************************************************/ 00810000
+ EXEC SQL                                                               00820000
+   DECLARE ADD_SERV_L1 CURSOR FOR                                       00830000
+     SELECT                                                             00840000
+         'S'                                                            00850000
+        ,T210.COUNTRY_NUMBER                                            00860000
+        ,T210.CONTRACT_NUMBER                                           00870000
+        ,T210.CUSTOMER_NUMBER                                           00880000
+        ,T210.SERVICE_NUMBER                                            00890000
+        ,T210.GROUP_ID                                                  00900000
+        ,T210.QTY_MU_CONTRACTED                                         00910000
+        ,T210.QTY_MU_ACCOMPLISH                                         00920000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  00930000
+        ,CHAR(T210.END_DATE,ISO)                                        00940000
+        ,T30.TYPE_OF_CONTRACT                                           00950000
+        ,T30.INT_CONTRACT_IND                                           00960000
+        ,T75.SERVICE_NAME                                               00970000
+        ,T75.SERVICE_DESCR_1                                            00980000
+        ,'Y'                                                            00990000
+     FROM RCBV0210_ADD_SERV T210,                                       01000000
+          RCBV0030_CONTRACT T30,                                        01010000
+          RCBV0075_SE_PO T75                                            01020000
+     WHERE                                                              01030000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       01040000
+       T210.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                       01050000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    01060000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   01070000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    01080000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    01090000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       01100000
+       T210.END_DATE >= :SEARCH.DFLTSRT;                                01110000
+                                              /* PTM0906 */             01120000
+ EXEC SQL                                                               01130000
+   DECLARE ADD_SERV_L2 CURSOR FOR                                       01140000
+     SELECT                                                             01150000
+         'S'                                                            01160000
+        ,T210.COUNTRY_NUMBER                                            01170000
+        ,T210.CONTRACT_NUMBER                                           01180000
+        ,T210.CUSTOMER_NUMBER                                           01190000
+        ,T210.SERVICE_NUMBER                                            01200000
+        ,T210.GROUP_ID                                                  01210000
+        ,T210.QTY_MU_CONTRACTED                                         01220000
+        ,T210.QTY_MU_ACCOMPLISH                                         01230000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  01240000
+        ,CHAR(T210.END_DATE,ISO)                                        01250000
+        ,T30.TYPE_OF_CONTRACT                                           01260000
+        ,T30.INT_CONTRACT_IND                                           01270000
+        ,T75.SERVICE_NAME                                               01280000
+        ,T75.SERVICE_DESCR_1                                            01290000
+        ,'Y'                                                            01300000
+     FROM RCBV0210_ADD_SERV T210,                                       01310000
+          RCBV0030_CONTRACT T30,                                        01320000
+          RCBV0075_SE_PO T75                                            01330000
+     WHERE                                                              01340000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       01350000
+       T210.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                       01360000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    01370000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   01380000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    01390000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    01400000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       01410000
+       T210.END_DATE >= :SEARCH.DFLTSRT;                                01420000
+                                              /* PTM0906 */             01430000
+                                                                        01440000
+ EXEC SQL                                                               01450000
+   DECLARE ADD_SERV_L3 CURSOR FOR                                       01460000
+     SELECT                                                             01470000
+         'S'                                                            01480000
+        ,T210.COUNTRY_NUMBER                                            01490000
+        ,T210.CONTRACT_NUMBER                                           01500000
+        ,T210.CUSTOMER_NUMBER                                           01510000
+        ,T210.SERVICE_NUMBER                                            01520000
+        ,T210.GROUP_ID                                                  01530000
+        ,T210.QTY_MU_CONTRACTED                                         01540000
+        ,T210.QTY_MU_ACCOMPLISH                                         01550000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  01560000
+        ,CHAR(T210.END_DATE,ISO)                                        01570000
+        ,T30.TYPE_OF_CONTRACT                                           01580000
+        ,T30.INT_CONTRACT_IND                                           01590000
+        ,T75.SERVICE_NAME                                               01600000
+        ,T75.SERVICE_DESCR_1                                            01610000
+        ,'Y'                                                            01620000
+     FROM RCBV0210_ADD_SERV T210,                                       01630000
+          RCBV0030_CONTRACT T30,                                        01640000
+          RCBV0075_SE_PO T75                                            01650000
+     WHERE                                                              01660000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       01670000
+       T210.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                       01680000
+       T210.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                       01690000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    01700000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   01710000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    01720000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    01730000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       01740000
+       T210.END_DATE >= :SEARCH.DFLTSRT;                                01750000
+                                              /* PTM0906 */             01760000
+                                                                        01770000
+ EXEC SQL                                                               01780000
+   DECLARE ADD_SERV_E1 CURSOR FOR                                       01790000
+     SELECT                                                             01800000
+         'S'                                                            01810000
+        ,T210.COUNTRY_NUMBER                                            01820000
+        ,T210.CONTRACT_NUMBER                                           01830000
+        ,T210.CUSTOMER_NUMBER                                           01840000
+        ,T210.SERVICE_NUMBER                                            01850000
+        ,T210.GROUP_ID                                                  01860000
+        ,T210.QTY_MU_CONTRACTED                                         01870000
+        ,T210.QTY_MU_ACCOMPLISH                                         01880000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  01890000
+        ,CHAR(T210.END_DATE,ISO)                                        01900000
+        ,T30.TYPE_OF_CONTRACT                                           01910000
+        ,T30.INT_CONTRACT_IND                                           01920000
+        ,T75.SERVICE_NAME                                               01930000
+        ,T75.SERVICE_DESCR_1                                            01940000
+        ,'Y'                                                            01950000
+     FROM RCBV0210_ADD_SERV T210,                                       01960000
+          RCBV0030_CONTRACT T30,                                        01970000
+          RCBV0075_SE_PO T75                                            01980000
+     WHERE                                                              01990000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       02000000
+       T210.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                       02010000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    02020000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   02030000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    02040000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    02050000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       02060000
+       T210.END_DATE >= :SEARCH.DFLTSRT                                 02070000
+                                                                        02080000
+     UNION                                                              02090000
+                                                                        02100000
+     SELECT                                                             02110000
+         'E'                                                            02120000
+        ,T35.COUNTRY_NUMBER                                             02130000
+        ,T35.CONTRACT_NUMBER                                            02140000
+        ,T35.CUSTOMER_NUMBER                                            02150000
+        ,' '                                                            02160000
+        ,' '                                                            02170000
+        ,0                                                              02180000
+        ,0                                                              02190000
+        ,' '                                                            02200000
+        ,' '                                                            02210000
+        ,T30.TYPE_OF_CONTRACT                                           02220000
+        ,T30.INT_CONTRACT_IND                                           02230000
+        ,' '                                                            02240000
+        ,' '                                                            02250000
+        ,'N'                                                            02260000
+     FROM RCBV0035_CUST_CTR T35,                                        02270000
+          RCBV0030_CONTRACT T30                                         02280000
+     WHERE                                                              02290000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        02300000
+       T35.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        02310000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        02320000
+       T30.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        02330000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER  AND                    02340000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    02350000
+     ((T35.AS_CONTRACT_IND = 'Y'                 AND                    02360000
+       T35.SA_CONTRACT_IND = 'Y')                OR                     02370000
+      (T35.AS_CONTRACT_IND ¬= 'Y'));                                    02380000
+                                              /* PTM0906 */             02390000
+                                                                        02400000
+ EXEC SQL                                                               02410000
+   DECLARE ADD_SERV_E2 CURSOR FOR                                       02420000
+     SELECT                                                             02430000
+         'S'                                                            02440000
+        ,T210.COUNTRY_NUMBER                                            02450000
+        ,T210.CONTRACT_NUMBER                                           02460000
+        ,T210.CUSTOMER_NUMBER                                           02470000
+        ,T210.SERVICE_NUMBER                                            02480000
+        ,T210.GROUP_ID                                                  02490000
+        ,T210.QTY_MU_CONTRACTED                                         02500000
+        ,T210.QTY_MU_ACCOMPLISH                                         02510000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  02520000
+        ,CHAR(T210.END_DATE,ISO)                                        02530000
+        ,T30.TYPE_OF_CONTRACT                                           02540000
+        ,T30.INT_CONTRACT_IND                                           02550000
+        ,T75.SERVICE_NAME                                               02560000
+        ,T75.SERVICE_DESCR_1                                            02570000
+        ,'Y'                                                            02580000
+     FROM RCBV0210_ADD_SERV T210,                                       02590000
+          RCBV0030_CONTRACT T30,                                        02600000
+          RCBV0075_SE_PO T75                                            02610000
+     WHERE                                                              02620000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       02630000
+       T210.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                       02640000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    02650000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   02660000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    02670000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    02680000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       02690000
+       T210.END_DATE >= :SEARCH.DFLTSRT                                 02700000
+                                                                        02710000
+     UNION                                                              02720000
+                                                                        02730000
+     SELECT                                                             02740000
+         'E'                                                            02750000
+        ,T35.COUNTRY_NUMBER                                             02760000
+        ,T35.CONTRACT_NUMBER                                            02770000
+        ,T35.CUSTOMER_NUMBER                                            02780000
+        ,' '                                                            02790000
+        ,' '                                                            02800000
+        ,0                                                              02810000
+        ,0                                                              02820000
+        ,' '                                                            02830000
+        ,' '                                                            02840000
+        ,T30.TYPE_OF_CONTRACT                                           02850000
+        ,T30.INT_CONTRACT_IND                                           02860000
+        ,' '                                                            02870000
+        ,' '                                                            02880000
+        ,'N'                                                            02890000
+     FROM RCBV0035_CUST_CTR T35,                                        02900000
+          RCBV0030_CONTRACT T30                                         02910000
+     WHERE                                                              02920000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        02930000
+       T35.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                        02940000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        02950000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                     02960000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    02970000
+     ((T35.AS_CONTRACT_IND = 'Y'                 AND                    02980000
+       T35.SA_CONTRACT_IND = 'Y')                OR                     02990000
+      (T35.AS_CONTRACT_IND ¬= 'Y'));                                    03000000
+                                                                        03010000
+ EXEC SQL                                                               03020000
+   DECLARE ADD_SERV_E3 CURSOR FOR                                       03030000
+     SELECT                                                             03040000
+         'S'                                                            03050000
+        ,T210.COUNTRY_NUMBER                                            03060000
+        ,T210.CONTRACT_NUMBER                                           03070000
+        ,T210.CUSTOMER_NUMBER                                           03080000
+        ,T210.SERVICE_NUMBER                                            03090000
+        ,T210.GROUP_ID                                                  03100000
+        ,T210.QTY_MU_CONTRACTED                                         03110000
+        ,T210.QTY_MU_ACCOMPLISH                                         03120000
+        ,CHAR(T210.EFFECTIVE_DATE,ISO)                                  03130000
+        ,CHAR(T210.END_DATE,ISO)                                        03140000
+        ,T30.TYPE_OF_CONTRACT                                           03150000
+        ,T30.INT_CONTRACT_IND                                           03160000
+        ,T75.SERVICE_NAME                                               03170000
+        ,T75.SERVICE_DESCR_1                                            03180000
+        ,'Y'                                                            03190000
+     FROM RCBV0210_ADD_SERV T210,                                       03200000
+          RCBV0030_CONTRACT T30,                                        03210000
+          RCBV0075_SE_PO T75                                            03220000
+     WHERE                                                              03230000
+       T210.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                       03240000
+       T210.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                       03250000
+       T210.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                       03260000
+       T210.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                    03270000
+       T210.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                   03280000
+       T210.COUNTRY_NUMBER  = T75.COUNTRY_NUMBER AND                    03290000
+       T210.SERVICE_NUMBER  = T75.SERVICE_NUMBER AND                    03300000
+       T210.EFFECTIVE_DATE <= :SEARCH.DFLTEND AND                       03310000
+       T210.END_DATE >= :SEARCH.DFLTSRT                                 03320000
+                                                                        03330000
+     UNION                                                              03340000
+                                                                        03350000
+     SELECT                                                             03360000
+         'E'                                                            03370000
+        ,T35.COUNTRY_NUMBER                                             03380000
+        ,T35.CONTRACT_NUMBER                                            03390000
+        ,T35.CUSTOMER_NUMBER                                            03400000
+        ,' '                                                            03410000
+        ,' '                                                            03420000
+        ,0                                                              03430000
+        ,0                                                              03440000
+        ,' '                                                            03450000
+        ,' '                                                            03460000
+        ,T30.TYPE_OF_CONTRACT                                           03470000
+        ,T30.INT_CONTRACT_IND                                           03480000
+        ,' '                                                            03490000
+        ,' '                                                            03500000
+        ,'N'                                                            03510000
+     FROM RCBV0035_CUST_CTR T35,                                        03520000
+          RCBV0030_CONTRACT T30                                         03530000
+     WHERE                                                              03540000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        03550000
+       T35.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        03560000
+       T35.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                        03570000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        03580000
+       T30.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        03590000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                     03600000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    03610000
+     ((T35.AS_CONTRACT_IND = 'Y'                 AND                    03620000
+       T35.SA_CONTRACT_IND = 'Y')                OR                     03630000
+      (T35.AS_CONTRACT_IND ¬= 'Y'));                                    03640000
+                                                    /* PTM0906 */       03650000
+ EXEC SQL                                                               03660000
+   DECLARE ADD_SERV_O1 CURSOR FOR                                       03670000
+     SELECT                                                             03680000
+         'E'                                                            03690000
+        ,T35.COUNTRY_NUMBER                                             03700000
+        ,T35.CONTRACT_NUMBER                                            03710000
+        ,T35.CUSTOMER_NUMBER                                            03720000
+        ,' '                                                            03730000
+        ,' '                                                            03740000
+        ,0                                                              03750000
+        ,0                                                              03760000
+        ,' '                                                            03770000
+        ,' '                                                            03780000
+        ,T30.TYPE_OF_CONTRACT                                           03790000
+        ,T30.INT_CONTRACT_IND                                           03800000
+        ,' '                                                            03810000
+        ,' '                                                            03820000
+        ,'N'                                                            03830000
+     FROM RCBV0035_CUST_CTR T35,                                        03840000
+          RCBV0030_CONTRACT T30                                         03850000
+     WHERE                                                              03860000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        03870000
+       T35.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        03880000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        03890000
+       T30.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        03900000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                     03910000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    03920000
+       T35.SA_CONTRACT_IND = 'Y';                                       03930000
+                                                                        03940000
+ EXEC SQL                                                               03950000
+   DECLARE ADD_SERV_O2 CURSOR FOR                                       03960000
+     SELECT                                                             03970000
+         'E'                                                            03980000
+        ,T35.COUNTRY_NUMBER                                             03990000
+        ,T35.CONTRACT_NUMBER                                            04000000
+        ,T35.CUSTOMER_NUMBER                                            04010000
+        ,' '                                                            04020000
+        ,' '                                                            04030000
+        ,0                                                              04040000
+        ,0                                                              04050000
+        ,' '                                                            04060000
+        ,' '                                                            04070000
+        ,T30.TYPE_OF_CONTRACT                                           04080000
+        ,T30.INT_CONTRACT_IND                                           04090000
+        ,' '                                                            04100000
+        ,' '                                                            04110000
+        ,'N'                                                            04120000
+     FROM RCBV0035_CUST_CTR T35,                                        04130000
+          RCBV0030_CONTRACT T30                                         04140000
+     WHERE                                                              04150000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        04160000
+       T35.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                        04170000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        04180000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                     04190000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    04200000
+       T35.SA_CONTRACT_IND = 'Y';                                       04210000
+                                                                        04220000
+ EXEC SQL                                                               04230000
+   DECLARE ADD_SERV_O3 CURSOR FOR                                       04240000
+     SELECT                                                             04250000
+         'E'                                                            04260000
+        ,T35.COUNTRY_NUMBER                                             04270000
+        ,T35.CONTRACT_NUMBER                                            04280000
+        ,T35.CUSTOMER_NUMBER                                            04290000
+        ,' '                                                            04300000
+        ,' '                                                            04310000
+        ,0                                                              04320000
+        ,0                                                              04330000
+        ,' '                                                            04340000
+        ,' '                                                            04350000
+        ,T30.TYPE_OF_CONTRACT                                           04360000
+        ,T30.INT_CONTRACT_IND                                           04370000
+        ,' '                                                            04380000
+        ,' '                                                            04390000
+        ,'N'                                                            04400000
+     FROM RCBV0035_CUST_CTR T35,                                        04410000
+          RCBV0030_CONTRACT T30                                         04420000
+     WHERE                                                              04430000
+       T35.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        04440000
+       T35.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        04450000
+       T35.CUSTOMER_NUMBER = :SEARCH.ICUSUSE AND                        04460000
+       T30.COUNTRY_NUMBER  = :SEARCH.IOPUCTY AND                        04470000
+       T30.CONTRACT_NUMBER = :SEARCH.IAGRNBR AND                        04480000
+       T35.COUNTRY_NUMBER  = T30.COUNTRY_NUMBER AND                     04490000
+       T35.CONTRACT_NUMBER = T30.CONTRACT_NUMBER AND                    04500000
+       T35.SA_CONTRACT_IND = 'Y';                                       04510000
+                                                                        04520000
+0/********************************************************************/ 04530000
+ /*                 M I S C E L L A N I O U S   F I E L D S          */ 04540000
+ /********************************************************************/ 04550000
+ DCL ADDR           BUILTIN;                                            04560000
+ DCL NULL           BUILTIN;                                            04570000
+ DCL STRING         BUILTIN;                                            04580000
+ DCL WRK_INDNULL    FIXED BIN(15); /*PTM0855 */                         04590000
+1/********************************************************************/ 04600000
+ /*           P R O C E S S I N G                                    */ 04610000
+ /********************************************************************/ 04620000
+0CALL RCBCQ7M_INITIALISATION;                                           04630000
+0CALL RCBCQ7M_MAIN_PROCESSING;                                          04640000
+1/********************************************************************/ 04650000
+ /*           I N I T I A L     P R O C E S S I N G                  */ 04660000
+ /********************************************************************/ 04670000
+0RCBCQ7M_INITIALISATION : PROC;                                         04680000
+0RCBCQ7S_SQLCA = '';                                                    04690000
+ RCBCQ7S.DATA  = '';                                                    04700000
+0END RCBCQ7M_INITIALISATION;                                            04710000
+1/********************************************************************/ 04720000
+ /*           M A I N     P R O C E S S I N G                        */ 04730000
+ /********************************************************************/ 04740000
+0RCBCQ7M_MAIN_PROCESSING : PROC;                                        04750000
+0SELECT (RCBCQ7S.ACCESS);                                               04760000
+    WHEN ('OPEN ')                                                      04770000
+    DO;                                                                 04780000
+       CALL RCBCQ7M_CHECK_ESA_REQUEST_CODE;                             04790000
+       IF RCBCQ7S_SQLCA.SQLCODE ¬= 9999 THEN                            04800000
+          CALL RCBCQ7M_OPEN_CURSOR;                                     04810000
+    END;                                                                04820000
+    WHEN ('FETCH')                                                      04830000
+    DO;                                                                 04840000
+       IF RCBCQ7S.CURSOR = '' THEN                                      04850000
+       DO;                                                              04860000
+          RCBCQ7S_SQLCA.SQLCODE = 9999;                                 04870000
+          RCBCQ7S_SQLCA.SQLERRM = 'CURSOR NAME BLANK ON FETCH REQUEST'; 04880000
+       END;                                                             04890000
+       ELSE                                                             04900000
+       DO;                                                              04910000
+          CALL RCBCQ7M_FETCH_CURSOR;                                    04920000
+          IF SQLCA.SQLCODE = 0 THEN                                     04930000
+             CALL RCBCQ7M_ASSIGN_OUTPUT_DATA;                           04940000
+       END;                                                             04950000
+    END;                                                                04960000
+    WHEN ('CLOSE')                                                      04970000
+    DO;                                                                 04980000
+       IF RCBCQ7S.CURSOR = '' THEN                                      04990000
+       DO;                                                              05000000
+          RCBCQ7S_SQLCA.SQLCODE = 9999;                                 05010000
+          RCBCQ7S_SQLCA.SQLERRM = 'CURSOR NAME BLANK ON CLOSE REQUEST'; 05020000
+       END;                                                             05030000
+       ELSE                                                             05040000
+          CALL RCBCQ7M_CLOSE_CURSOR;                                    05050000
+    END;                                                                05060000
+    OTHERWISE                                                           05070000
+    DO;                                                                 05080000
+       RCBCQ7S_SQLCA.SQLCODE = 9999;                                    05090000
+       RCBCQ7S_SQLCA.SQLERRM = 'ACCESS MODE NOT OPEN, CLOSE OR FETCH';  05100000
+    END;                                                                05110000
+ END;   /* END SELECT */                                                05120000
+0END RCBCQ7M_MAIN_PROCESSING;                                           05130000
+1/********************************************************************/ 05140000
+ /*           ASSIGN CURSOR NAME DEPENDING ON                        */ 05150000
+ /*             CATTLST AND SEARCH AGUMENTS                          */ 05160000
+ /********************************************************************/ 05170000
+0RCBCQ7M_CHECK_ESA_REQUEST_CODE : PROC;                                 05180000
+0SELECT (RCBCQ7S.CATTLST);               /* ESA/SSA REQUEST CODE ?   */ 05190000
+    WHEN ('L')                           /* LIST WITHOUT ESA         */ 05200000
+    DO;                                                                 05210000
+       IF RCBCQ7S.SEARCH.IAGRNBR ¬= '' &                                05220000
+          RCBCQ7S.SEARCH.ICUSUSE = '' THEN                              05230000
+          RCBCQ7S.CURSOR = 'L1';                                        05240000
+       ELSE                                                             05250000
+       DO;                                                              05260000
+          IF RCBCQ7S.SEARCH.IAGRNBR = '' &                              05270000
+             RCBCQ7S.SEARCH.ICUSUSE ¬= '' THEN                          05280000
+             RCBCQ7S.CURSOR = 'L2';                                     05290000
+          ELSE                                                          05300000
+             RCBCQ7S.CURSOR = 'L3';                                     05310000
+       END;                                                             05320000
+    END;                                                                05330000
+    WHEN ('E')                           /* LIST WITH ESA            */ 05340000
+    DO;                                                                 05350000
+       IF RCBCQ7S.SEARCH.IAGRNBR ¬= '' &                                05360000
+          RCBCQ7S.SEARCH.ICUSUSE = '' THEN                              05370000
+          RCBCQ7S.CURSOR = 'E1';                                        05380000
+       ELSE                                                             05390000
+       DO;                                                              05400000
+          IF RCBCQ7S.SEARCH.IAGRNBR = '' &                              05410000
+             RCBCQ7S.SEARCH.ICUSUSE ¬= '' THEN                          05420000
+             RCBCQ7S.CURSOR = 'E2';                                     05430000
+          ELSE                                                          05440000
+             RCBCQ7S.CURSOR = 'E3';                                     05450000
+       END;                                                             05460000
+    END;                                                                05470000
+    WHEN ('O')                           /* LIST ONLY ESA            */ 05480000
+    DO;                                                                 05490000
+       IF RCBCQ7S.SEARCH.IAGRNBR ¬= '' &                                05500000
+          RCBCQ7S.SEARCH.ICUSUSE = '' THEN                              05510000
+          RCBCQ7S.CURSOR = 'O1';                                        05520000
+       ELSE                                                             05530000
+       DO;                                                              05540000
+          IF RCBCQ7S.SEARCH.IAGRNBR = '' &                              05550000
+             RCBCQ7S.SEARCH.ICUSUSE ¬= '' THEN                          05560000
+             RCBCQ7S.CURSOR = 'O2';                                     05570000
+          ELSE                                                          05580000
+             RCBCQ7S.CURSOR = 'O3';                                     05590000
+       END;                                                             05600000
+    END;                                                                05610000
+    OTHERWISE                                                           05620000
+    DO;                                                                 05630000
+       RCBCQ7S_SQLCA.SQLCODE = 9999;                                    05640000
+       RCBCQ7S_SQLCA.SQLERRM = 'INVALID CATTLST, MUST BE L, E OR O';    05650000
+    END;                                                                05660000
+0END;   /* END SELECT */                                                05670000
+0END RCBCQ7M_CHECK_ESA_REQUEST_CODE;                                    05680000
+1/********************************************************************/ 05690000
+ /*           OPEN CURSOR PROCESSING                                 */ 05700000
+ /********************************************************************/ 05710000
+0RCBCQ7M_OPEN_CURSOR : PROC;                                            05720000
+0SELECT (RCBCQ7S.CURSOR);                                               05730000
+    WHEN ('L1')                                                         05740000
+       EXEC SQL                                                         05750000
+          OPEN ADD_SERV_L1;                                             05760000
+    WHEN ('L2')                                                         05770000
+       EXEC SQL                                                         05780000
+          OPEN ADD_SERV_L2;                                             05790000
+    WHEN ('L3')                                                         05800000
+       EXEC SQL                                                         05810000
+          OPEN ADD_SERV_L3;                                             05820000
+    WHEN ('E1')                                                         05830000
+       EXEC SQL                                                         05840000
+          OPEN ADD_SERV_E1;                                             05850000
+    WHEN ('E2')                                                         05860000
+       EXEC SQL                                                         05870000
+          OPEN ADD_SERV_E2;                                             05880000
+    WHEN ('E3')                                                         05890000
+       EXEC SQL                                                         05900000
+          OPEN ADD_SERV_E3;                                             05910000
+    WHEN ('O1')                                                         05920000
+       EXEC SQL                                                         05930000
+          OPEN ADD_SERV_O1;                                             05940000
+    WHEN ('O2')                                                         05950000
+       EXEC SQL                                                         05960000
+          OPEN ADD_SERV_O2;                                             05970000
+    WHEN ('O3')                                                         05980000
+       EXEC SQL                                                         05990000
+          OPEN ADD_SERV_O3;                                             06000000
+    OTHERWISE;                                                          06010000
+ END;   /* END SELECT */                                                06020000
+ RCBCQ7S_SQLCA = SQLCA;                                                 06030000
+0END RCBCQ7M_OPEN_CURSOR;                                               06040000
+1/********************************************************************/ 06050000
+ /*          FETCH CURSOR PROCESSING                                 */ 06060000
+ /********************************************************************/ 06070000
+0RCBCQ7M_FETCH_CURSOR : PROC;                                           06080000
+0TB_RCBV210 = '';                                                       06090000
+ TB_RCBV030 = '';                                                       06100000
+ TB_RCBV075 = '';                                                       06110000
+ TB_RCBV035 = '';                                                       06120000
+0SELECT (RCBCQ7S.CURSOR);                                               06130000
+    WHEN ('L1')                                                         06140000
+       EXEC SQL                                                         06150000
+         FETCH ADD_SERV_L1                                              06160000
+         INTO :DATA.CATTSRC                                             06170000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                06180000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               06190000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               06200000
+             ,:TB_RCBV210.SERVICE_NUMBER                                06210000
+             ,:TB_RCBV210.GROUP_ID                                      06220000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             06230000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             06240000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                06250000
+             ,:TB_RCBV210.END_DATE                                      06260000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 06270000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 06280000
+             ,:TB_RCBV075.SERVICE_NAME                                  06290000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               06300000
+             ,:DATA.AS_IND;                                             06310000
+    WHEN ('L2')                                                         06320000
+       EXEC SQL                                                         06330000
+         FETCH ADD_SERV_L2                                              06340000
+         INTO :DATA.CATTSRC                                             06350000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                06360000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               06370000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               06380000
+             ,:TB_RCBV210.SERVICE_NUMBER                                06390000
+             ,:TB_RCBV210.GROUP_ID                                      06400000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             06410000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             06420000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                06430000
+             ,:TB_RCBV210.END_DATE                                      06440000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 06450000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 06460000
+             ,:TB_RCBV075.SERVICE_NAME                                  06470000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               06480000
+             ,:DATA.AS_IND;                                             06490000
+    WHEN ('L3')                                                         06500000
+       EXEC SQL                                                         06510000
+         FETCH ADD_SERV_L3                                              06520000
+         INTO :DATA.CATTSRC                                             06530000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                06540000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               06550000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               06560000
+             ,:TB_RCBV210.SERVICE_NUMBER                                06570000
+             ,:TB_RCBV210.GROUP_ID                                      06580000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             06590000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             06600000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                06610000
+             ,:TB_RCBV210.END_DATE                                      06620000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 06630000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 06640000
+             ,:TB_RCBV075.SERVICE_NAME                                  06650000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               06660000
+             ,:DATA.AS_IND;                                             06670000
+    WHEN ('E1')                                                         06680000
+       EXEC SQL                                                         06690000
+         FETCH ADD_SERV_E1                                              06700000
+         INTO :DATA.CATTSRC                                             06710000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                06720000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               06730000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               06740000
+             ,:TB_RCBV210.SERVICE_NUMBER                                06750000
+             ,:TB_RCBV210.GROUP_ID                                      06760000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             06770000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             06780000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                06790000
+             ,:TB_RCBV210.END_DATE                                      06800000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 06810000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 06820000
+             ,:TB_RCBV075.SERVICE_NAME                                  06830000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               06840000
+             ,:DATA.AS_IND;                                             06850000
+    WHEN ('E2')                                                         06860000
+       EXEC SQL                                                         06870000
+         FETCH ADD_SERV_E2                                              06880000
+         INTO :DATA.CATTSRC                                             06890000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                06900000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               06910000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               06920000
+             ,:TB_RCBV210.SERVICE_NUMBER                                06930000
+             ,:TB_RCBV210.GROUP_ID                                      06940000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             06950000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             06960000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                06970000
+             ,:TB_RCBV210.END_DATE                                      06980000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 06990000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 07000000
+             ,:TB_RCBV075.SERVICE_NAME                                  07010000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               07020000
+             ,:DATA.AS_IND;                                             07030000
+    WHEN ('E3')                                                         07040000
+       EXEC SQL                                                         07050000
+         FETCH ADD_SERV_E3                                              07060000
+         INTO :DATA.CATTSRC                                             07070000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                07080000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               07090000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               07100000
+             ,:TB_RCBV210.SERVICE_NUMBER                                07110000
+             ,:TB_RCBV210.GROUP_ID                                      07120000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             07130000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             07140000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                07150000
+             ,:TB_RCBV210.END_DATE                                      07160000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 07170000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 07180000
+             ,:TB_RCBV075.SERVICE_NAME                                  07190000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               07200000
+             ,:DATA.AS_IND;                                             07210000
+    WHEN ('O1')                                                         07220000
+       EXEC SQL                                                         07230000
+         FETCH ADD_SERV_O1                                              07240000
+         INTO :DATA.CATTSRC                                             07250000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                07260000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               07270000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               07280000
+             ,:TB_RCBV210.SERVICE_NUMBER                                07290000
+             ,:TB_RCBV210.GROUP_ID                                      07300000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             07310000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             07320000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                07330000
+             ,:TB_RCBV210.END_DATE                                      07340000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 07350000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 07360000
+             ,:TB_RCBV075.SERVICE_NAME                                  07370000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               07380000
+             ,:DATA.AS_IND;                                             07390000
+    WHEN ('O2')                                                         07400000
+       EXEC SQL                                                         07410000
+         FETCH ADD_SERV_O2                                              07420000
+         INTO :DATA.CATTSRC                                             07430000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                07440000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               07450000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               07460000
+             ,:TB_RCBV210.SERVICE_NUMBER                                07470000
+             ,:TB_RCBV210.GROUP_ID                                      07480000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             07490000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             07500000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                07510000
+             ,:TB_RCBV210.END_DATE                                      07520000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 07530000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 07540000
+             ,:TB_RCBV075.SERVICE_NAME                                  07550000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               07560000
+             ,:DATA.AS_IND;                                             07570000
+    WHEN ('O3')                                                         07580000
+       EXEC SQL                                                         07590000
+         FETCH ADD_SERV_O3                                              07600000
+         INTO :DATA.CATTSRC                                             07610000
+             ,:TB_RCBV210.COUNTRY_NUMBER                                07620000
+             ,:TB_RCBV210.CONTRACT_NUMBER                               07630000
+             ,:TB_RCBV210.CUSTOMER_NUMBER                               07640000
+             ,:TB_RCBV210.SERVICE_NUMBER                                07650000
+             ,:TB_RCBV210.GROUP_ID                                      07660000
+             ,:TB_RCBV210.QTY_MU_CONTRACTED                             07670000
+             ,:TB_RCBV210.QTY_MU_ACCOMPLISH                             07680000
+             ,:TB_RCBV210.EFFECTIVE_DATE                                07690000
+             ,:TB_RCBV210.END_DATE                                      07700000
+             ,:TB_RCBV030.TYPE_OF_CONTRACT :WRK_INDNULL                 07710000
+             ,:TB_RCBV030.INT_CONTRACT_IND :WRK_INDNULL                 07720000
+             ,:TB_RCBV075.SERVICE_NAME                                  07730000
+             ,:TB_RCBV075.SERVICE_DESCR_1                               07740000
+             ,:DATA.AS_IND;                                             07750000
+    OTHERWISE;                                                          07760000
+ END;                                                                   07770000
+ RCBCQ7S_SQLCA = SQLCA;                                                 07780000
+0END RCBCQ7M_FETCH_CURSOR;                                              07790000
+1/********************************************************************/ 07800000
+ /*          ASSIGN DB2 TABLE DATA TO OUTPUT DATA STRUCTURE          */ 07810000
+ /********************************************************************/ 07820000
+0RCBCQ7M_ASSIGN_OUTPUT_DATA : PROC;                                     07830000
+0RCBCQ7S.DATA.COUNTRY_NUMBER    = TB_RCBV210.COUNTRY_NUMBER;            07840000
+ RCBCQ7S.DATA.CONTRACT_NUMBER   = TB_RCBV210.CONTRACT_NUMBER;           07850000
+ RCBCQ7S.DATA.CUSTOMER_NUMBER   = TB_RCBV210.CUSTOMER_NUMBER;           07860000
+ RCBCQ7S.DATA.SERVICE_NUMBER    = TB_RCBV210.SERVICE_NUMBER;            07870000
+ RCBCQ7S.DATA.GROUP_ID          = TB_RCBV210.GROUP_ID;                  07880000
+ RCBCQ7S.DATA.EFFECTIVE_DATE    = TB_RCBV210.EFFECTIVE_DATE;            07890000
+ RCBCQ7S.DATA.END_DATE          = TB_RCBV210.END_DATE;                  07900000
+ RCBCQ7S.DATA.QTY_MU_CONTRACTED = TB_RCBV210.QTY_MU_CONTRACTED;         07910000
+ RCBCQ7S.DATA.QTY_MU_ACCOMPLISH = TB_RCBV210.QTY_MU_ACCOMPLISH;         07920000
+ RCBCQ7S.DATA.INT_CONTRACT_IND  = TB_RCBV030.INT_CONTRACT_IND;          07930000
+ RCBCQ7S.DATA.TYPE_OF_CONTRACT  = TB_RCBV030.TYPE_OF_CONTRACT;          07940000
+ RCBCQ7S.DATA.SERVICE_NAME      = TB_RCBV075.SERVICE_NAME;              07950000
+ RCBCQ7S.DATA.SERVICE_DESCR_1   = TB_RCBV075.SERVICE_DESCR_1;           07960000
+0END RCBCQ7M_ASSIGN_OUTPUT_DATA;                                        07970000
+1/********************************************************************/ 07980000
+ /*          CLOSE CURSOR PROCESSING                                 */ 07990000
+ /********************************************************************/ 08000000
+0RCBCQ7M_CLOSE_CURSOR : PROC;                                           08010000
+0SELECT (RCBCQ7S.CURSOR);                                               08020000
+    WHEN ('L1')                                                         08030000
+       EXEC SQL                                                         08040000
+          CLOSE ADD_SERV_L1;                                            08050000
+    WHEN ('L2')                                                         08060000
+       EXEC SQL                                                         08070000
+          CLOSE ADD_SERV_L2;                                            08080000
+    WHEN ('L3')                                                         08090000
+       EXEC SQL                                                         08100000
+          CLOSE ADD_SERV_L3;                                            08110000
+    WHEN ('E1')                                                         08120000
+       EXEC SQL                                                         08130000
+          CLOSE ADD_SERV_E1;                                            08140000
+    WHEN ('E2')                                                         08150000
+       EXEC SQL                                                         08160000
+          CLOSE ADD_SERV_E2;                                            08170000
+    WHEN ('E3')                                                         08180000
+       EXEC SQL                                                         08190000
+          CLOSE ADD_SERV_E3;                                            08200000
+    WHEN ('O1')                                                         08210000
+       EXEC SQL                                                         08220000
+          CLOSE ADD_SERV_O1;                                            08230000
+    WHEN ('O2')                                                         08240000
+       EXEC SQL                                                         08250000
+          CLOSE ADD_SERV_O2;                                            08260000
+    OTHERWISE                                                           08270000
+       EXEC SQL                                                         08280000
+          CLOSE ADD_SERV_O3;                                            08290000
+ END;   /* END SELECT */                                                08300000
+ RCBCQ7S_SQLCA = SQLCA;                                                 08310000
+0END RCBCQ7M_CLOSE_CURSOR;                                              08320000
+0/********************************************************************/ 08330000
+ %INCLUDE DAIFPLH ;                    /* COMPILE DATE/TIME STAMP    */ 08340000
+ $DAIMOD (RCBCQ7M);                    /* MODULE TO BE COMPILED      */ 08350000
+ END RCBCQ7M;                                                           08360000

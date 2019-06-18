@@ -1,0 +1,664 @@
+ /* RCBCS5M - SEARCH MODULE FOR CEDS QUERY BY SERIAL TRASACTION      */ 00020042
+ /*                                                                  */ 00021041
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030016
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040016
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050016
+ /*                                                                  */ 00060016
+ /********************************************************************/ 00070016
+ /* PROGRAM          : RCBCS5M                                       */ 00080016
+ /*                                                                  */ 00090016
+ /* LANGUAGE         : PLICSQL                                       */ 00100016
+ /*                                                                  */ 00110016
+ /* TYPE             : LINKABLE MODULE                               */ 00120016
+ /*                                                                  */ 00130016
+ /* DESCRIPTION      : RETRIEVE MACHINE DETAILS                      */ 00140016
+ /*                  : THIS PROGRAM IS CALLED BY THE ROOT MODULE     */ 00150016
+ /*                    RCBCS1M.                                      */ 00160016
+ /*                                                                  */ 00170016
+ /* ALL WARNINGS AND ERRORS WILL BE STORED IN AN EXTRA PARTITION     */ 00180016
+ /* TRANSIENT DATASET.                                               */ 00190016
+ /*                                                                  */ 00200016
+ /* INPUT            : COMMPTR - COMMUNICATION AREA POINTER          */ 00210016
+ /*                                                                  */ 00220016
+ /* OUTPUT           :                                               */ 00230016
+ /*                                                                  */ 00240016
+ /*                                                                  */ 00250016
+ /* EXTERNAL MODULES : RCBCS3M - BAU DETAIL MODULE                   */ 00260016
+ /*                    RCBCS4M - PI DETAIL MODULE                    */ 00270016
+ /*                    RCBCQEM - ERROR LOGGING MODULE                */ 00280016
+ /*                                                                  */ 00290016
+ /* MESSAGES         :                                               */ 00300016
+ /*                                                                  */ 00310016
+ /* DEPENDENCIES     : NONE                                          */ 00320016
+ /*                                                                  */ 00330016
+ /* MAINTENANCE LOG  :                                               */ 00340016
+ /* ---------------                                                  */ 00350016
+ /*                                                                  */ 00360016
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00370016
+ /* --------------------------------------------------------------   */ 00380016
+ /*  2002-07-24 | RA01233      | TACTICAL SERVICE REFERENCE          */ 00390016
+ /*  2007-01-29 | CEDS00000320 | WSU/WSUC CHANGES                    */ 00400016
+ /*  2008-06-23 | CEDS00000403 | INITIALISE VARIABLE 'CRMOSUB' TO 0, */ 00410016
+ /*             |              | TO AVOID THE JUNK VALUE IN THE MAP  */ 00420016
+ /*             |              |                                     */ 00430016
+ /********************************************************************/ 00440016
+1RCBCS5M: PROC(COMMPTR)                                                 00450016
+          OPTIONS (MAIN)                                                00460016
+          REORDER;                                                      00470016
+0/********************************************************************/ 00480016
+ /*  EXTERNAL ENTRIES                                                */ 00490016
+ /********************************************************************/ 00500016
+ DCL RCBCQEM   ENTRY EXTERNAL;     /* ERROR LOGGING ROUTINE          */ 00510016
+0/********************************************************************/ 00520016
+ /*  COMMUNICATION AREA                                              */ 00530016
+ /********************************************************************/ 00540016
+ DCL    COMMPTR   PTR;             /*ADDRESS OF COMMUNICATION AREA   */ 00550016
+ /********************************************************************/ 00560016
+0/********************************************************************/ 00570016
+0DCL 1 COMMAREA           BASED (COMMPTR),                              00580016
+ %INCLUDE EDQBSHS;,                                                     00590016
+ %INCLUDE EDQBSDS;;                                                     00600016
+0/********************************************************************/ 00610016
+ /*  TEMPORARY SAVE AREA FOR WSU/WSUC SEARCH           CEDS00000320  */ 00620016
+ /********************************************************************/ 00630016
+ DCL 1 SAVEDET                           ,        /*   CEDS00000320  */ 00640016
+ %INCLUDE EDQBSDS;;                               /*   CEDS00000320  */ 00650016
+0SAVEDET = '';                                    /*   CEDS00000320  */ 00660016
+0/********************************************************************/ 00670016
+ /*  RETURN CODES                                                    */ 00680016
+ /********************************************************************/ 00690016
+0DCL RESPONSE            FIXED BIN(31) INIT ('0'B);  /* CICS RESPONSE*/ 00700016
+ DCL CODE_EXPLAIN        FIXED BIN(31);   /* RETURN CODE EXPLANATION */ 00710016
+0/********************************************************************/ 00720016
+ /*  RCBCQEM PARAMETER DECLARATIONS                                  */ 00730016
+ /********************************************************************/ 00740016
+0DCL RCBCQES_PTR     PTR;              /* PTR TO INTERFACE STRUCTURE */ 00750016
+ DCL 1 RCBCQES,                                                         00760016
+      %INCLUDE RCBCQES;;                                                00770016
+ DCL 1 RCBCQES_SQLCA                                                    00780016
+      LIKE SQLCA;                                                       00790016
+0RCBCQES_PTR       = ADDR(RCBCQES);                                     00800016
+0RCBCQES.SQLCA_PTR = ADDR(RCBCQES_SQLCA);                               00810016
+0/********************************************************************/ 00820016
+ /*            S Q L    D E C L A R A T I O N S                      */ 00830016
+ /********************************************************************/ 00840016
+0EXEC SQL                                                               00850016
+      INCLUDE SQLCA;                                                    00860016
+0/********************************************************************/ 00870016
+ /* DB2 TABLE STRUCTURES                                             */ 00880016
+ /********************************************************************/ 00890016
+ DCL 1 TB_RCBV050,                                                      00900016
+      %INCLUDE (RCB050S);;                                              00910016
+ DCL 1 TB_RCBV050_I,                                                    00920016
+      %INCLUDE (RCB050SI);;                                             00930016
+ DCL 1 TB_RCBV051,                                                      00940016
+      %INCLUDE (RCB051S);;                                              00950016
+ DCL 1 TB_RCBV051_I,                                                    00960016
+      %INCLUDE (RCB051SI);;                                             00970016
+ DCL 1 TB_RCBV110,                                /*   CEDS00000320  */ 00980016
+      %INCLUDE (RCB110S);;                        /*   CEDS00000320  */ 00990016
+ DCL 1 TB_RCB1101_I,                              /*   CEDS00000320  */ 01000016
+      %INCLUDE (RCB110SI);;                       /*   CEDS00000320  */ 01010016
+ DCL 1 TB_RCBV241,                                                      01020016
+      %INCLUDE (RCB241S);;                                              01030016
+ DCL 1 TB_RCBV241_I,                                                    01040016
+      %INCLUDE (RCB241SI);;                                             01050016
+-/********************************************************************/ 01060016
+ /*        WORK FIELDS                                               */ 01070016
+ /********************************************************************/ 01080016
+ DCL REQTYPE     CHAR(04)      INIT('');    /* REQUEST MACH. TYPE    */ 01090016
+ DCL REQORIG     CHAR(02)      INIT('');    /* REQUEST ORIGIN        */ 01100016
+ DCL REQSEQN     CHAR(07)      INIT('');    /* REQUEST SERIAL NBR.   */ 01110016
+ DCL REFCTRY     CHAR(03)      INIT('');    /* REQUEST COUNTRY CODE  */ 01120016
+ DCL DATE10      CHAR(10)      INIT('');    /*YYYY-MM-DD DATE FORMAT */ 01130016
+ DCL WRK_SQLCODE FIXED BIN(31) INIT(0);                                 01140016
+ DCL WRK_TABLE   CHAR(18)      INIT('');                                01150016
+ DCL WRK_INDNULL FIXED BIN(15);                                         01160016
+0/********************************************************************/ 01170016
+ /*                 BUILT IN FUNCTIONS                               */ 01180016
+ /********************************************************************/ 01190016
+0DCL (LENGTH,                                                           01200016
+      CSTG,                                                             01210016
+      STRING,                                                           01220016
+      SUBSTR,                                                           01230016
+      NULL,                                                             01240016
+      ADDR)                                                             01250016
+              BUILTIN;                                                  01260016
+1/********************************************************************/ 01270016
+ /*                 S T A R T   P R O C E S S I N G                  */ 01280016
+ /********************************************************************/ 01290016
+0CALL RCBCS5M_INITIALISATION;                                           01300016
+0CALL RCBCS5M_MAIN_PROCESSING;                                          01310016
+0CALL RCBCS5M_FINALISATION;                                             01320016
+1/********************************************************************/ 01330016
+ /*      I N I T I A L I S A T I O N   P R O C E S S I N G           */ 01340016
+ /********************************************************************/ 01350016
+0RCBCS5M_INITIALISATION : PROC;                                         01360016
+ SELECT (EIBCALEN);                      /* CHECK LENGTH OF COMMAREA */ 01370016
+    WHEN(0)                              /* COMMAREA EMPTY           */ 01380016
+    DO;                                                                 01390016
+       EDQBSHS.CRMORET = '4';                                           01400016
+       RCBCQES.MESSAGE_NUMBER = 'C201';                                 01410016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 01420016
+    END;                                                                01430016
+    WHEN(150)                            /* HEADER RECORD            */ 01440016
+    DO;                                                                 01450016
+       IF EDQBSHS.REQ.TYPE ¬= 'DE' THEN                                 01460016
+       DO;                                                              01470016
+          EDQBSHS.CRMORET = '4';                                        01480016
+          RCBCQES.MESSAGE_NUMBER = 'C203';                              01490016
+          CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);              01500016
+       END;                                                             01510016
+    END;                                                                01520016
+    WHEN(750)                            /* HEADER & DETAIL ITEM     */ 01530016
+    DO;                                                                 01540016
+       IF EDQBSHS.REQ.TYPE ¬= 'DE' THEN                                 01550016
+       DO;                                                              01560016
+          EDQBSHS.CRMORET = '4';                                        01570016
+          RCBCQES.MESSAGE_NUMBER = 'C203';                              01580016
+          CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);              01590016
+       END;                                                             01600016
+    END;                                                                01610016
+    OTHERWISE                            /* INVALID COMMAREA LENGTH  */ 01620016
+    DO;                                                                 01630016
+       EDQBSHS.CRMORET = '4';                                           01640016
+       RCBCQES.MESSAGE_NUMBER = 'C202';                                 01650016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 01660016
+    END;                                                                01670016
+ END;                                                                   01680016
+                                                                        01690016
+                                                                        01700016
+ IF EDQBSHS.REQ.REQKEY.IOPUCTY = '' THEN                                01710016
+   EDQBSHS.REQ.REQKEY.IOPUCTY = EDQBSHS.REQ.TARGCTY;                    01720016
+                                                                        01730016
+ REQTYPE = EDQBSHS.REQ.REQKEY.CSLMTYP;                                  01740016
+ REQORIG = EDQBSHS.REQ.REQKEY.IHSIMID.IOLCPLM;                          01750016
+ REQSEQN = EDQBSHS.REQ.REQKEY.IHSIMID.IHSINBR;                          01760016
+ DATE10  = $DTSEP(EDQBSHS.REQ.DFLTREF,'-');                             01770016
+                                                                        01780016
+ EDQBSHS.REQ.CRMOSUB = 0;                            /* CEDS00000403 */ 01790016
+                                                                        01800016
+0END RCBCS5M_INITIALISATION;                                            01810016
+1/********************************************************************/ 01820016
+ /*      M A I N   P R O C E S S I N G                               */ 01830016
+ /********************************************************************/ 01840016
+0RCBCS5M_MAIN_PROCESSING : PROC;                                        01850016
+0IF EDQBSHS.REQ.SEARCH                  = '' |                          01860016
+    EDQBSHS.REQ.REQKEY.CSLMTYP          = '' |                          01870016
+    EDQBSHS.REQ.REQKEY.IHSIMID.IOLCPLM  = '' |                          01880016
+    EDQBSHS.REQ.REQKEY.IHSIMID.IHSINBR  = '' |                          01890016
+    EDQBSHS.REQ.TARGCTY                 = '' |                          01900016
+    EDQBSHS.REQ.DFLTREF                 = '' THEN                       01910016
+ DO;                                                                    01920016
+    EDQBSHS.CRMORET = '4';                                              01930016
+    RCBCQES.MESSAGE_NUMBER = 'C239';                                    01940016
+    CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                    01950016
+ END;                                                                   01960016
+                                                                        01970016
+ EDQBSHS.CRMORET = '9';                  /* SET NOT FOUND CONDITION  */ 01980016
+                                                                        01990016
+ EXEC CICS LINK                                                         02000016
+      PROGRAM('RCBCS4P')                                                02010016
+      COMMAREA(COMMAREA)                                                02020016
+      LENGTH(CSTG(COMMAREA))                                            02030016
+      RESP(RESPONSE)                                                    02040016
+      RESP2(CODE_EXPLAIN);                                              02050016
+                                                                        02060016
+                                              /* SOC : CEDS00000320  */ 02070016
+ /* IF WARRANTY INFORMATION ONLY, WITHOUT CONTRACT / SERVICEPAC      */ 02080016
+ /* (IAGRNBR=''), WAS RETRIEVED FROM PRIME INPUT TABLES (CRMORET=0), */ 02090016
+ /* THEN LOOK FOR WSU/WSUC INTO BAU TABLES USING  RCBCS3P  PROGRAM.  */ 02100016
+ /* IF WSU/WSUC OR CONTRACT INFORMATION IS FOUND IN BAU TABLES, IT   */ 02110016
+ /* IS RETURNED TO THE CLIENT.                                       */ 02120016
+ /* OTHERWISE, THE WARRANTY INFORMATION PREVIOUSLY FOUND RETURNS.    */ 02130016
+                                                                        02140016
+ IF EDQBSHS.CRMORET = '0' & COMMAREA.SRCCCMD.IAGRNBR = '' THEN          02150016
+   DO;                                                                  02160016
+     SAVEDET = '';                                                      02170016
+     SAVEDET.EDQBSDS = COMMAREA.EDQBSDS;                                02180016
+     COMMAREA.EDQBSDS = '';                                             02190016
+     EXEC CICS LINK                                                     02200016
+          PROGRAM('RCBCS3P')                                            02210016
+          COMMAREA(COMMAREA)                                            02220016
+          LENGTH(CSTG(COMMAREA))                                        02230016
+          RESP(RESPONSE)                                                02240016
+          RESP2(CODE_EXPLAIN);                                          02250016
+     IF EDQBSHS.CRMORET ¬= '0' THEN                                     02260016
+       DO;                                                              02270016
+         EDQBSHS.CRMORET = '0';                                         02280016
+         COMMAREA.EDQBSDS = SAVEDET.EDQBSDS;                            02290016
+       END;                                                             02300016
+   END;                                                                 02310016
+                                               /* EOC : CEDS00000320  */02320016
+ IF EDQBSHS.CRMORET = '9' & EDQBSHS.REQ.SEARCH = 'SC' THEN              02330016
+   DO;                                                                  02340016
+     EXEC CICS LINK                                                     02350016
+          PROGRAM('RCBCS3P')                                            02360016
+          COMMAREA(COMMAREA)                                            02370016
+          LENGTH(CSTG(COMMAREA))                                        02380016
+          RESP(RESPONSE)                                                02390016
+          RESP2(CODE_EXPLAIN);                                          02400016
+   END;                                                                 02410016
+                                                                        02420016
+ IF EDQBSHS.CRMORET = '9' & EDQBSHS.REQ.SEARCH = 'MC' THEN              02430016
+   DO;                                                                  02440016
+     CALL RCBCS5M_READ_PI_CTR;                                          02450016
+     IF EDQBSHS.CRMORET = '9' THEN                                      02460016
+       DO;                                                              02470016
+         CALL RCBCS5M_READ_PI_HW_PR;                                    02480016
+         IF EDQBSHS.CRMORET = '9' THEN                                  02490016
+           CALL RCBCS5M_READ_HW_PR;                                     02500016
+       END;                                                             02510016
+   END;                                                                 02520016
+                                                                        02530016
+0END RCBCS5M_MAIN_PROCESSING;                                           02540016
+1/*********************************************************************/02550016
+ /*                                                                   */02560016
+ /* MODULE NAME      : RCBCS5M_READ_PI_CTR                            */02570016
+ /*                                                                   */02580016
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0241    */02590016
+ /*                                                                   */02600016
+ /*                                                                   */02610016
+ /*********************************************************************/02620016
+0RCBCS5M_READ_PI_CTR: PROC;                                             02630016
+                                                                        02640016
+ EXEC SQL                                                               02650016
+      DECLARE CURSOR_PI_CTR CURSOR FOR                                  02660016
+      SELECT PRODUCT_TYPE      ,                                        02670016
+             ORIGIN            ,                                        02680016
+             SEQUENCE_NUMBER   ,                                        02690016
+             COUNTRY_NUMBER                                             02700016
+       FROM  RCBV0241_PI_CTR                                            02710016
+      WHERE  PRODUCT_TYPE    = :REQTYPE                                 02720016
+        AND  ORIGIN          = :REQORIG                                 02730016
+        AND  SEQUENCE_NUMBER = :REQSEQN                                 02740016
+        AND  :DATE10   BETWEEN EFFECTIVE_DATE                           02750016
+                           AND END_DATE                                 02760016
+   ORDER BY COUNTRY_NUMBER                                              02770016
+   FOR FETCH ONLY;                                                      02780016
+                                                                        02790016
+ EXEC SQL                              /* INIT CURSOR CURSOR_PI_CTR  */ 02800016
+      OPEN CURSOR_PI_CTR;                                               02810016
+                                                                        02820016
+ SELECT(SQLCA.SQLCODE);                                                 02830016
+   WHEN (0);                                                            02840016
+   OTHERWISE                                                            02850016
+     DO;                                                                02860016
+       RCBCQES.MESSAGE_NUMBER = 'C219';                                 02870016
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     02880016
+       WRK_TABLE = 'RCBT0241_PI_CTRPR';                                 02890016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 02900016
+     END;                                                               02910016
+ END;                                                                   02920016
+                                                                        02930016
+ EXEC SQL                                                               02940016
+      FETCH CURSOR_PI_CTR                                               02950016
+       INTO :TB_RCBV241.PRODUCT_TYPE    :WRK_INDNULL                    02960016
+           ,:TB_RCBV241.ORIGIN          :WRK_INDNULL                    02970016
+           ,:TB_RCBV241.SEQUENCE_NUMBER :WRK_INDNULL                    02980016
+           ,:TB_RCBV241.COUNTRY_NUMBER  :WRK_INDNULL;                   02990016
+                                                                        03000016
+ SELECT(SQLCA.SQLCODE);                                                 03010016
+   WHEN(0)                                                              03020016
+     DO;                                                                03030016
+       EXEC SQL                                                         03040016
+            CLOSE CURSOR_PI_CTR;                                        03050016
+                                                                        03060016
+       SELECT(SQLCA.SQLCODE);                                           03070016
+         WHEN (0);                                                      03080016
+         OTHERWISE                                                      03090016
+           DO;                                                          03100016
+             RCBCQES.MESSAGE_NUMBER = 'C221';                           03110016
+             WRK_SQLCODE = SQLCA.SQLCODE;                               03120016
+             WRK_TABLE = 'RCBT0241_PI_CTR';                             03130016
+             CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           03140016
+           END;                                                         03150016
+       END;                                                             03160016
+                                                                        03170016
+       EDQBSHS.REQ.REQKEY.IOPUCTY = TB_RCBV241.COUNTRY_NUMBER;          03180016
+                                                                        03190016
+       EXEC CICS LINK                                                   03200016
+            PROGRAM('RCBCS4P')                                          03210016
+            COMMAREA(COMMAREA)                                          03220016
+            LENGTH(CSTG(COMMAREA))                                      03230016
+            RESP(RESPONSE)                                              03240016
+            RESP2(CODE_EXPLAIN);                                        03250016
+     END;                                                               03260016
+   WHEN(100)                                                            03270016
+     DO;                                                                03280016
+       EXEC SQL                                                         03290016
+            CLOSE CURSOR_PI_CTR;                                        03300016
+                                                                        03310016
+       SELECT(SQLCA.SQLCODE);                                           03320016
+         WHEN (0);                                                      03330016
+         OTHERWISE                                                      03340016
+           DO;                                                          03350016
+             RCBCQES.MESSAGE_NUMBER = 'C221';                           03360016
+             WRK_SQLCODE = SQLCA.SQLCODE;                               03370016
+             WRK_TABLE = 'RCBT0241_PI_CTR';                             03380016
+             CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           03390016
+           END;                                                         03400016
+       END;                                                             03410016
+     END;                                                               03420016
+   OTHERWISE                                                            03430016
+     DO;                                                                03440016
+       RCBCQES.MESSAGE_NUMBER = 'C220';                                 03450016
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     03460016
+       WRK_TABLE = 'RCBT0051_PI_CTR';                                   03470016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 03480016
+     END;                                                               03490016
+ END;                                                                   03500016
+ END RCBCS5M_READ_PI_CTR;                                               03510016
+1/*********************************************************************/03520016
+ /*                                                                   */03530016
+ /* MODULE NAME      : RCBCS5M_READ_PI_HW_PR                          */03540016
+ /*                                                                   */03550016
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0051    */03560016
+ /*                                                                   */03570016
+ /*                                                                   */03580016
+ /*********************************************************************/03590016
+0RCBCS5M_READ_PI_HW_PR: PROC;                                           03600016
+                                                                        03610016
+ EXEC SQL                                                               03620016
+      DECLARE CURSOR_PI_HW CURSOR FOR                                   03630016
+      SELECT PRODUCT_TYPE      ,                                        03640016
+             ORIGIN            ,                                        03650016
+             SEQUENCE_NUMBER   ,                                        03660016
+             COUNTRY_NUMBER                                             03670016
+       FROM  RCBV0051_PI_HW_PR                                          03680016
+      WHERE  PRODUCT_TYPE    = :REQTYPE                                 03690016
+        AND  ORIGIN          = :REQORIG                                 03700016
+        AND  SEQUENCE_NUMBER = :REQSEQN                                 03710016
+   ORDER BY COUNTRY_NUMBER                                              03720016
+   FOR FETCH ONLY;                                                      03730016
+                                                                        03740016
+ EXEC SQL                              /* INIT CURSOR CURSOR_PI_HW   */ 03750016
+      OPEN CURSOR_PI_HW;                                                03760016
+                                                                        03770016
+ SELECT(SQLCA.SQLCODE);                                                 03780016
+   WHEN (0);                                                            03790016
+   OTHERWISE                                                            03800016
+     DO;                                                                03810016
+       RCBCQES.MESSAGE_NUMBER = 'C219';                                 03820016
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     03830016
+       WRK_TABLE = 'RCBT0051_PI_HW_PR';                                 03840016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 03850016
+     END;                                                               03860016
+ END;                                                                   03870016
+                                                                        03880016
+ EXEC SQL                                                               03890016
+      FETCH CURSOR_PI_HW                                                03900016
+       INTO :TB_RCBV051.PRODUCT_TYPE    :WRK_INDNULL                    03910016
+           ,:TB_RCBV051.ORIGIN          :WRK_INDNULL                    03920016
+           ,:TB_RCBV051.SEQUENCE_NUMBER :WRK_INDNULL                    03930016
+           ,:TB_RCBV051.COUNTRY_NUMBER  :WRK_INDNULL;                   03940016
+                                                                        03950016
+ SELECT(SQLCA.SQLCODE);                                                 03960016
+   WHEN(0)                                                              03970016
+     DO;                                                                03980016
+       EXEC SQL                                                         03990016
+            CLOSE CURSOR_PI_HW;                                         04000016
+                                                                        04010016
+       SELECT(SQLCA.SQLCODE);                                           04020016
+         WHEN (0);                                                      04030016
+         OTHERWISE                                                      04040016
+           DO;                                                          04050016
+             RCBCQES.MESSAGE_NUMBER = 'C221';                           04060016
+             WRK_SQLCODE = SQLCA.SQLCODE;                               04070016
+             WRK_TABLE = 'RCBT0051_PI_HW_PR';                           04080016
+             CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           04090016
+           END;                                                         04100016
+       END;                                                             04110016
+                                                                        04120016
+       EDQBSHS.REQ.REQKEY.IOPUCTY = TB_RCBV051.COUNTRY_NUMBER;          04130016
+                                                                        04140016
+       EXEC CICS LINK                                                   04150016
+            PROGRAM('RCBCS4P')                                          04160016
+            COMMAREA(COMMAREA)                                          04170016
+            LENGTH(CSTG(COMMAREA))                                      04180016
+            RESP(RESPONSE)                                              04190016
+            RESP2(CODE_EXPLAIN);                                        04200016
+                                              /* SOC : CEDS00000320  */ 04210016
+ /* IF WARRANTY INFORMATION ONLY, WITHOUT CONTRACT / SERVICEPAC      */ 04220016
+ /* (IAGRNBR=''), WAS RETRIEVED FROM PRIME INPUT TABLES (CRMORET=0), */ 04230016
+ /* THEN LOOK FOR WSU/WSUC INTO BAU TABLES USING  RCBCS3P  PROGRAM.  */ 04240016
+ /* IF WSU/WSUC OR CONTRACT INFORMATION IS FOUND IN BAU TABLES, IT   */ 04250016
+ /* IS RETURNED TO THE CLIENT.                                       */ 04260016
+ /* OTHERWISE, THE WARRANTY INFORMATION PREVIOUSLY FOUND RETURNS.    */ 04270016
+                                                                        04280016
+       IF EDQBSHS.CRMORET = '0' & COMMAREA.SRCCCMD.IAGRNBR = '' THEN    04290016
+         DO;                                                            04300016
+           SAVEDET = '';                                                04310016
+           SAVEDET.EDQBSDS = COMMAREA.EDQBSDS;                          04320016
+           COMMAREA.EDQBSDS = '';                                       04330016
+           EXEC CICS LINK                                               04340016
+                PROGRAM('RCBCS3P')                                      04350016
+                COMMAREA(COMMAREA)                                      04360016
+                LENGTH(CSTG(COMMAREA))                                  04370016
+                RESP(RESPONSE)                                          04380016
+                RESP2(CODE_EXPLAIN);                                    04390016
+           IF EDQBSHS.CRMORET ¬= '0' THEN                               04400016
+             DO;                                                        04410016
+               EDQBSHS.CRMORET = '0';                                   04420016
+               COMMAREA.EDQBSDS = SAVEDET.EDQBSDS;                      04430016
+             END;                                                       04440016
+         END;                                                           04450016
+                                               /* EOC : CEDS00000320  */04460016
+     END;                                                               04470016
+   WHEN(100)                                                            04480016
+     DO;                                                                04490016
+       EXEC SQL                                                         04500016
+            CLOSE CURSOR_PI_HW;                                         04510016
+                                                                        04520016
+       SELECT(SQLCA.SQLCODE);                                           04530016
+         WHEN (0);                                                      04540016
+         OTHERWISE                                                      04550016
+           DO;                                                          04560016
+             RCBCQES.MESSAGE_NUMBER = 'C221';                           04570016
+             WRK_SQLCODE = SQLCA.SQLCODE;                               04580016
+             WRK_TABLE = 'RCBT0051_PI_HW_PR';                           04590016
+             CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);           04600016
+           END;                                                         04610016
+       END;                                                             04620016
+     END;                                                               04630016
+   OTHERWISE                                                            04640016
+     DO;                                                                04650016
+       RCBCQES.MESSAGE_NUMBER = 'C220';                                 04660016
+       WRK_SQLCODE = SQLCA.SQLCODE;                                     04670016
+       WRK_TABLE = 'RCBT0051_PI_HW_PR';                                 04680016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 04690016
+     END;                                                               04700016
+ END;                                                                   04710016
+ END RCBCS5M_READ_PI_HW_PR;                                             04720016
+1/*********************************************************************/04730016
+ /*                                                                   */04740016
+ /* MODULE NAME      : RCBCS5M_READ_HW_PR                             */04750016
+ /*                                                                   */04760016
+ /* DESCRIPTION      : READ THE EXACT REFERENCED ROW FROM RCBT0050    */04770016
+ /*                                                                   */04780016
+ /*                                                                   */04790016
+ /*********************************************************************/04800016
+0RCBCS5M_READ_HW_PR: PROC;                                              04810016
+                                                                        04820016
+ EXEC SQL                                                               04830016
+      DECLARE CURSOR_HW CURSOR FOR                                      04840016
+      SELECT T050.PRODUCT_TYPE      ,                                   04850016
+             T050.ORIGIN            ,                                   04860016
+             T050.SEQUENCE_NUMBER   ,                                   04870016
+             T050.COUNTRY_NUMBER                                        04880016
+       FROM  RCBV0050_HW_PR     T050                                    04890016
+            ,RCBV0110_HW_STATUS T110                                    04900016
+      WHERE  T050.PRODUCT_TYPE    = :REQTYPE                            04910016
+        AND  T050.ORIGIN          = :REQORIG                            04920016
+        AND  T050.SEQUENCE_NUMBER = :REQSEQN                            04930016
+        AND  T110.PRODUCT_TYPE    = T050.PRODUCT_TYPE                   04940016
+        AND  T110.ORIGIN          = T050.ORIGIN                         04950016
+        AND  T110.SEQUENCE_NUMBER = T050.SEQUENCE_NUMBER                04960016
+        AND  T110.COUNTRY_NUMBER  = T050.COUNTRY_NUMBER                 04970016
+        AND  :DATE10        BETWEEN T110.EFFECTIVE_DATE                 04980016
+                                AND T110.END_DATE                       04990016
+   ORDER BY COUNTRY_NUMBER                                              05000016
+   FOR FETCH ONLY;                                                      05010016
+                                                                        05020016
+ EXEC CICS LINK                                                         05030016
+      PROGRAM('RCBCS3P')                                                05040016
+      COMMAREA(COMMAREA)                                                05050016
+      LENGTH(CSTG(COMMAREA))                                            05060016
+      RESP(RESPONSE)                                                    05070016
+      RESP2(CODE_EXPLAIN);                                              05080016
+                                                                        05090016
+ IF EDQBSHS.CRMORET = '9' THEN                                          05100016
+   DO;                                                                  05110016
+     EXEC SQL                             /* INIT CURSOR CURSOR_PI_HW */05120016
+          OPEN CURSOR_HW;                                               05130016
+                                                                        05140016
+     SELECT(SQLCA.SQLCODE);                                             05150016
+       WHEN (0);                                                        05160016
+       OTHERWISE                                                        05170016
+         DO;                                                            05180016
+           RCBCQES.MESSAGE_NUMBER = 'C222';                             05190016
+           WRK_SQLCODE = SQLCA.SQLCODE;                                 05200016
+           WRK_TABLE = 'RCBT0050_HW_PR';                                05210016
+           CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);             05220016
+         END;                                                           05230016
+     END;                                                               05240016
+                                                                        05250016
+     EXEC SQL                                                           05260016
+          FETCH CURSOR_HW                                               05270016
+           INTO :TB_RCBV050.PRODUCT_TYPE    :WRK_INDNULL                05280016
+               ,:TB_RCBV050.ORIGIN          :WRK_INDNULL                05290016
+               ,:TB_RCBV050.SEQUENCE_NUMBER :WRK_INDNULL                05300016
+               ,:TB_RCBV050.COUNTRY_NUMBER  :WRK_INDNULL;               05310016
+                                                                        05320016
+     SELECT(SQLCA.SQLCODE);                                             05330016
+       WHEN(0)                                                          05340016
+         DO;                                                            05350016
+           EXEC SQL                                                     05360016
+                CLOSE CURSOR_HW;                                        05370016
+                                                                        05380016
+           SELECT(SQLCA.SQLCODE);                                       05390016
+             WHEN (0);                                                  05400016
+             OTHERWISE                                                  05410016
+               DO;                                                      05420016
+                 RCBCQES.MESSAGE_NUMBER = 'C224';                       05430016
+                 WRK_SQLCODE = SQLCA.SQLCODE;                           05440016
+                 WRK_TABLE = 'RCBT0050_HW_PR';                          05450016
+                 CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);       05460016
+               END;                                                     05470016
+           END;                                                         05480016
+                                                                        05490016
+           EDQBSHS.REQ.REQKEY.IOPUCTY = TB_RCBV050.COUNTRY_NUMBER;      05500016
+                                                                        05510016
+           EXEC CICS LINK                                               05520016
+                PROGRAM('RCBCS3P')                                      05530016
+                COMMAREA(COMMAREA)                                      05540016
+                LENGTH(CSTG(COMMAREA))                                  05550016
+                RESP(RESPONSE)                                          05560016
+                RESP2(CODE_EXPLAIN);                                    05570016
+         END;                                                           05580016
+       WHEN(100)                                                        05590016
+         DO;                                                            05600016
+           EXEC SQL                                                     05610016
+                CLOSE CURSOR_HW;                                        05620016
+                                                                        05630016
+           SELECT(SQLCA.SQLCODE);                                       05640016
+             WHEN (0);                                                  05650016
+             OTHERWISE                                                  05660016
+               DO;                                                      05670016
+                 RCBCQES.MESSAGE_NUMBER = 'C224';                       05680016
+                 WRK_SQLCODE = SQLCA.SQLCODE;                           05690016
+                 WRK_TABLE = 'RCBT0050_HW_PR';                          05700016
+                 CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);       05710016
+               END;                                                     05720016
+           END;                                                         05730016
+         END;                                                           05740016
+       OTHERWISE                                                        05750016
+         DO;                                                            05760016
+           RCBCQES.MESSAGE_NUMBER = 'C223';                             05770016
+           WRK_SQLCODE = SQLCA.SQLCODE;                                 05780016
+           WRK_TABLE = 'RCBT0050_HW_PR';                                05790016
+           CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);             05800016
+         END;                                                           05810016
+     END;                                                               05820016
+   END;                                                                 05830016
+ END RCBCS5M_READ_HW_PR;                                                05840016
+1/********************************************************************/ 05850016
+ /*      F I N A L    P R O C E S S I N G                            */ 05860016
+ /********************************************************************/ 05870016
+0RCBCS5M_FINALISATION : PROC;                                           05880016
+0SELECT (RESPONSE);                                                     05890016
+    WHEN (DFHRESP(NORMAL));                                             05900016
+    WHEN (DFHRESP(INVREQ))                                              05910016
+    DO;                                                                 05920016
+       EDQBSHS.CRMORET = '3';                                           05930016
+       RCBCQES.MESSAGE_NUMBER = 'C206';                                 05940016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 05950016
+    END;                                                                05960016
+    OTHERWISE                                                           05970016
+    DO;                                                                 05980016
+       EDQBSHS.CRMORET = '3';                                           05990016
+       RCBCQES.MESSAGE_NUMBER = 'C207';                                 06000016
+       CALL RCBCS5M_LOG_ERROR (WRK_SQLCODE, WRK_TABLE);                 06010016
+    END;                                                                06020016
+ END;                                                                   06030016
+0EXEC CICS RETURN                                                       06040016
+    RESP(RESPONSE);                                                     06050016
+0END RCBCS5M_FINALISATION;                                              06060016
+1/********************************************************************/ 06070016
+ /*      E R R O R   L O G G I N G                                   */ 06080016
+ /********************************************************************/ 06090016
+0RCBCS5M_LOG_ERROR : PROC(ERR_SQLCODE,ERR_TABLE);                       06100016
+                                                                        06110016
+ DCL ERR_TABLE   CHAR(18);                                              06120016
+ DCL ERR_SQLCODE FIXED BIN(31);                                         06130016
+                                                                        06140016
+ SELECT(ERR_SQLCODE);                                                   06150016
+    WHEN (0);                                                           06160016
+    WHEN (100)                                                          06170016
+       EDQBSHS.REQ.CRMORET = '9';                                       06180016
+    WHEN (-923)                                                         06190016
+       EDQBSHS.REQ.CRMORET = '8';                                       06200016
+    WHEN (9999)                                                         06210016
+       EDQBSHS.REQ.CRMORET = '4';                                       06220016
+    OTHERWISE                                                           06230016
+       EDQBSHS.REQ.CRMORET = '7';                                       06240016
+ END;                                                                   06250016
+                                                                        06260016
+0EDQBSHS.REQ.NTBLNME = ERR_TABLE;                                       06270016
+ EDQBSHS.REQ.CRMOSUB = ERR_SQLCODE;                                     06280016
+                                                                        06290016
+0RCBCQES.MESSAGE_TYPE  = 'IS';                                          06300016
+ RCBCQES.LANGUAGE_CODE = 'EN';                                          06310016
+ RCBCQES.PROGRAM_ID    = 'RCBCS5M';                                     06320016
+ CALL RCBCQEM(RCBCQES_PTR);                                             06330016
+ EXEC CICS RETURN;                                                      06340016
+0END RCBCS5M_LOG_ERROR;                                                 06350016
+-/*-----------------------------------------------------------------@*/ 06360016
+ /* IDENTIFIER : $DTSEP                                              */ 06370016
+ /* FUNCTION   : ADD SEPARATORS TO DATE OR TIME STRINGS              */ 06380016
+ /* DESCRIPTION: IF YEAR HAS 4 DIGITS, YYYYMMDD DATE FORMAT REQUIRED */ 06390016
+ /*      OTHERWISE WHICHEVER 6-DIGITS DATE OR TIME FORMAT IS ALLOWED */ 06400016
+ /*----------------------------------------------------------------@@*/ 06410016
+ $DTSEP:  PROC(DATE_IN,SEP)                                             06420016
+          RETURNS(CHAR(10)  VAR)  REORDER;                              06430016
+    DCL DATE_IN    CHAR(*);                                             06440016
+    DCL SEP        CHAR(01);                                            06450016
+    DCL DATE_OUT   CHAR(10)  VAR  INIT('');                             06460016
+    DCL LIN        FIXED BIN(15)  INIT(0);                              06470016
+    LIN = LENGTH(DATE_IN);                                              06480016
+    DATE_OUT = DATE_IN || (2)' ';                                       06490016
+    SUBSTR(DATE_OUT,LIN-3,3) =                                          06500016
+            SEP || SUBSTR(DATE_IN,LIN-3,2);                             06510016
+    SUBSTR(DATE_OUT,LIN,3)   =                                          06520016
+            SEP || SUBSTR(DATE_IN,LIN-1,2);                             06530016
+    RETURN(DATE_OUT);                                                   06540016
+  END  $DTSEP;                                                          06550016
+1/*******************************************************************/  06560016
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  06570016
+ /*******************************************************************/  06580016
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  06590016
+  $DAIMOD (RCBCS5M);                     /* MODULE TO BE COMPILED   */  06600016
+0/*******************************************************************/  06610016
+ /* END OF ABR BLOCK '                                              */  06620016
+ /*******************************************************************/  06630016
+0 END RCBCS5M;                                                          06640016

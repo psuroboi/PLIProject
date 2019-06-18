@@ -1,0 +1,217 @@
+ /* RCBABAM - CREATE 100-MES ORDER CHECK                             */ 00018011
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBABAM                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLI                                           */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : THIS PROGRAM CHECKS THE 'CRT_RCBT0100'        */ 00140000
+ /*                    TRANSACTION IN RELATION TO THE CURRENT        */ 00150000
+ /*                    DATA IN THE CEDS DATABASE.                    */ 00160000
+ /*                    IT WILL SEND THE INCOMING TRANSACTION         */ 00170000
+ /*                    TO BE PROCESSED.                              */ 00180000
+ /*                    FURTHER IT WILL SEND ADDITIONAL TRANSACTIONS  */ 00190000
+ /*                    TO BE PROCESSED IF (INTEGRITY OR BUSINESS)    */ 00200000
+ /*                    RULES HAVE BEEN VIOLATED, IN ORDER TO         */ 00210000
+ /*                    MAINTAIN INTEGRITY IN THE CEDS DATABASE.      */ 00220000
+ /*                                                                  */ 00230000
+ /*                    IF A RCBT0100 RECORD ALREADY EXISTS, IT WILL  */ 00240000
+ /*                    BE DELETED AND A NEW RCBT0100 RECORD WILL BE  */ 00250000
+ /*                    CREATED.                                      */ 00260000
+ /*                                                                  */ 00270000
+ /* INPUT            : A 'CRT_RCBT0100' RECORD                       */ 00280000
+ /*                                                                  */ 00290000
+ /* OUTPUT           : -                                             */ 00300000
+ /*                                                                  */ 00310000
+ /*                                                                  */ 00320000
+ /* EXTERNAL MODULES : RCBF10M  -  CREATE RCBT0100 (BB)              */ 00330000
+ /*                    RCBH10M  -  DELETE RCBT0100 (BB)              */ 00340000
+ /*                    RCB0E1M  -  COMMON ERROR ROUTINE              */ 00350000
+ /*                    RCB0M1M  -  COMMON MESSAGE ROUTINE            */ 00360000
+ /*                                                                  */ 00370000
+ /* MESSAGES         : 0105                                          */ 00380000
+ /*                                                                  */ 00390000
+ /* DEPENDENCIES     : NONE                                          */ 00400000
+ /*                                                                  */ 00410000
+ /* FREQUENCY        : -                                             */ 00420000
+ /*                                                                  */ 00430000
+ /* MAINTENANCE LOG    :                                             */ 00440000
+ /* ---------------                                                  */ 00450000
+ /*                                                                  */ 00460000
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00470000
+ /* --------------------------------------------------------------   */ 00480000
+ /*  04-09-1991 | ----         | CEDS INITIAL DEVELOPMENT            */ 00490000
+ /*  03-05-1993 | RC1032       | MCO AND TABLE CHANGES               */ 00500000
+ /*             |              |                                     */ 00510000
+ /********************************************************************/ 00520000
+1RCBABAM: PROC (PTR_RCBAACS,                                            00530000
+                PARM_REJECTED,                                          00540000
+                PTR_INT_AREA)                                           00550000
+          REORDER;                                                      00560000
+0DEFAULT RANGE (*)        STATIC;                                       00570000
+0/********************************************************************/ 00580000
+ /*  PARAMETERS                                                      */ 00590000
+ /********************************************************************/ 00600000
+0DCL PTR_RCBAACS          POINTER;                                      00610000
+0DCL PTR_INT_AREA         POINTER;                                      00620000
+0DCL 1 PARM_RCBAAC0    BASED (PTR_RCBAACS), /* CEDS ACTION RECORD    */ 00630000
+       3 RCBAACS,                                                       00640000
+         %INCLUDE (RCBAACS);,                                           00650000
+       3 RCB100S,                                                       00660000
+         %INCLUDE (RCB100S);,                                           00670000
+       3 RCB100S_I,                                                     00680000
+         %INCLUDE (RCB100SI);;                                          00690000
+0DCL 1 PARM_INT_AREA   BASED(PTR_INT_AREA),                             00700000
+     %INCLUDE (RCBZ01S);;                                               00710000
+0DCL PARM_REJECTED            BIT (1);                                  00720000
+0/********************************************************************/ 00730000
+ /* EXTERNAL ENTRIES                                                 */ 00740000
+ /********************************************************************/ 00750000
+0DCL RCBH10M   ENTRY  EXTERNAL;                                         00760000
+ DCL RCBF10M   ENTRY  EXTERNAL;                                         00770000
+ DCL RCB0E1M   ENTRY  EXTERNAL;                                         00780000
+ DCL RCB0M1M   ENTRY  EXTERNAL;                                         00790000
+0/********************************************************************/ 00800000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00810000
+ /********************************************************************/ 00820000
+0DCL 1 PARM_RCBZ02S,                        /* RETURN AREA FROM BB   */ 00830000
+     %INCLUDE (RCBZ02S);;                                               00840000
+0/********************************************************************/ 00850000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 00860000
+ /********************************************************************/ 00870000
+0DCL WRK_LEVEL                  FIXED BIN (15);                         00880000
+0DCL WRK_MOD_NAME               CHAR (08)        INIT ('RCBABAM');      00890000
+0/********************************************************************/ 00900000
+ /*  BUILTIN FUNCTIONS                                               */ 00910000
+ /********************************************************************/ 00920000
+0DCL ADDR       BUILTIN;                                                00930000
+ DCL NULL       BUILTIN;                                                00940000
+1/********************************************************************/ 00950000
+ /*  ON ERROR CONDITIONS                                             */ 00960000
+ /********************************************************************/ 00970000
+0%INCLUDE (RCB0E0M);                                                    00980000
+  END;                                                                  00990000
+1/********************************************************************/ 01000000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01010000
+ /********************************************************************/ 01020000
+0CALL RCBABAM_INIT;                                                     01030000
+0CALL RCBABAM_CREATE_RCBT0100;                                          01040000
+0SELECT (PARM_RCBZ02S.RETURN_CODE);                                     01050000
+0  WHEN (0);                                                            01060000
+0  WHEN (4)                                  /* ROW ALREADY EXISTS   */ 01070000
+     DO;                                     /* DELETE AND TRY TO    */ 01080000
+       CALL RCBABAM_DELETE_RCBT0100;         /* CREATE AGAIN         */ 01090000
+       CALL RCBABAM_ISSUE_MSG_0105;                                     01100000
+       CALL RCBABAM_CREATE_RCBT0100_RETRY;                              01110000
+     END;                                                               01120000
+ END;                                                                   01130000
+0CALL RCBABAM_END_PGM;                                                  01140000
+1/********************************************************************/ 01150000
+ /*      CREATE ROW IN RCBT0100                                      */ 01160000
+ /********************************************************************/ 01170000
+0RCBABAM_CREATE_RCBT0100 : PROC;                                        01180000
+0CALL RCBF10M (ADDR (PARM_RCBAAC0.RCB100S),                             01190000
+               ADDR (PARM_RCBAAC0.RCB100S_I),                           01200000
+               ADDR (PARM_RCBZ02S),                                     01210000
+               PTR_INT_AREA);                                           01220000
+0IF PARM_RCBZ02S.RETURN_CODE ¬= 0 & PARM_RCBZ02S.RETURN_CODE ¬= 4       01230000
+ THEN                                                                   01240000
+   DO;                                                                  01250000
+     CALL RCBABAM_ERROR (ADDR (PARM_RCBZ02S.RETURN_SQL),                01260000
+                        'DB2',                                          01270000
+                        '#001');                                        01280000
+   END;                                                                 01290000
+0END RCBABAM_CREATE_RCBT0100;                                           01300000
+1/********************************************************************/ 01310000
+ /*      RETRY TO CREATE ROW IN RCBT0100                             */ 01320000
+ /********************************************************************/ 01330000
+0RCBABAM_CREATE_RCBT0100_RETRY : PROC;                                  01340000
+0CALL RCBF10M (ADDR (PARM_RCBAAC0.RCB100S),                             01350000
+               ADDR (PARM_RCBAAC0.RCB100S_I),                           01360000
+               ADDR (PARM_RCBZ02S),                                     01370000
+               PTR_INT_AREA);                                           01380000
+0IF PARM_RCBZ02S.RETURN_CODE ¬= 0                                       01390000
+ THEN                                                                   01400000
+   DO;                                                                  01410000
+     CALL RCBABAM_ERROR (ADDR (PARM_RCBZ02S.RETURN_SQL),                01420000
+                        'DB2',                                          01430000
+                        '#002');                                        01440000
+   END;                                                                 01450000
+0END RCBABAM_CREATE_RCBT0100_RETRY;                                     01460000
+1/********************************************************************/ 01470000
+ /*      DELETE ROW IN RCBT0100                                      */ 01480000
+ /********************************************************************/ 01490000
+0RCBABAM_DELETE_RCBT0100 : PROC;                                        01500000
+0CALL RCBH10M (ADDR (PARM_RCBAAC0.RCB100S),                             01510000
+               ADDR (PARM_RCBAAC0.RCB100S_I),                           01520000
+               ADDR (PARM_RCBZ02S),                                     01530000
+               PTR_INT_AREA);                                           01540000
+0IF PARM_RCBZ02S.RETURN_CODE ¬= 0                                       01550000
+ THEN                                                                   01560000
+   DO;                                                                  01570000
+     CALL RCBABAM_ERROR (ADDR (PARM_RCBZ02S.RETURN_SQL),                01580000
+                        'DB2',                                          01590000
+                        '#003');                                        01600000
+   END;                                                                 01610000
+0END RCBABAM_DELETE_RCBT0100;                                           01620000
+1/********************************************************************/ 01630000
+ /*      ISSUE MESSAGE 0105                                          */ 01640000
+ /********************************************************************/ 01650000
+0RCBABAM_ISSUE_MSG_0105 : PROC;                                         01660000
+0PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';                          01670000
+ PARM_INT_AREA.MSG_AREA.MESSAGE_TYPE    = 'BU';                         01680000
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = '0105';                       01690000
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6  = 'MR';                         01700000
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6 =                               01710000
+                                 PARM_RCBAAC0.RCB100S.MES_ORDER_NUMBER; 01720000
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7  = 'TX';                         01730000
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7 = PARM_RCBAAC0.SOURCE_TXN_ID;   01740000
+0CALL RCB0M1M (PTR_INT_AREA);                                           01750000
+0END RCBABAM_ISSUE_MSG_0105;                                            01760000
+1/********************************************************************/ 01770000
+ /*      INITIALIZE                                                  */ 01780000
+ /********************************************************************/ 01790000
+0RCBABAM_INIT : PROC;                                                   01800000
+0                                        /* SET LEVEL AND MOD NAME   */ 01810000
+0WRK_LEVEL = PARM_INT_AREA.ID_MOD_LEVEL + 1;                            01820000
+ PARM_INT_AREA.ID_MOD_LEVEL            = WRK_LEVEL;                     01830000
+ PARM_INT_AREA.ID_MOD_PATH (WRK_LEVEL) = WRK_MOD_NAME;                  01840000
+0PARM_INT_AREA.COUNTRY_NUMBER = PARM_RCBAAC0.RCBAACS.COUNTRY_ID;        01850000
+0PARM_RCBZ02S  =  '';                                                   01860000
+0END RCBABAM_INIT;                                                      01870000
+1/********************************************************************/ 01880000
+ /*      END PROGRAM                                                 */ 01890000
+ /********************************************************************/ 01900000
+0RCBABAM_END_PGM : PROC;                                                01910000
+0                                        /* RESET LEVEL              */ 01920000
+ PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            01930000
+0END RCBABAM_END_PGM;                                                   01940000
+1/********************************************************************/ 01950000
+ /*      CALL COMMON ERROR ROUTINE AFTER FILLING VARIABLES           */ 01960000
+ /********************************************************************/ 01970000
+0RCBABAM_ERROR : PROC     (PTR_ERROR,                                   01980000
+                           ERR_TYPE,                                    01990000
+                           CALL_ID);                                    02000000
+0DCL PTR_ERROR    POINTER;                                              02010000
+ DCL ERR_TYPE     CHAR(8);                                              02020000
+ DCL CALL_ID      CHAR(4);                                              02030000
+0PARM_INT_AREA.PTR_ERROR      =  PTR_ERROR;                             02040000
+ PARM_INT_AREA.ERR_TYPE       =  ERR_TYPE;                              02050000
+ PARM_INT_AREA.CALL_ID        =  CALL_ID;                               02060000
+0CALL RCB0E1M (PTR_INT_AREA);                                           02070000
+0END RCBABAM_ERROR;                                                     02080000
+1/*******************************************************************/  02090000
+ /* DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                    */  02100000
+ /*******************************************************************/  02110000
+0%INCLUDE DAIFPLH ;                   /* COMPILE DATE/TIME STAMP    */  02120000
+ $DAIMOD (RCBABAM);                   /* MODULE TO BE COMPILED      */  02130000
+0/*******************************************************************/  02140000
+ /* END OF ABR BLOCK                                                */  02150000
+ /*******************************************************************/  02160000
+0END RCBABAM;                                                           02170000

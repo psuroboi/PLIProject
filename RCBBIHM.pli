@@ -1,0 +1,3443 @@
+ /* RCBBIHM - PEW REGISTRATION: CONVERT                              */
+ /*                                                                  */
+ /********************************************************************/
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM                                       */
+ /*                                                                  */
+ /* PROGRAM NAME     : RCBBIHP                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLISQL                                        */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : CONVERT PEW FILE TO A PRIME                   */
+ /*                    INPUT STANDARD INTERFACE FILE TO MAINTAIN     */
+ /*                    CEDS-TABLES 0051 AND 0241                     */
+ /*                                                                  */
+ /* INPUT            : RCBBIH0 - PEW FILE                            */
+ /*                    RCBBIH2 - SPECIAL PRODUCT FILE        RB01255 */
+ /*                    RCBBIHB - SORTED UNLOAD OF T690       RB01298 */
+ /*                    DB2 - RCBT0051_PI_HW_PR                       */
+ /*                    DB2 - RCBT0241_PI_CTR                         */
+ /*                    DB2 - RCBT0640_TRANS_SVT              RB01285 */
+ /*                    DB2 - RCBT0680_TRANS_PEW              RB01285 */
+ /*                    DB2 - RCBT0500_PARM                           */
+ /*                                                                  */
+ /* OUTPUT           : RCBBIB0 - RCB INVENTORY FILE                  */
+ /*                  : RCBBIC0 - RCB CONTRACT FILE           RB01285 */
+ /*                  : RCBBIH1 - REJECTED PEW RECORDS                */
+ /*                  : RCB0M10 - MESSAGE FILE                        */
+ /*                    DB2 - RCBT0400_PO_MOD1                RB01278 */
+ /*                  : DB2 - RCBT0500_PARM                           */
+ /*                  : DB2 - RCBT0690_FLEX_WARR              RB01281 */
+ /*                                                                  */
+ /* EXTERNAL MODULES : RCB004M - DATA CALCULATION AND CONVERSION     */
+ /*                  : RCB013M - READ PARAMETER FILE                 */
+ /*                  : RCB019M - RETRIEVE COUNTRY-NUMBERS            */
+ /*                  : RCB020M - RETRIEVE RUN-DATE                   */
+ /*                  : RCB023M - RETRIEVE APPLICABLE SLC             */
+ /*                  : RCBF50M - INSERT FILE SEQUENCE NUMBER         */
+ /*                  : RCBI50M - RETRIEVE FILE SEQUENCE NO           */
+ /*                  : RCBI82M - RETRIEVE T051                       */
+ /*                  : RCBG50M - UPDATE FILE SEQUENCE NUMBER         */
+ /*                  : RCBBIHU - USER EXIT FOR PEW                   */
+ /*                  : RCB0E1M - COMMON ERROR MODULE                 */
+ /*                  : RCB0M1M - COMMON MESSAGE MODULE               */
+ /*                  : RCB0T1M - COMMON MESSAGE MODULE               */
+ /*                  : RCBI68M - RETRIEVE PEW SDF            RB01285 */
+ /*                  : RCBIBOM - RETRIEVE SERVICE TYPE       RB01285 */
+ /*                                                                  */
+ /* MESSAGES         : 0003 - RECORDS READ, BLOCKED, REJECTED        */
+ /*                    0004 - NUMBER OF RECORDS WRITTEN              */
+ /*                    0005 - NO COUNTRY FOUND FOR PROGRAM           */
+ /*                    0007 - NUMBER OF RECORDS INCONSISTENT         */
+ /*                    0012 - DATE INCORRECT                         */
+ /*                    0013 - EMPTY FILE OR DATABASE                 */
+ /*                    0014 - INVALID HEADER RECORD                  */
+ /*                    0015 - RECORDS FOUND AFTER TRAILER            */
+ /*                    0016 - NO HEADER FOUND                        */
+ /*                    0017 - NO TRAILER FOUND                       */
+ /*                    0027 - INCORRECT DATE SEQUENCE                */
+ /*                    0028 - WARRANTY TYPE NOT FILLED DURING WARRANT*/
+ /*                    0031 - BOTH T.O.M. AND T.O.W. BLANK           */
+ /*                    0033 - INPUT RECORD WAS REJECTED              */
+ /*                    0039 - INVALID RECORD TYPE                    */
+ /*                    0040 - TOS NOT FOUND IN INVENTORY TABLE       */
+ /*                    I050 - RECORD NOT FOUND                       */
+ /*                    0180 - RUNS ARE OUT OF SEQUENCE               */
+ /*                    0181 - COUNTRY NUMBER SKIPPED                 */
+ /*                    0184 - COUNTRY REQUESTED, BUT NOT PRESENT     */
+ /*                    0198 - CUSTOMER NUMBER INVALID                */
+ /*                    0199 - MACHINE SERIAL NUMBER INVALID          */
+ /*                    0216 - RUNDATE RETRIEVED                      */
+ /*                    0223 - SDF NOT FOUND IN THE SDF TABLE         */
+ /*                    0232 - RECORD ALREADY EXISTS                  */
+ /*                    0235 - SPECIAL PRODUCT RECORD COUNT           */
+ /*                    9999 - PROGRAM SUCCESSFULLY ENDED             */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT (ON REQUEST)                   */
+ /*                                                                  */
+ /* MAINTENANCE LOG :                                                */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /* DATE       | WORK-ITEMNO. | DESCRIPTION                          */
+ /* ---------------------------------------------------------------  */
+ /* 2000-09-20 | RA01225      | CONFIGURABLE SERVICES                */
+ /* 2001-04-05 | PTM1346      | SET INVALID CUSTOMER NOS TO PW000000 */
+ /* 2001-08-06 | PTM1352      | PRG_TYPE NOT SET FOR ACER RECORDS    */
+ /* 2001-11-20 | RA01229      | SERVICE REFERENCE INTERIM SOLUTION   */
+ /* 18-07-2002 | WI7004       | SERVICE TYPE ENHANCEMENTS            */
+ /* 22-07-2002 | WI7013       | PEW EXTRACT ENHANCEMENTS             */
+ /* 2003-10-30 | PTM1410      | FILE SEQUENCE NUMBER CHANGE          */
+ /* 2004-06-16 | RB01255      | SUPPORT AVAYA PRODUCTS               */
+ /* 2004-06-29 | RB01242      | INCREASE LENGTH OF SERIAL NUMBER     */
+ /* 2004-10-11 | PTM1418      | REMOVE CONFIGURABLE SERVICES PROCESS */
+ /* 2006-08-31 | RB01278      | (LENOVO) VENDOR COST ASSIGNMENT      */
+ /*            |              | - ASSIGNING VALUE 'C' TO WARRANTY    */
+ /*            |              |   FOR LENOVO PRODUCTS                */
+ /* 2007-03-27 | RB01281      | CHANGES FOR FLEXIBLE WARRANTY MACHINE*/
+ /*            |              | MACHINES                             */
+ /* 2007-11-07 | CEDS00000357 | CHANGE FOR WARRANTY_SPLT_DATE IN T051*/
+ /* 2007-11-22 | RB01285      | PCR P07-0045 ALLOW CONTRACTS FROM PEW*/
+ /*            |              | BASED ON PARAMETER                   */
+ /* 2007-11-26 | RB01283      | LENOVO FLAG                          */
+ /* 2007-11-26 | RB01284      | SDF TO SLC MAPPING                   */
+ /* 2008-02-04 | RB01289      | PRIME INPUT CUSTOMER NUMBER          */
+ /* 2008-07-31 | CEDS00000421 | MOVE BLANK WHEN SLC2 CONTAINS LOW    */
+ /*            |              | VALUES                               */
+ /* 2008-11-12 | RB01298      | HANDLING HARDBUNDLE MACHINES AND     */
+ /*            |              | PERFORMANCE IMPROVEMENT FIX ON FLEX- */
+ /*            |              | WARR CHANGES,PCR-0013(PART OF 3.3A10)*/
+ /* 2010-07-26 | CEDS00000534 | COMMENTED OUT RCBBIC0.CUSTOMER NUMBER*/
+ /*            |              | TO RCBBIHU                           */
+ /* 2011-04-05 | RB01312      | T10-1083: USE T690 SLC1 IRRESPECTIVE */
+ /*            |              | OF BRAND WARRANTY DURATION AND       */
+ /*            |              | T10-1371/PCR P10-308,SDF TO SLC LOGIC*/
+ /*            |              | IS NOT PERFORMED ON FW/HB MACHINES   */
+ /* 2012-06-21 | RB01320      | T080318 : VALIDATE CUSTOMER NO. TO   */
+ /*            |              | SET THE DEALER NO. CORRECTLY.        */
+ /* 2014-01-08 | CEDS00000661 | ASSIGNING 'C' SAME AS TOW FOR FTOW   */
+ /*            |              | - LEN MACH SERVICE ON BEHALF OF      */
+ /*            |              | VENDOR - T10-1419                    */
+ /* 2014-04-23 | CEDS00000678 | TEMEA-T081535 - UPDATED FOR REAL     */
+ /*            |              | SPLIT WARRANTY SECOND PERIOD IS NOT  */
+ /*            |              | GETTING POPULATED CORRECTLY WHEN     */
+ /*            |              | T690 UNLOAD FILE IS EMPTY            */
+ /* 2014-09-02 | RC01346      | MACHINE SERIAL LONGER THAN 7         */
+ /*            |              | CHARACTERS IN UI07 PEW INVENTORY     */
+ /*            |              | FILE - PCEDSP-0496                   */
+ /* 2014-09-18 | CEDS00000698 | REMOVED UNWANTED DISPLAY STATEMENTS  */
+ /* 2015-03-20 | RC01355      | REMOVAL OF  PCR-496 CHANGES          */
+ /* 2015-08-03 | CEDS00000766 | TEMEA-T081602 - CODE CHANGES DONE TO */
+ /*            |              | POPULATE CORRECT CUSTOMER NUMBER     */
+ /********************************************************************/
+1/********************************************************************/
+ /* DEBUGGING                                                        */
+ /*                                                                  */
+ /* PROGRAMFLOW TRACING : PUT 'RCBBIHM_CHECK' ON 'Y'                 */
+ /* INFO PROGRAMMER     : PUT 'RCBBIHM_DEBUG' ON 'Y'                 */
+ /* (DON'T FORGET: DCL SYSPRINT FILE EXTERNAL PRINT)                 */
+ /*                                                                  */
+ /* >>> FOR RELEASE BOTH VALUES MUST BE 'N' <<<                      */
+ /*                                                                  */
+ /********************************************************************/
+0%DCL RCBBIHM_DEBUG CHAR;
+ %DCL RCBBIHM_CHECK CHAR;
+ %RCBBIHM_DEBUG = 'N';
+ %RCBBIHM_CHECK = 'N';
+0%IF ( RCBBIHM_CHECK = 'Y' ) %THEN
+ %DO;
+   (CHECK(
+   RCBBIHM                      ,
+   RCBBIHM_INIT_PROGRAM         ,
+   RCBBIHM_INIT_COUNTRY         ,
+   RCBBIHM_GET_PW_MAXNUMBER     ,                         /* RB01289 */
+   RCBBIHM_GET_PE_MAXNUMBER     ,                         /* RB01289 */
+   RCBBIHM_READ_RECORD          ,
+   RCBBIHM_READ_SPEC_PROD       ,
+   RCBBIHM_GET_KEYSPEC          ,
+   RCBBIHM_PROCESS_HEADER       ,
+   RCBBIHM_INIT_WRK_FIELDS      ,
+   RCBBIHM_CHECK_PEWREC         ,
+   RCBBIHM_XVALID_DATE          ,
+   RCBBIHM_HANDLE_USEREXIT      ,
+   RCBBIHM_FILL_INVENTORY       ,
+   RCBBIHM_FILL_T690_ARRAY      ,                         /* RB01298 */
+   RCBBIHM_RETRIVE_FLEXIBLE     ,
+   RCBBIHM_HANDLE_RCB023M       ,
+   RCBBIHM_CALC_DATE            ,
+   RCBBIHM_WRITE_INVENTORY      ,
+   RCBBIHM_SKIP_RECORD          ,
+   RCBBIHM_REJECT_RECORD        ,
+   RCBBIHM_PROCESS_TRAILER      ,
+   RCBBIHM_CONTROL_COUNTERS     ,
+   RCBBIHM_TERM_COUNTRY         ,
+   RCBBIHM_TERM_PROGRAM         ,
+   RCBBIHM_MSG                  ,
+   RCBBIHM_RETRIEVE_T051        ,
+   RCBBIHM_ERROR                ,
+   RCBBIHM_RETRIEVE_SDF         ,                         /* RB01285 */
+   RCBBIHM_RETRIEVE_SVT         ,                         /* RB01285 */
+   RCBBIHM_FILL_CONTRACT        ,                         /* RB01285 */
+   RCBBIHM_WRITE_CONTRACT       ,                         /* RB01285 */
+   RCBBIHM_SDF_SLC              ,                         /* RB01284 */
+   RCBBIHM_TRANS_SLC            ,                         /* RB01284 */
+   RCBBIHM_PEWSOURCE_ON                                   /* RB01284 */
+   )):
+ %END;
+1RCBBIHM: PROC
+          OPTIONS (MAIN)
+          REORDER;
+0/********************************************************************/
+ /* FILE DECLARATIONS                                                */
+ /********************************************************************/
+ DCL SYSPRINT FILE EXTERNAL PRINT;  /*                               */
+ DCL RCBBIH0  FILE RECORD INPUT;    /* PEW FILE                      */
+ DCL RCBBIH2  FILE RECORD INPUT;    /* SPECIAL PRODUCTS    - RB01255 */
+ DCL RCBPEW   FILE RECORD INPUT;    /* SPEC.PROD.  COUNTRY NUMBER    */
+ DCL RCBBIB0  FILE RECORD OUTPUT;   /* RCB INVENTORY FILE            */
+ DCL RCBBIC0  FILE RECORD OUTPUT;   /* RCB CONTRACT FILE     RB01285 */
+ DCL RCBBIH1  FILE RECORD OUTPUT;   /* REJECTED SHRINK WRAP RECORDS  */
+ DCL RCB0M10  FILE RECORD OUTPUT;   /* MESSAGE FILE                  */
+ DCL RCBBIHB  FILE RECORD INPUT;    /* TABLE 690 RECORDS -   RB01298 */
+ /********************************************************************/
+ /* EXTERNAL ENTRIES                                                 */
+ /********************************************************************/
+ DCL RCB0E1M    ENTRY EXTERNAL;        /* COMMON ERROR ROUTINE       */
+ DCL RCB0M1M    ENTRY EXTERNAL;        /* COMMON MESSAGE ROUTINE     */
+ DCL RCB0T1M    ENTRY EXTERNAL;        /* COMMON MESSAGE ROUTINE     */
+ DCL RCB004M    ENTRY EXTERNAL;        /* DATE CALC ROUTINE          */
+ DCL RCB013M    ENTRY EXTERNAL;        /* READ PARAMETER FILE        */
+ DCL RCB019M    ENTRY EXTERNAL;        /* RETRIEVE COUNTRY-NUMBERS   */
+ DCL RCB020M    ENTRY EXTERNAL;        /* RETRIEVE RUN-DATE          */
+ DCL RCB023M    ENTRY EXTERNAL;        /* GET WED, SLC'S + W_SPLT_DT */
+ DCL RCBF50M    ENTRY EXTERNAL;        /* INSERT FILE SEQUENCE NO    */
+ DCL RCBI50M    ENTRY EXTERNAL;        /* RETRIEVE FILE SEQUENCE NO  */
+ DCL RCBG50M    ENTRY EXTERNAL;        /* UPDATE FILE SEQUENCE NO    */
+ DCL RCBI68M    ENTRY EXTERNAL;        /* RETRIEVE SDF       RB01285 */
+                                       /* SOC: WI-7013       */
+ DCL RCBI82M    ENTRY EXTERNAL;        /* EXTRACT REF. OF RCBT0051   */
+                                       /* EOC: WI-7013               */
+                                                          /* RB01285 */
+ DCL RCBIBOM    ENTRY EXTERNAL;        /* RETRIEVE SERVICE TYPE      */
+ DCL RCBBIHU    ENTRY EXTERNAL;        /* USER EXIT FOR RCBBIHM      */
+1/********************************************************************/
+ /* EXTERNAL PARAMETER INTERFACES                                    */
+ /********************************************************************/
+ DCL PTR_DATE_AREA        PTR;         /* RCB004M DATE CHECK         */
+ DCL PTR_INT_AREA         PTR;
+ DCL PTR_RETURN_AREA      PTR;
+ DCL PTR_COUNTRY_AREA     PTR;
+ DCL PTR_RUN_DATE_AREA    PTR;
+ DCL RETCODE              FIXED BIN(31);
+
+ DCL 1 DATE_AREA,                      /* DATE AREA                  */
+       %INCLUDE (RCBZ03S);;
+ DCL 1 PARM_INT_AREA,                  /* INTERFACE AREA             */
+       %INCLUDE (RCBZ01S);;
+ DCL 1 PARM,                           /* PARAMETER STRUCTURE        */
+       %INCLUDE (RCBZ13S);;
+ DCL 1 RETURN_AREA,                    /* RETURN AREA                */
+       %INCLUDE (RCBZ02S);;
+ DCL 1 COUNTRY_AREA,                   /* COUNTRY ARRAY AREA         */
+       %INCLUDE (RCBZ26S);;
+ DCL 1 RUN_DATE_AREA,                  /* RUNDATE AREA               */
+       %INCLUDE (RCBZ28S);;
+ DCL 1 PARM_RCBZ32S,                   /* INTERFACE AREA TO RCB023M  */
+       %INCLUDE (RCBZ32S);;
+
+1/********************************************************************/
+ /* DB2 TABLE STRUCTURES                                             */
+ /********************************************************************/
+                                                      /* SOC RB01285 */
+ DCL 1 RCB640S,                        /* TRANS SVT                  */
+       %INCLUDE (RCB640S);;
+ DCL 1 RCB640SI,                       /* NULL-INDICATORS            */
+       %INCLUDE (RCB640SI);;
+ DCL PTR_RCBV640    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV640I   PTR;               /* PTR NULL-IND. PARAMETER    */
+ DCL 1 TB_RCBV640,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB640S);;
+ DCL 1 TB_RCBV640_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB640SI);;
+
+ DCL 1 RCB680S,                        /* PEW SDF                    */
+       %INCLUDE (RCB680S);;
+ DCL 1 RCB680SI,                       /* NULL-INDICATORS            */
+       %INCLUDE (RCB680SI);;
+ DCL PTR_RCBV680    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV680I   PTR;               /* PTR NULL-IND. PARAMETER    */
+ DCL 1 TB_RCBV680,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB680S);;
+ DCL 1 TB_RCBV680_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB680SI);;
+                                                      /* EOC RB01285 */
+
+ DCL PTR_RCBV500    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV500I   PTR;               /* PTR NULL-IND. PARAMETER    */
+ DCL 1 TB_RCBV500,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB500S);;
+ DCL 1 TB_RCBV500_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB500SI);;
+                                       /* SOC: WI-7013               */
+ DCL PTR_RCBV051    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV051I   PTR;               /* PTR NULL-IND. PARAMETER    */
+ DCL 1 TB_RCBV051,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB051S);;
+ DCL 1 TB_RCBV051_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB051SI);;
+                                       /* EOC: WI-7013               */
+ DCL 1 TB_RCBV400,                                    /* SOC RB01278 */
+       %INCLUDE (RCB400S);;
+0DCL 1 TB_RCBV400_I,
+       %INCLUDE (RCB400SI);;
+
+                                                      /* SOC RB01298 */
+ /*DCL 1 TB_RCBV690,                                  /* SOC RB01281 */
+ /*      %INCLUDE (RCB690S);;
+ /*0DCL 1 TB_RCBV690_I,
+ /*      %INCLUDE (RCB690SI);;                       /* EOC RB01281 */
+ DCL 1 FILE_RCBBIHB,                           /* SORTED UNLOAD FILE */
+      %INCLUDE (RCBBCAS);;
+                                                      /* EOC RB01298 */
+
+ DCL 1 TB_RCBV650,                                    /* SOC RB01284 */
+       %INCLUDE (RCB650S);;
+0DCL 1 TB_RCBV650_I,
+       %INCLUDE (RCB650SI);;                          /* EOC RB01284 */
+ /*------------------------------------------------------------------*/
+ /* INCLUDE SQLCA                                                   */
+ /*-----------------------------------------------------------------*/
+ EXEC SQL INCLUDE SQLCA;
+
+                                                      /* EOC RB01278 */
+1/********************************************************************/
+ /*  PROGRAM CONTROL PARAMETERS                                      */
+ /********************************************************************/
+
+0DCL 1 TB_RCB035        BASED(PTR_RCBV500),           /*FILE SEQUENCE*/
+       %INCLUDE (RCBP35S);;
+0DCL 1 RCB035,
+       %INCLUDE (RCBP35S);;
+0DCL 1 TB_RCB015        BASED(PTR_RCBV500),
+       %INCLUDE (RCBP15S);;
+0DCL 1 TB_RCB103        BASED(PTR_RCBV500),          /* SOC RB01278 */
+       %INCLUDE (RCBP103S);;
+0DCL 1 RCB103,
+       %INCLUDE (RCBP103S);;                         /* EOC RB01278 */
+
+0DCL 1 TB_RCB063        BASED(PTR_RCBV500),          /* SOC RB01281 */
+       %INCLUDE (RCBP63S);;
+0DCL 1 RCB063,
+       %INCLUDE (RCBP63S);;                          /* EOC RB01281 */
+
+0DCL 1 TB_RCB064        BASED(PTR_RCBV500),           /* SOC RB01298 */
+       %INCLUDE (RCBP64S);;
+0DCL 1 RCB064,
+       %INCLUDE (RCBP64S);;                           /* EOC RB01298 */
+
+0DCL 1 TB_RCB150        BASED(PTR_RCBV500),           /* SOC RB01285 */
+       %INCLUDE (RCBP150S);;
+0DCL 1 RCB150,
+       %INCLUDE (RCBP150S);;                          /* EOC RB01285 */
+
+0DCL 1 TB_RCB151        BASED(PTR_RCBV500),           /* SOC RB01284 */
+       %INCLUDE (RCBP151S);;
+0DCL 1 RCB151,
+       %INCLUDE (RCBP151S);;
+
+0DCL 1 TB_RCB152        BASED(PTR_RCBV500),
+       %INCLUDE (RCBP152S);;
+0DCL 1 RCB152,
+       %INCLUDE (RCBP152S);;
+
+0DCL 1 TB_RCB153        BASED(PTR_RCBV500),
+       %INCLUDE (RCBP153S);;
+0DCL 1 RCB153,
+       %INCLUDE (RCBP153S);;
+
+0DCL 1 TB_RCB154        BASED(PTR_RCBV500),
+       %INCLUDE (RCBP154S);;
+0DCL 1 RCB154,
+       %INCLUDE (RCBP154S);;                          /* EOC RB01284 */
+1/********************************************************************/
+ /* RECORD STRUCTURES FOR INPUT AND OUTPUT FILES                     */
+ /********************************************************************/
+ DCL FILE_RCBBIH0     CHAR(263); /* IOAREA PEW FILE                  */
+ DCL 1 RCBBIH0_HEADER BASED(ADDR(FILE_RCBBIH0)),
+      %INCLUDE RCBBIHSH;;         /* IOAREA MACHINE RECORD            */
+ DCL 1 RCBBIH0_TRAILER BASED(ADDR(FILE_RCBBIH0)),
+      %INCLUDE RCBBIHST;;         /* IOAREA MACHINE RECORD            */
+ DCL 1 RCBBIH0_PEW    BASED(ADDR(FILE_RCBBIH0)),
+      %INCLUDE RCBBIHS;;         /* IOAREA MACHINE RECORD            */
+
+ DCL FILE_RCBBIH1     CHAR(263); /* IOAREA REJECTED PEW RECORDS      */
+
+
+ DCL 1 FILE_RCBBIB0,             /* IOAREA RCB INVENTORY FILE        */
+      %INCLUDE RCBBIBS;;
+                                                      /* SOC RB01285 */
+ DCL 1 FILE_RCBBIC0,             /* IOAREA RCB CONTRACT FILE         */
+      %INCLUDE RCBBICS;;
+                                                      /* EOC RB01285 */
+
+ DCL FILE_RCBPEW      CHAR(80);  /* IOAREA SPECIAL PRODUCTS COUNTRY  */
+ DCL 1 RCBPEW_REC     BASED(ADDR(FILE_RCBPEW)),
+       3 COUNTRY      CHAR(3),
+       3 PGR_TYPE     CHAR(3);
+                                                      /* SOC RB01255 */
+ DCL FILE_RCBBIH2     CHAR(80);  /* IOAREA SPECIAL PRODUCTS FILE     */
+ DCL 1 RCBBIH2_REC    BASED(ADDR(FILE_RCBBIH2)),
+      %INCLUDE RCBBIHS2;;        /* IOAREA SPECIAL PRODUCTS RECORD   */
+                                                      /* EOC RB01255 */
+
+ DCL 1 USER_FILE,                /* INTERFACE FOR USER EXIT RCBBIHU  */
+       2 DATA,
+      %INCLUDE RCBBIHSU;;
+1/********************************************************************/
+ /* BIT SWITCHES                                                     */
+ /********************************************************************/
+0DCL TRUE                  BIT(1) INIT('1'B);
+ DCL FALSE                 BIT(1) INIT('0'B);
+ DCL EOF_RCBBIH0           BIT(1) INIT('0'B);/* END-OF-FILE SWITCH   */
+                                                      /* SOC RB01255 */
+ DCL EOF_RCBBIH2           BIT(1) INIT('0'B);/* EOF SPEC.PROD. FILE  */
+ DCL SPEC_PROD_COUNTRY     BIT(1) INIT('0'B);/* SPECIAL PRODUCT CTRY */
+ DCL SPEC_PROD_ALL_TYPES   BIT(1) INIT('0'B);/* SPEC.PROD. ALL TYPES */
+ DCL SKIP_RECORD           BIT(1) INIT('0'B);/* SKIP THE RECORD      */
+                                                      /* EOC RB01255 */
+ DCL RECORD_CORRECT        BIT(1);
+ DCL FOUND                 BIT(1);
+ DCL SW_COVERAGE_HOURS_FOUND   BIT (1)   INIT ('0'B);
+ DCL SKIP_COUNTRY          BIT(1) INIT('0'B);
+ DCL SWITCH_END_CTY        BIT(1) INIT('0'B);
+ DCL SWITCH_USER_EXIT      BIT(1) INIT('1'B);
+ DCL SWITCH_VENDOR_SERVICE BIT(1) INIT('0'B);             /* RB01278 */
+ DCL SWITCH_FLEXIBLE_WARRANTY BIT(1) INIT('0'B);          /* RB01281 */
+                                                      /* SOC RB01285 */
+ DCL WARR_UPG              BIT(1) INIT('0'B);    /* WARRANTY UPGRADE */
+ DCL SWITCH_PEW_CONTRACT   BIT(1) INIT('0'B);
+                                                      /* EOC RB01285 */
+ DCL SWITCH_PEW_SOURCE     BIT(1) INIT('0'B);         /* SOC RB01284 */
+ DCL SWITCH_SDF_SLC        BIT(1) INIT('0'B);
+ DCL SWITCH_PER_CALL       BIT(1) INIT('0'B);         /* EOC RB01284 */
+ DCL SWITCH_PWDUMMY_FLAG   BIT(1) INIT('0'B);             /* RB01289 */
+                                                      /* SOC RB01298 */
+ DCL SWITCH_EMPTY_T690     BIT(1) INIT ('0'B);
+ DCL EOF_RCBBIHB           BIT(1) INIT ('0'B);
+                                                      /* EOC RB01298 */
+0/********************************************************************/
+ /* MISCELLANEOUS FIELDS                                             */
+ /********************************************************************/
+0DCL G_WRK_MOD_NAME       CHAR(08) INIT ('RCBBIHM ');
+ DCL G_WRK_PGM_NAME       CHAR(08) INIT ('RCBBIHP ');
+ DCL G_WRK_SYSTEM_TYPE    CHAR(01) INIT ('B');
+ DCL G_WRK_INSTALL_DATE   CHAR(10);
+ DCL L_WARR_EXP_DATE      CHAR(10);
+ DCL G_SAVE_KEY           CHAR(11);
+ DCL WRK_SERV_TYPE        CHAR(01) INIT('');
+ DCL WRK_CTRYNO           CHAR(03) INIT('');
+ DCL WRK_SDF              CHAR(03) INIT('');
+ DCL WRK_RUN_DATE         CHAR(10);
+ DCL WRK_CTRY_FILE_PREV   CHAR(03);
+ DCL WRK_PEW_WED_IND      CHAR(01);
+ DCL WRK_PGR_RUN_TYPE     CHAR(03);
+ DCL WRK_FILE_SEQ         PIC '999';
+ DCL WRK_CUST_NO          CHAR(06) INIT('000000');     /* SOC RB01289 */
+ DCL WRK_CUST_CNT         PIC '999999' INIT(0)
+                          BASED(ADDR(WRK_CUST_NO));
+ /*DCL WRK_CUST_CNT         PIC '999999' INIT(0);*/    /* EOC RB01289 */
+ DCL WRK_ORIGIN           CHAR(02);
+ DCL WRK_SEQUENCE_NUMBER  CHAR(28);                        /* RB01242 */
+ DCL WRK_SEARCH_FIELD     CHAR(03);
+ DCL WRK_RULE             CHAR(02);                    /* SOC RB01298 */
+ DCL WRK_FWTOW            CHAR(01);
+ DCL WRK_HBTOM            CHAR(01);                    /* EOC RB01298 */
+ DCL L_CNT_PIC10          PIC 'Z,ZZZ,ZZZ,ZZ9';
+ DCL L_CNT_PIC9           PIC '999999999';
+ /* DCL WRK_PROD_REVENUE_DIV CHAR(02);                 /* SOC RB01278 */
+                                                           /* RB01283 */
+ DCL WRK_PRODUCT_TYPE     CHAR(04);
+ DCL WRK_MODEL            CHAR(03);
+ /* DCL WRK_LENOVO_DATE      CHAR(10) INIT('2005-05-01');    RB01283*/
+ DCL WRK_INDNULL          FIXED BIN (15);            /* EOC RB01278 */
+                                                     /* SOC RB01285 */
+ DCL WRK_COUNT      PIC '99'; /* FIXED BIN(31); NUMBER OF COUNTRIES */
+ DCL   K            PIC '99'; /* FIXED BIN(31); */
+                                                     /* EOC RB01285 */
+ DCL WRK_PEW_SDF          CHAR(03) INIT('');             /* RB01284 */
+0DCL 1 G_CNTS,
+      3 CNT,
+       5 RCBBIH0_READ     FIXED BIN (31),
+       5 RCBBIH0_SKIP     FIXED BIN (31),
+       5 RCBBIH0_REJECT   FIXED BIN (31),
+       5 RCBBIH0_ACCEPT   FIXED BIN (31),
+       5 RCBBIH0_BLOCK    FIXED BIN (31),
+       5 RCBBIH0_SPROD    FIXED BIN (31),                 /* RB01255 */
+       5 RCBBIB0_WRITE    FIXED BIN (31),
+       5 RCBBIC0_WRITE    FIXED BIN (31),                 /* RB01285 */
+      3 TOT,
+       5 RCBBIH0_READ     FIXED BIN (31),
+       5 RCBBIH0_SKIP     FIXED BIN (31),
+       5 RCBBIH0_REJECT   FIXED BIN (31),
+       5 RCBBIH0_ACCEPT   FIXED BIN (31),
+       5 RCBBIH0_BLOCK    FIXED BIN (31),
+       5 RCBBIH0_SPROD    FIXED BIN (31),                /* RB01255 */
+       5 RCBBIB0_WRITE    FIXED BIN (31),
+       5 RCBBIC0_WRITE    FIXED BIN (31),                /* RB01285 */
+      3 HEAD_SEQ          FIXED BIN (31),                /* RB01285 */
+      3 TRAILER_SEQ       FIXED BIN (31),
+      3 COMPARE_TOTAL     FIXED BIN (31);
+ DCL CTY_IDX              FIXED DEC (3,0) INIT(0);
+                                                     /* SOC RB01255 */
+ %DCL TABMAX FIXED                      /* NUMBER OF TABLE ENTRIES  */;
+ %TABMAX = 999                          /* SETTING IT TO 999        */;
+
+ DCL MAX_SPEC_PROD        FIXED BIN(31)  INIT(TABMAX);
+
+ DCL 1 SPEC_PROD_RUN(TABMAX),            /* SPECIAL PROD. RUN TABLE  */
+      3 COUNTRY_CODE      CHAR(03),
+      3 MACHINE_TYPE      CHAR(04),
+      3 MACHINE_MODEL     CHAR(03);
+
+ DCL 1 SPEC_PROD_CTY(TABMAX),            /* SPEC.PROD. COUNTRY TABLE */
+      3 COUNTRY_CODE      CHAR(03),
+      3 MACHINE_TYPE      CHAR(04),
+      3 MACHINE_MODEL     CHAR(03);
+
+ DCL IR                    FIXED BIN(31); /* INDEX FOR RUN TABLE     */
+ DCL IC                    FIXED BIN(31); /* INDEX FOR COUNTRY TABLE */
+
+ DCL SPEC_PROD_RUN_COUNT   FIXED BIN(31); /*RUN     TABLE ENTRY COUNT*/
+ DCL SPEC_PROD_CTY_COUNT   FIXED BIN(31); /*COUNTRY TABLE ENTRY COUNT*/
+                                                      /* EOC RB01255 */
+                                                      /* SOC RB01298 */
+ DCL REC_COUNT           FIXED BIN(31)   INIT(0);
+ DCL L,M,N               FIXED BIN(31)   INIT(0);
+ DCL 1 T690_ARRAY(REC_COUNT) CTL,
+        2 A_COUNTRY    CHAR(3),
+        2 A_TYPE       CHAR(4),
+        2 A_MODEL      CHAR(3),
+        2 A_B_W_MNTHS  DEC FIXED(3,0),
+        2 A_SLC_NULLIND CHAR(1),
+        2 A_SLC        CHAR(3),
+        2 A_EFF_DATE   CHAR(10),
+        2 A_END_DATE   CHAR(10),
+        2 A_LAST_CHANGE_DATE CHAR(10),
+        2 A_SLC2_NULLIND CHAR(1),
+        2 A_SLC2       CHAR(3),
+        2 A_RULE       CHAR(2);
+                                                      /* EOC RB01298 */
+1/********************************************************************/
+ /*  USED TEMPORARY FIELDS FOR MESSAGE HANDLING                      */
+ /********************************************************************/
+0DCL 1 G_WRKMSG,
+       3 TXTFIELD_1     CHAR (25),
+       3 TXTFIELD_2     CHAR (25),
+       3 TXTFIELD_3     CHAR (25),
+       3 NUMFIELD_1     FIXED BIN(31),
+       3 NUMFIELD_2     FIXED BIN(31),
+       3 NUMFIELD_3     FIXED BIN(31),
+       3 NUMFIELD_4     FIXED BIN(31),
+       3 NUMFIELD_5     FIXED BIN(31),
+       3 NUMFIELD_6     FIXED BIN(31);
+0/********************************************************************/
+ /*  BUILTIN FUNCTIONS                                               */
+ /********************************************************************/
+0DCL (ADDR,
+     DATE,
+     NULL,
+     HIGH,
+     INDEX,
+     LOW,
+     STRING,
+     SUBSTR,
+     VERIFY,
+     TRIM,                                            /* SOC RB01320 */
+     TIME)                   BUILTIN;
+1/********************************************************************/
+ /* ON ERROR CONDITIONS                                              */
+ /********************************************************************/
+ %INCLUDE (RCB0E0M);
+  END;
+1/********************************************************************/
+ /* ON ENDFILE                                                       */
+ /********************************************************************/
+0ON ENDFILE (RCBBIH0)
+   BEGIN;
+     EOF_RCBBIH0 = '1'B;
+   END;
+                                                      /* SOC RB01255 */
+0ON ENDFILE (RCBBIH2)
+   BEGIN;
+     EOF_RCBBIH2 = '1'B;
+   END;
+                                                      /* EOC RB01255 */
+                                                      /* SOC RB01298 */
+ ON ENDFILE (RCBBIHB)
+   BEGIN;
+     EOF_RCBBIHB = TRUE;
+   END;
+                                                      /* EOC RB01298 */
+1/********************************************************************/
+ /*MAIN:            S T A R T   P R O C C E S S I N G                */
+ /********************************************************************/
+ CALL RCBBIHM_INIT_PROGRAM;                  /* INIT PROGRAM         */
+ CALL RCBBIHM_INIT_COUNTRY;
+ WRK_CTRY_FILE_PREV = RCBBIH0_PEW.COUNTRY;
+                                             /* WHILE NOT EOF AND    */
+                                             /* NOT EOF CTY-ARRAY    */
+ DO WHILE (¬ EOF_RCBBIH0);
+   IF RCBBIH0_HEADER.HEADER = LOW(3)         /* SECOND HEADERRECORD  */
+   THEN DO;
+     CALL RCBBIHM_MSG('0014');               /* INVALID HEADER FOUND */
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#001');            /* ABORT */
+   END;
+                                             /* TRAILER RECORD FOUND */
+   IF RCBBIH0_TRAILER.TRAILER = HIGH(3) & ¬EOF_RCBBIH0
+   THEN
+     CALL RCBBIHM_PROCESS_TRAILER;
+   ELSE DO;
+                                   /* MORE RECORDS FOR THIS COUNTRY? */
+     DO WHILE ((RCBBIH0_PEW.COUNTRY = WRK_CTRY_FILE_PREV
+                & ¬EOF_RCBBIH0)
+             & (RCBBIH0_PEW.COUNTRY <= WRK_CTRYNO
+                | SWITCH_END_CTY));
+       G_CNTS.CNT.RCBBIH0_READ = G_CNTS.CNT.RCBBIH0_READ + 1;
+       IF (SKIP_COUNTRY)                      /* CTY NOT IN PARAMETER*/
+       THEN DO;
+         CALL RCBBIHM_SKIP_RECORD;            /* SKIP RECORD         */
+         CALL RCBBIHM_READ_RECORD;            /* READ NEXT RECORD    */
+         CALL RCBBIHM_INIT_WRK_FIELDS;
+       END;
+       ELSE DO;
+                                                      /* SOC RB01255 */
+         CALL RCBBIHM_CHECK_SPEC_PROD;          /* CHECK SPEC.PRODUCT*/
+         IF SKIP_RECORD = TRUE THEN             /* TO BE SKIPPED ?   */
+           CALL RCBBIHM_SKIP_RECORD;            /* SKIP RECORD       */
+         ELSE DO;                               /* PROCESS RECORD    */
+                                                      /* EOC RB01255 */
+           CALL RCBBIHM_CHECK_PEWREC;           /* ALL MACHINE RECS  */
+           IF (¬RECORD_CORRECT) THEN
+             CALL RCBBIHM_REJECT_RECORD;
+           ELSE DO;
+             CALL RCBBIHM_FILL_INVENTORY;
+                                                      /* SOC RB01285 */
+             FILE_RCBBIC0 = '';
+
+             IF (WARR_UPG)
+             THEN
+             DO;
+               CALL RCBBIHM_FILL_CONTRACT;
+             END;
+                                                      /* EOC RB01285 */
+             CALL RCBBIHM_HANDLE_USEREXIT;
+                                                     /* SOC WI-7013 */
+                                        /* VALIDATE CUSTOMER_NUMBER */
+                                                     /* SOC RB01285 */
+        /* IF VERIFY(FILE_RCBBIB0.CUSTOMER_NUMBER,'1234567890') ¬= 0*/
+        /*   THEN DO;                                               */
+                                                     /* SOC PTM1346 */
+
+           IF VERIFY(FILE_RCBBIB0.CUSTOMER_NUMBER,
+                     '1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') ¬= 0
+           THEN
+           DO;
+                                                     /* EOC RB01285 */
+             IF SWITCH_PWDUMMY_FLAG = TRUE THEN          /* RB01289 */
+               DO;                                       /* RB01289 */
+                 FILE_RCBBIB0.CUSTOMER_NUMBER = 'PW' || WRK_CUST_CNT;
+                 IF WRK_CUST_CNT = 999999
+                 THEN
+                   DO;                                   /* RB01289 */
+                     WRK_CUST_CNT = 0;
+                     SWITCH_PWDUMMY_FLAG = FALSE;    /* SOC RB01289 */
+                   END;                              /* EOC RB01289 */
+                 ELSE
+                   WRK_CUST_CNT = WRK_CUST_CNT + 1;
+               END;                                      /* RB01289 */
+                                                     /* EOC PTM1346 */
+             ELSE                                    /* SOC RB01289 */
+               DO;
+                 FILE_RCBBIB0.CUSTOMER_NUMBER = 'PE' || WRK_CUST_CNT;
+                 IF WRK_CUST_CNT = 999999 THEN
+                   DO;
+                     WRK_CUST_CNT = 0;
+                     SWITCH_PWDUMMY_FLAG = TRUE;
+                   END;
+                 ELSE
+                   WRK_CUST_CNT = WRK_CUST_CNT + 1;
+               END;
+                   FILE_RCBBIC0.CUSTOMER_NUMBER  =
+                                       FILE_RCBBIB0.CUSTOMER_NUMBER;
+                                                     /* EOC RB01289 */
+                                                     /* SOC RB01320 */
+           FILE_RCBBIB0.DEALER_NUMBER = ' ';
+                                                     /* EOC RB01320 */
+           END;
+                                                     /* EOC WI-7013 */
+           IF FOUND = '1'B THEN                      /* SOC RB01289 */
+              DO;
+                IF (TB_RCBV051.CUSTOMER_NUMBER  ¬=
+                                       TB_RCBV051.DEALER_NUMBER &
+                    TB_RCBV051.SOURCE_INDICATOR  = 'S') |
+                    TB_RCBV051.SOURCE_INDICATOR  = 'O' THEN
+                  DO;
+                    FILE_RCBBIB0.CUSTOMER_NUMBER  =
+                                       TB_RCBV051.CUSTOMER_NUMBER;
+                  END;
+              END;                                   /* EOC RB01289 */
+                                                     /* SOC RB01285 */
+           IF (WARR_UPG)
+           THEN
+           DO;
+             CALL RCBBIHM_WRITE_CONTRACT;
+           END;
+                                                     /* EOC RB01285 */
+             CALL RCBBIHM_WRITE_INVENTORY;
+           END;
+         END;
+         CALL RCBBIHM_READ_RECORD;
+         CALL RCBBIHM_INIT_WRK_FIELDS;
+       END;
+     END;
+     CALL RCBBIHM_TERM_COUNTRY;               /* TERMINATE COUNTRY   */
+     CALL RCBBIHM_INIT_COUNTRY;
+     WRK_CTRY_FILE_PREV = RCBBIH0_PEW.COUNTRY;
+   END;
+ END;
+
+ CALL RCBBIHM_CONTROL_COUNTERS;              /* VERIFY PROCES COUNTS */
+ CALL RCBBIHM_TERM_PROGRAM;                  /* TERMINATE PROGRAM    */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_INIT_PROGRAM                          */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIAL ACTIONS                               */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_INIT_PROGRAM: PROC;
+
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);
+ PTR_DATE_AREA      = ADDR(DATE_AREA);
+ PTR_RETURN_AREA    = ADDR(RETURN_AREA);
+ PTR_RUN_DATE_AREA  = ADDR(RUN_DATE_AREA);
+ PTR_COUNTRY_AREA   = ADDR(COUNTRY_AREA);
+ PTR_RCBV051        = ADDR(TB_RCBV051);        /* SOC: WI-7013       */
+ PTR_RCBV051I       = ADDR(TB_RCBV051_I);      /* EOC: WI-7013       */
+ PTR_RCBV500        = ADDR (TB_RCBV500);                  /* RB01298 */
+ PTR_RCBV500I       = ADDR (TB_RCBV500_I);                /* RB01298 */
+                                 /* INITIAL GLOBALS */
+ G_CNTS   = '';
+ G_WRKMSG = '';
+                                 /* INITIALISE SAVE FIELDS           */
+ G_SAVE_KEY = '';
+                                 /* OPEN ALL FILES                   */
+ OPEN FILE (RCBPEW);
+ OPEN FILE (RCBBIH0);
+ OPEN FILE (RCBBIH1);
+ OPEN FILE (RCBBIH2);                                     /* RB01255 */
+ OPEN FILE (RCBBIB0);
+ OPEN FILE (RCBBIC0);                                     /* RB01285 */
+ OPEN FILE (RCBBIHB);                                     /* RB01298 */
+                  /* INITIALISE INTERFACE AREA AND OPEN MESSAGE FILE */
+ PARM_INT_AREA.MSG_AREA       = '';
+ PARM_INT_AREA.ERR_AREA       = ' ';
+ PARM_INT_AREA.MSG_REQUEST    = 'O';
+ PARM_INT_AREA.MSG_TARGET     = 'F';
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG = G_WRK_PGM_NAME;
+ PARM_INT_AREA.ID_MOD_PATH(1) = G_WRK_MOD_NAME;
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;
+ PARM_INT_AREA.SYSTEM_TYPE    = G_WRK_SYSTEM_TYPE;
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;
+ PARM_INT_AREA.TXN_CODE       = '';
+ PARM_INT_AREA.VERSION        = '';
+
+ CALL RCB0M1M(PTR_INT_AREA);
+ PARM_INT_AREA.MSG_REQUEST    = 'P';
+
+ CALL RCB0T1M(PTR_INT_AREA);     /* RECEIVE SYSTEM DATE              */
+
+ CALL RCB019M (PTR_COUNTRY_AREA,           /* RETRIEVE ALL COUNTRIES */
+               PTR_INT_AREA);              /* THEY COME SORTED       */
+
+ IF COUNTRY_AREA.COUNT_CTRY = 0
+ THEN DO;
+   CALL RCBBIHM_MSG('0005');
+   CALL RCBBIHM_ERROR(NULL,'OTHER','#002');
+ END;
+ SWITCH_END_CTY     = FALSE;
+                                 /* GET PARAMETER                    */
+ CALL RCB013M(ADDR(PARM),RETCODE,PTR_INT_AREA);
+                                 /* GET SPEC.PRODUCTS COUNTRY CODE   */
+
+                                                      /* SOC RB01298 */
+                                        /* RETRIEVE PARAMETER RCB063 */
+ /* GET TOW/TOM FROM RCB063 AT GEO LEVEL THAT WILL BE APPLIED FOR    */
+ /* FLEXIBLE WARR AND HARDBUNDLE MACHINES WHEN RCB064 IS UNAVAILABLE */
+ /* RCB063 IS A MANDATORY PARAMETER, IF NOT ABEND THE PROGRAM        */
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB063.NUMBER        = 'RCB063';
+ CALL RCBI50M ('R',                                 /* PASS PARAMETER*/
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB063  =  TB_RCB063;
+     END;
+   WHEN(4)              /* END THE PROGRAM IF RCB063 IS NOT AVAILABLE */
+     DO;
+       PARM_INT_AREA.MESSAGE_TYPE             = 'IS';
+       PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = 'I050';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6  = 'PN';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6 =
+                                     TB_RCBV500.PARAMETER_NUMBER;
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7  = 'PK';
+       PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7 =
+                                     TB_RCBV500.PARAMETER_KEY;
+       CALL RCB0M1M (PTR_INT_AREA);
+       CALL RCBBIHM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                          'DB2','#023');
+     END;
+    OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#024');
+     END;
+   END;
+                                                      /* EOC RB01298 */
+
+ READ FILE (RCBPEW) INTO (FILE_RCBPEW);
+ IF RCBPEW_REC.PGR_TYPE = ' ' THEN
+   RCBPEW_REC.PGR_TYPE = 'A01';
+
+ CALL RCBBIHM_READ_RECORD;                   /* INITIAL READ         */
+
+ IF (EOF_RCBBIH0)                            /* EMPTY FILE           */
+ THEN DO;
+   CALL RCBBIHM_MSG('0013');
+   CALL RCBBIHM_ERROR(NULL,'OTHER','#003');                   /*ABORT*/
+ END;
+
+ G_CNTS.TOT.RCBBIH0_READ = G_CNTS.TOT.RCBBIH0_READ + 1;
+
+ CALL RCBBIHM_PROCESS_HEADER;
+ CALL RCBBIHM_READ_RECORD;
+ CALL RCBBIHM_INIT_WRK_FIELDS;
+ CALL RCBBIHM_READ_SPEC_PROD;                            /* RB01255 */
+ CALL RCBBIHM_FILL_T690_ARRAY;                           /* RB01298 */
+
+ END RCBBIHM_INIT_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_INIT_COUNTRY                          */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK COUNTRY_NUMBER AND INITIALISE COUNTRY   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_INIT_COUNTRY: PROC;
+                                                      /* SOC RB01255 */
+ IC                  = 0;                /* INIT COUNTRY TABLE INDEX */
+ SPEC_PROD_CTY(*)    = '';
+ SPEC_PROD_COUNTRY   = FALSE;
+ SPEC_PROD_ALL_TYPES = FALSE;
+
+ DO IR = 1 TO SPEC_PROD_RUN_COUNT;       /* ALL RUN TABLE ENTRIES    */
+   IF SPEC_PROD_RUN.COUNTRY_CODE(IR) = RCBBIH0_PEW.COUNTRY
+   THEN DO;
+     SPEC_PROD_COUNTRY = TRUE;           /* SPECIAL PRODUCT COUNTRY  */
+     IC                = IC + 1;         /* STORE PRODUCT IN TABLE   */
+     SPEC_PROD_CTY.COUNTRY_CODE(IC)  = SPEC_PROD_RUN.COUNTRY_CODE(IR);
+     SPEC_PROD_CTY.MACHINE_TYPE(IC)  = SPEC_PROD_RUN.MACHINE_TYPE(IR);
+     SPEC_PROD_CTY.MACHINE_MODEL(IC) = SPEC_PROD_RUN.MACHINE_MODEL(IR);
+     IF SPEC_PROD_CTY.MACHINE_TYPE(IC)  = '****'
+      & SPEC_PROD_CTY.MACHINE_MODEL(IC) = '***' THEN
+       SPEC_PROD_ALL_TYPES = TRUE;       /* ALL TYPES SPEC. PRODUCTS */
+   END;
+ END;
+ SPEC_PROD_CTY_COUNT = IC;               /* ENTRIES IN COUNTRY TABLE */
+                                                      /* EOC RB01255 */
+ IF RCBBIH0_PEW.COUNTRY > WRK_CTRYNO
+  | (EOF_RCBBIH0
+     | RCBBIH0_TRAILER.TRAILER = HIGH(3))
+  & ¬SWITCH_END_CTY                    /* NOT END OF PARAMETER LIST   */
+                                       /* INPUT FILE AHEAD            */
+ THEN DO;
+   IF (¬ SKIP_COUNTRY) THEN            /* PREV. COUNTRY NOT IN LIST   */
+     CTY_IDX = CTY_IDX + 1;            /* INCREMENT LIST INDEX        */
+   IF CTY_IDX > COUNTRY_AREA.COUNT_CTRY THEN
+     SWITCH_END_CTY = TRUE;            /* END OF COUNTRY LIST         */
+   ELSE DO;
+     WRK_PGR_RUN_TYPE = COUNTRY_AREA.CTRY_ARRAY.PGR_TYPE(CTY_IDX);
+     WRK_CTRYNO       = COUNTRY_AREA.CTRY_ARRAY.CTRYNO(CTY_IDX);
+     PARM_INT_AREA.COUNTRY_NUMBER = WRK_CTRYNO;
+   END;
+ END;
+ SKIP_COUNTRY = '0'B;
+                                      /* MORE INPUT COUNTRIES IN FILE */
+                                      /* THEN IN PARAMETER            */
+ IF (RCBBIH0_PEW.COUNTRY < WRK_CTRYNO | SWITCH_END_CTY)
+  & ¬EOF_RCBBIH0
+  & RCBBIH0_TRAILER.TRAILER ¬= HIGH(3)
+ THEN DO;
+   SKIP_COUNTRY = '1'B;
+                                /* GIVE MESSAGE ABOUT COUNTRY IGNORED */
+   CALL RCBBIHM_MSG('0181');
+ END;
+ IF ¬SWITCH_END_CTY                    /* NEW COUNTRY FOUND           */
+                                       /* DATE RETRIEVE NOT POSTPONED */
+  & (WRK_CTRYNO <= RCBBIH0_PEW.COUNTRY
+     | EOF_RCBBIH0
+     | RCBBIH0_TRAILER.TRAILER = HIGH(3))
+ THEN DO;
+   PARM_INT_AREA.COUNTRY_NUMBER = WRK_CTRYNO;
+                                      /* RETRIEVE RUN DATE            */
+   RUN_DATE_AREA.PROC_ID  = COUNTRY_AREA.PROC_ID;
+                                                      /* SOC RB01255 */
+   IF SPEC_PROD_COUNTRY = TRUE
+   THEN DO;
+     PARM_INT_AREA.COUNTRY_NUMBER = RCBPEW_REC.COUNTRY;
+     RUN_DATE_AREA.CTRYNO         = RCBPEW_REC.COUNTRY;
+     RUN_DATE_AREA.PGR_TYPE       = RCBPEW_REC.PGR_TYPE;
+   END;
+   ELSE DO;
+     RUN_DATE_AREA.CTRYNO   = WRK_CTRYNO;
+     RUN_DATE_AREA.PGR_TYPE = WRK_PGR_RUN_TYPE;
+   END;
+                                                      /* EOC RB01255 */
+   CALL RCB020M (PTR_RUN_DATE_AREA,
+                 PTR_INT_AREA);
+
+   IF RUN_DATE_AREA.RUN_DATE = ''        /* NO RUN DATE RCB001 FOUND */
+   THEN
+     WRK_RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;
+   ELSE
+     WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;
+
+   PARM_INT_AREA.RUN_DATE = WRK_RUN_DATE;
+   CALL RCBBIHM_MSG('0216');
+   CALL RCBBIHM_GET_PW_MAXNUMBER;                         /* RB01289 */
+                           /* RETRIEVE PEW WED INDICATOR FROM RCB015 */
+   TB_RCBV500       = '';
+   TB_RCBV500_I     = '';
+   TB_RCB015.NUMBER = 'RCB015';
+                                                      /* SOC RB01255 */
+   IF SPEC_PROD_COUNTRY = TRUE
+   THEN DO;
+     TB_RCB015.CTRYNO   = RCBPEW_REC.COUNTRY;
+     TB_RCB015.PGR_TYPE = RCBPEW_REC.PGR_TYPE;
+   END;
+   ELSE DO;
+     TB_RCB015.CTRYNO   = WRK_CTRYNO;
+     TB_RCB015.PGR_TYPE = WRK_PGR_RUN_TYPE;
+   END;
+                                                      /* EOC RB01255 */
+   CALL RCBI50M ('R',
+                 PTR_RCBV500,
+                 PTR_RCBV500I,
+                 PTR_RETURN_AREA,
+                 PTR_INT_AREA);
+
+   SELECT (RETURN_AREA.RETURN_CODE);
+     WHEN (0)
+       WRK_PEW_WED_IND = TB_RCB015.PEW_WED_IND;
+     WHEN (4)
+       WRK_PEW_WED_IND = 'N';
+     OTHERWISE
+       CALL RCBBIHM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2','#004');
+   END; /* SELECT */
+ END;
+
+                                                     /* SOC RB01278 */
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB103.NUMBER        = 'RCB103';
+ TB_RCB103.CTRYNO        = WRK_CTRYNO;
+ TB_RCB103.PGR_TYPE      = WRK_PGR_RUN_TYPE;
+ CALL RCBI50M ('R',                                 /* PASS PARAMETER*/
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB103  =  TB_RCB103;
+       IF RCB103.SRV_ON_BEHF_OF_VENDOR = 'Y' THEN
+          SWITCH_VENDOR_SERVICE = TRUE;
+       ELSE
+          SWITCH_VENDOR_SERVICE = FALSE;
+     END;
+   WHEN(4)
+        DO;
+          SWITCH_VENDOR_SERVICE = FALSE;
+        END;
+      OTHERWISE
+        DO;
+          CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#006');
+        END;
+    END;                                                 /* EOC RB01278
+   */
+                                                     /* SOC RB01285 */
+ SWITCH_PEW_CONTRACT     = FALSE;
+ WRK_COUNT               = 1;
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB150.NUMBER        = 'RCB150';
+ CALL RCBI50M ('R',                                 /* PASS PARAMETER*/
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB150  =  TB_RCB150;
+       IF RCB150.PEW_CTR_CTRY ¬= '' THEN
+         DO;
+           K = 1;
+           DO WRK_COUNT = 1 TO 20 BY 1;
+                IF SUBSTR(RCB150.PEW_CTR_CTRY,K,3) = WRK_CTRYNO THEN
+                 DO;
+                  SWITCH_PEW_CONTRACT = TRUE;
+                  WRK_COUNT = 20;
+                 END;
+                 K= K + 3;
+           END;
+         END;
+       ELSE
+        SWITCH_PEW_CONTRACT = FALSE;
+     END;
+   WHEN(4)
+     DO;
+        SWITCH_PEW_CONTRACT = FALSE;
+     END;
+    OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#234');
+     END;
+   END;
+                                                      /* EOC RB01285 */
+ /* THIS IS A GEO PARAMETER, SO IT IS MOVED TO        /* SOC RB01298 */
+ /* RCBBIHM_INIT_PROGRAM
+                                                     /* SOC RB01281 */
+ /* TB_RCBV500              = '';
+ /* TB_RCBV500_I            = '';
+ /* TB_RCB063.NUMBER        = 'RCB063';
+ /*CALL RCBI50M ('R',                           /* PASS PARAMETER*/
+ /*              PTR_RCBV500,
+ /*              PTR_RCBV500I,
+ /*              PTR_RETURN_AREA,
+ /*              PTR_INT_AREA);
+ /*
+ /*SELECT(RETURN_AREA.RETURN_CODE);
+ /*WHEN(0)
+ /*  DO;
+ /*    RCB063  =  TB_RCB063;
+ /*  END;
+ /*WHEN(4)
+ /*  DO;
+ /*    PARM_INT_AREA.MESSAGE_TYPE             = 'IS';
+ /*    PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER  = 'I050';
+ /*    PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES   = ' ';
+ /*    PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6  = 'PN';
+ /*    PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6 =
+ /*                                  TB_RCBV500.PARAMETER_NUMBER;
+ /*    PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7  = 'PK';
+ /*    PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7 =
+ /*                                  TB_RCBV500.PARAMETER_KEY;
+ /*    CALL RCB0M1M (PTR_INT_AREA);
+ /*    CALL RCBBIHM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+ /*                       'DB2','#023');
+ /*  END;
+ /* OTHERWISE
+ /*  DO;
+ /*    CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#024');
+ /*  END;
+ /*END; */
+                                                     /* EOC RB01281 */
+
+                                       /* RETRIEVE PARAMETER RCB064 */
+ /* GET TOW/TOM FROM RCB064 AT COUNTRY LEVEL THAT WILL BE APPLIED   */
+ /* FOR FLEXIBLE WARRANTY AND HARDBUNDLE MACHINES OF THAT COUNTRY   */
+ /* IF RCB064 IS NOT AVAILABLE CONSIDER THE GEO PARAMETER RCB063    */
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB064.NUMBER        = 'RCB064';
+ TB_RCB064.CTRYNO        = WRK_CTRYNO;
+
+ CALL RCBI50M ('U',                                 /* PASS PARAMETER*/
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB064  =  TB_RCB064;
+       WRK_FWTOW = RCB064.F_WARRANTY_MACHINE;              /* COUNTRY */
+       WRK_HBTOM = RCB064.HARDBUNDLE;                      /* COUNTRY */
+     END;
+   WHEN(4)
+     DO;
+       WRK_FWTOW = RCB063.F_WARRANTY_MACHINE;              /* GEO     */
+       WRK_HBTOM = RCB063.HARDBUNDLE;                      /* GEO     */
+     END;
+    OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#029');
+     END;
+   END;
+                                                     /* EOC RB01298 */
+
+ SWITCH_PEW_SOURCE = FALSE;                          /* SOC RB01284 */
+
+ RCB151                  = '';
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB151.NUMBER        = 'RCB151';
+ TB_RCB151.CTRYNO        = WRK_CTRYNO;
+ CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB151  =  TB_RCB151;
+       IF (RCB151.PEW_AUTH_SOURCE = 'L' |
+           RCB151.PEW_AUTH_SOURCE = 'Y' ) THEN
+         SWITCH_PEW_SOURCE        = TRUE;
+     END;
+   WHEN(4)
+     DO;
+       TB_RCBV500              = '';
+       TB_RCBV500_I            = '';
+       TB_RCB151.NUMBER        = 'RCB151';
+       TB_RCB151.CTRYNO        = '***';
+       CALL RCBI50M ('R',
+                      PTR_RCBV500,
+                      PTR_RCBV500I,
+                      PTR_RETURN_AREA,
+                      PTR_INT_AREA);
+       SELECT(RETURN_AREA.RETURN_CODE);
+          WHEN(0)
+            DO;
+               RCB151  =  TB_RCB151;
+               IF (RCB151.PEW_AUTH_SOURCE = 'L' |
+                   RCB151.PEW_AUTH_SOURCE = 'Y') THEN
+                   SWITCH_PEW_SOURCE      = TRUE;
+            END;
+          WHEN(4)
+                SWITCH_PEW_SOURCE      = FALSE;
+          OTHERWISE
+            DO;
+                CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#236');
+            END;
+       END;
+     END;
+     OTHERWISE
+       DO;
+         CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#237');
+       END;
+ END;
+
+ RCB152                  = '';
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB152.NUMBER        = 'RCB152';
+ TB_RCB152.CTRYNO        = WRK_CTRYNO;
+ CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB152 = TB_RCB152;
+     END;
+   WHEN(4)
+     DO;
+       TB_RCBV500              = '';
+       TB_RCBV500_I            = '';
+       TB_RCB152.NUMBER        = 'RCB152';
+       TB_RCB152.CTRYNO        = '***';
+       CALL RCBI50M ('R',
+                     PTR_RCBV500,
+                     PTR_RCBV500I,
+                     PTR_RETURN_AREA,
+                     PTR_INT_AREA);
+       SELECT(RETURN_AREA.RETURN_CODE);
+          WHEN(0)
+            DO;
+               RCB152 = TB_RCB152;
+            END;
+          WHEN(4);
+          OTHERWISE
+            DO;
+               CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#238');
+            END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+        CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#239');
+     END;
+ END;
+
+ RCB153                  = '';
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB153.NUMBER        = 'RCB153';
+ TB_RCB153.CTRYNO        = WRK_CTRYNO;
+ CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB153 = TB_RCB153;
+     END;
+   WHEN(4)
+     DO;
+       TB_RCBV500              = '';
+       TB_RCBV500_I            = '';
+       TB_RCB153.NUMBER        = 'RCB153';
+       TB_RCB153.CTRYNO        = '***';
+       CALL RCBI50M ('R',
+                     PTR_RCBV500,
+                     PTR_RCBV500I,
+                     PTR_RETURN_AREA,
+                     PTR_INT_AREA);
+       SELECT(RETURN_AREA.RETURN_CODE);
+          WHEN(0)
+            DO;
+              RCB153 = TB_RCB153;
+            END;
+          WHEN(4);
+       OTHERWISE
+            DO;
+              CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#240');
+            END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+        CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#241');
+     END;
+ END;
+
+ RCB154                  = '';
+ TB_RCBV500              = '';
+ TB_RCBV500_I            = '';
+ TB_RCB154.NUMBER        = 'RCB154';
+ TB_RCB154.CTRYNO        = WRK_CTRYNO;
+ CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA.RETURN_CODE);
+   WHEN(0)
+     DO;
+       RCB154 = TB_RCB154;
+     END;
+   WHEN(4)
+     DO;
+       TB_RCBV500              = '';
+       TB_RCBV500_I            = '';
+       TB_RCB154.NUMBER        = 'RCB154';
+       TB_RCB154.CTRYNO        = '***';
+       CALL RCBI50M ('R',
+                     PTR_RCBV500,
+                     PTR_RCBV500I,
+                     PTR_RETURN_AREA,
+                     PTR_INT_AREA);
+       SELECT(RETURN_AREA.RETURN_CODE);
+          WHEN(0)
+            DO;
+              RCB154 = TB_RCB154;
+            END;
+          WHEN(4);
+          OTHERWISE
+            DO;
+              CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#242');
+            END;
+       END;
+     END;
+   OTHERWISE
+     DO;
+        CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#243');
+     END;
+ END;                                                 /* EOC RB01284 */
+
+ G_CNTS.CNT = '';
+
+ END RCBBIHM_INIT_COUNTRY;
+1/********************************************************************/
+ /*                                                   /* SOC RB01289 */
+ /* MODULE NAME      : RCBBIHM_GET_PW_MAXNUMBER                      */
+ /*                                                                  */
+ /* DESCRIPTION      : TO GET THE MAX CUSTOMER NUMBER FROM THE TABLE */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_GET_PW_MAXNUMBER: PROC;
+
+ SWITCH_PWDUMMY_FLAG = TRUE;
+ EXEC SQL
+ SELECT MAX(CUSTOMER_NUMBER)
+   INTO :TB_RCBV051.CUSTOMER_NUMBER :WRK_INDNULL
+   FROM RCBV0051_PI_HW_PR
+  WHERE COUNTRY_NUMBER = :RCBBIH0_PEW.COUNTRY
+    AND CUSTOMER_NUMBER LIKE 'PW%';
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+        IF WRK_INDNULL = 0 THEN
+           DO;
+             WRK_CUST_CNT = SUBSTR(TB_RCBV051.CUSTOMER_NUMBER,3,6);
+             IF WRK_CUST_CNT = 999999 THEN
+                DO;
+                  WRK_CUST_CNT = 0;
+                  SWITCH_PWDUMMY_FLAG = FALSE;
+                  CALL RCBBIHM_GET_PE_MAXNUMBER;
+                END;
+             ELSE
+                  WRK_CUST_CNT = WRK_CUST_CNT + 1;
+           END;
+        ELSE
+          WRK_CUST_CNT = 0;
+     END;
+   WHEN (+100)
+     DO;
+        WRK_CUST_CNT = 0;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2','#244');
+     END;
+ END;
+
+ END RCBBIHM_GET_PW_MAXNUMBER;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_GET_PE_MAXNUMBER                      */
+ /*                                                                  */
+ /* DESCRIPTION      : TO GET THE MAX CUSTOMER NUMBER FROM THE TABLE */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_GET_PE_MAXNUMBER: PROC;
+
+ EXEC SQL
+ SELECT MAX(CUSTOMER_NUMBER)
+   INTO :TB_RCBV051.CUSTOMER_NUMBER :WRK_INDNULL
+   FROM RCBV0051_PI_HW_PR
+  WHERE COUNTRY_NUMBER = :RCBBIH0_PEW.COUNTRY
+    AND CUSTOMER_NUMBER LIKE 'PE%';
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0)
+     DO;
+        IF WRK_INDNULL = 0 THEN
+           DO;
+             WRK_CUST_CNT = SUBSTR(TB_RCBV051.CUSTOMER_NUMBER,3,6);
+             IF WRK_CUST_CNT = 999999 THEN
+                DO;
+                  WRK_CUST_CNT = 0;
+                  SWITCH_PWDUMMY_FLAG = TRUE;
+                END;
+             ELSE
+                  WRK_CUST_CNT = WRK_CUST_CNT + 1;
+           END;
+        ELSE
+          WRK_CUST_CNT = 0;
+     END;
+   WHEN (+100)
+     DO;
+        WRK_CUST_CNT = 0;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                           'DB2','#245');
+     END;
+ END;
+
+ END RCBBIHM_GET_PE_MAXNUMBER;                        /* EOC RB01289 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_READ_RECORD                           */
+ /*                                                                  */
+ /* DESCRIPTION      : READ RECORD FROM PEW                          */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_READ_RECORD: PROC;
+
+ WRK_CTRY_FILE_PREV = RCBBIH0_PEW.COUNTRY;
+ READ FILE(RCBBIH0) INTO (FILE_RCBBIH0);
+ IF (¬ EOF_RCBBIH0)
+ THEN DO;
+   PARM_INT_AREA.SEQUENCE_KEY = RCBBIH0_PEW.COUNTRY ||
+                                RCBBIH0_PEW.CUSTOMER_NBR;
+   %IF ( RCBBIHM_DEBUG = 'Y' ) %THEN %DO;
+     PUT SKIP LIST( '#DBG# '||'KEYSPEC=' || RCBBIHM_GET_KEYSPEC() );
+   %END;
+ END;
+
+ END RCBBIHM_READ_RECORD;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_GET_KEYSPEC                           */
+ /*                                                                  */
+ /* DESCRIPTION      : GET KEY SPECIFIER                             */
+ /*                    RETURNS CHAR(15)                              */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_GET_KEYSPEC: PROC RETURNS(CHAR(11));
+ RETURN( RCBBIH0_PEW.COUNTRY        ||    /*03*/
+         RCBBIH0_PEW.CUSTOMER_NBR);       /*08*/
+ END RCBBIHM_GET_KEYSPEC;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_PROCESS_HEADER                        */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK EXISTANCE AND VALUES OF HEADER_RECORD   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_PROCESS_HEADER: PROC;
+
+ IF RCBBIH0_HEADER.HEADER ¬= LOW(3)          /* FIRST REC : HEADER ? */
+ THEN DO;
+   CALL RCBBIHM_MSG('0016');
+   CALL RCBBIHM_ERROR (NULL, 'OTHER', '#005');               /*ABORT*/
+ END;
+ /*          MOVED TO RCBBIHM_INIT_PROGRAM               SOC  RB01298 */
+ /* PTR_RCBV500        =  ADDR (TB_RCBV500);
+ /* PTR_RCBV500I       =  ADDR (TB_RCBV500_I);           EOC  RB01298 */
+
+ /* RETRIEVE PREVIOUS FILE SEQUENCE NUMBER FROM RCB035 */
+
+ TB_RCBV500                  = '';
+ TB_RCBV500_I                = '';
+ TB_RCB035.NUMBER            = 'RCB035';
+ TB_RCB035.PROC_ID           = COUNTRY_AREA.PROC_ID;
+ TB_RCB035.SEQ_NR            = '01';
+ TB_RCB035.FILLER_G1         = COUNTRY_AREA.CTRY_SET_ID;
+
+0CALL RCBI50M ('R',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ IF RETURN_AREA.RETURN_CODE = 4
+ THEN DO;
+               /* RETRIEVE THE OLD SEQUENCE NUMBER FOR COUNTRY BLANK */
+               /* NOT FOUND HANDLED IN THE FOLLOWING WHEN */
+   TB_RCB035.FILLER_G1 = '';
+   CALL RCBI50M ('U',
+                 PTR_RCBV500,
+                 PTR_RCBV500I,
+                 PTR_RETURN_AREA,
+                 PTR_INT_AREA);
+   IF RETURN_AREA.RETURN_CODE = 0
+   THEN DO;
+                 /* INSERT THE SEQUENCE NUMBER FOR FIRST RUN COUNTRY */
+                 /* ERRORS HANDLED IN THE FOLLOWING WHEN */
+     TB_RCB035.FILLER_G1 = COUNTRY_AREA.CTRY_SET_ID;
+     CALL RCBF50M (PTR_RCBV500,
+                   PTR_RCBV500I,
+                   PTR_RETURN_AREA,
+                   PTR_INT_AREA);
+   END;
+ END;
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0) DO;
+     RCB035 = TB_RCB035, BY NAME;
+     IF RCB035.FILE_SEQ_NUM_SC ¬= RCBBIH0_HEADER.SEQ_NBR
+     THEN DO;
+       G_WRKMSG.TXTFIELD_1 = 'RCBBIH0';
+       CALL RCBBIHM_MSG('0180');            /* INCORRECT FILE SEQ.NO */
+       CALL RCBBIHM_ERROR (NULL,'OTHER','#006');
+     END;
+     ELSE
+       WRK_FILE_SEQ = RCBBIH0_HEADER.SEQ_NBR;
+   END;
+   WHEN (4) DO;
+     CALL RCBBIHM_MSG('I050');         /* RECORD NOT FOUND      */
+     CALL RCBBIHM_ERROR (ADDR(RETURN_AREA.RETURN_SQL),
+                         'DB2','#007');
+   END;
+   OTHERWISE
+     CALL RCBBIHM_ERROR (ADDR(RETURN_AREA.RETURN_SQL),
+                         'DB2','#008');
+ END;  /* SELECT */
+
+ G_CNTS.TOT.RCBBIH0_ACCEPT = G_CNTS.TOT.RCBBIH0_ACCEPT + 1;
+
+ END RCBBIHM_PROCESS_HEADER;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_INIT_WRK_FIELDS                       */
+ /*                                                                  */
+ /* DESCRIPTION      : INIT WRK_FIELDS FOR A TOS                     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_INIT_WRK_FIELDS: PROC;
+
+ WRK_ORIGIN            = SUBSTR(RCBBIH0_PEW.SERIAL,1,2);
+                                                       /* SOC RC01355 */
+                                                      /* SOC RC01346 */
+ /*
+ IF SUBSTR(RCBBIH0_PEW.SERIAL,9,1)¬= ' '
+ THEN
+ WRK_SEQUENCE_NUMBER   = SUBSTR(RCBBIH0_PEW.SERIAL,3,7);
+ ELSE IF
+ SUBSTR(RCBBIH0_PEW.SERIAL,8,1)¬= ' '
+ THEN
+ WRK_SEQUENCE_NUMBER   = '0' || SUBSTR(RCBBIH0_PEW.SERIAL,3,6);
+ ELSE
+ */
+                                                      /* EOC RC01346 */
+                                                       /* EOC RC01355 */
+ WRK_SEQUENCE_NUMBER   = '00' || SUBSTR(RCBBIH0_PEW.SERIAL,3,5);
+ WRK_PRODUCT_TYPE      =  RCBBIH0_PEW.MACH_TYPE; /* SOC RB01278 */
+ WRK_MODEL             =  RCBBIH0_PEW.MODEL;     /* EOC RB01278 */
+
+ END RCBBIHM_INIT_WRK_FIELDS;
+1/********************************************************************/
+ /*                                                      SOC RB01255 */
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_READ_SPEC_PROD                        */
+ /*                                                                  */
+ /* DESCRIPTION      : LOAD THE SPECIAL PRODUCTS RUN TABLE           */
+ /*                    FROM THE SPECIAL PRODUCTS FILE RCBBIH2        */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_READ_SPEC_PROD: PROC;
+
+ DCL   I   FIXED BIN(31);
+
+ I = 0;
+ SPEC_PROD_RUN(*) = '';
+
+ READ FILE(RCBBIH2) INTO (FILE_RCBBIH2);
+ DO WHILE(¬ EOF_RCBBIH2);
+   IF SUBSTR(RCBBIH2_REC.COUNTRY_CODE,1,1) ¬= ' ' &
+      SUBSTR(RCBBIH2_REC.COUNTRY_CODE,1,1) ¬= '*'
+   THEN DO;
+     I = I + 1;
+     IF I > MAX_SPEC_PROD
+     THEN DO;
+       CALL RCBBIHM_MSG('0052');             /* EXCEEDING ARRAY SIZE */
+       CALL RCBBIHM_ERROR (NULL, 'OTHER', '#009');            /*ABORT*/
+     END;
+     SPEC_PROD_RUN.COUNTRY_CODE(I)  = RCBBIH2_REC.COUNTRY_CODE;
+     SPEC_PROD_RUN.MACHINE_TYPE(I)  = RCBBIH2_REC.MACHINE_TYPE;
+     SPEC_PROD_RUN.MACHINE_MODEL(I) = RCBBIH2_REC.MACHINE_MODEL;
+   END;
+   READ FILE(RCBBIH2) INTO (FILE_RCBBIH2);
+ END;
+ SPEC_PROD_RUN_COUNT = I;
+
+ END RCBBIHM_READ_SPEC_PROD;
+                                                      /* EOC RB01255 */
+1/********************************************************************/
+ /*                                                      SOC RB01255 */
+ /* MODULE NAME      : RCBBIHM_CHECK_SPEC_PROD                       */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK FOR SPECIAL PRODUCT                     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_CHECK_SPEC_PROD: PROC;
+
+ SKIP_RECORD = TRUE;                     /* INIT RECORD TO BE SKIPPED*/
+
+ IF SPEC_PROD_COUNTRY = FALSE THEN       /* NO SPEC. PRODUCT COUNTRY,*/
+   SKIP_RECORD = FALSE;                  /* PROCESS THE RECORD       */
+ ELSE DO;                                /* SPECIAL PRODUCT COUNTRY  */
+   IF SPEC_PROD_ALL_TYPES = TRUE         /* ALL SPECIAL PRODUCTS ?   */
+   THEN DO;
+     SKIP_RECORD = FALSE;                /* PROCESS THE RECORD       */
+     G_CNTS.CNT.RCBBIH0_SPROD = G_CNTS.CNT.RCBBIH0_SPROD + 1;
+   END;
+   ELSE DO;                              /* LOOK FOR SPECIAL PRODUCT */
+     DO IC = 1 TO SPEC_PROD_CTY_COUNT    /* CHECK COUNTRY TABLE,     */
+        WHILE (SKIP_RECORD = TRUE);      /* UNTIL TYPE/MODEL FOUND   */
+
+       IF SPEC_PROD_CTY.MACHINE_TYPE(IC)  = RCBBIH0_PEW.MACH_TYPE
+        & SPEC_PROD_CTY.MACHINE_MODEL(IC) = RCBBIH0_PEW.MODEL
+       THEN DO;
+         SKIP_RECORD = FALSE;            /* PROCESS THE RECORD       */
+         G_CNTS.CNT.RCBBIH0_SPROD = G_CNTS.CNT.RCBBIH0_SPROD + 1;
+       END;
+     END;
+   END;
+ END;
+
+ END RCBBIHM_CHECK_SPEC_PROD;
+                                                      /* EOC RB01255 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_CHECK_PEWREC                          */
+ /*                                                                  */
+ /* DESCRIPTION      : VALIDATE PEW RECORD                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_CHECK_PEWREC: PROC;
+
+ DCL L_XST                    BIT(1) INIT(FALSE);     /* REC. EXISTS */
+ DCL L_OK                     BIT(1);                 /* STATUS FLAG */
+ DCL L_OK_WARRANTY_DATE       BIT(1);                 /* STATUS FLAG */
+ DCL L_OK_SHIP_DATE           BIT(1);                 /* STATUS FLAG */
+ DCL L_OK_START_DATE          BIT(1);                 /* STATUS FLAG */
+ DCL L_OK_END_DATE            BIT(1);                 /* STATUS FLAG */
+ WARR_UPG     = FALSE;                                    /* RB01285 */
+
+ RECORD_CORRECT = TRUE;
+                                                      /* SOC RB01285 */
+   IF ((RCBBIH0_PEW.MA_SDF ¬= ' ') & (SWITCH_PEW_CONTRACT= TRUE))
+   THEN
+    DO;
+      WARR_UPG = TRUE;
+      CALL RCBBIHM_RETRIEVE_SDF;
+    END;                                              /* EOC RB01285 */
+                                         /* VALIDATE TOS :           */
+                                         /* NO INCORPORATED BLANKS   */
+ IF ((INDEX(RCBBIH0_PEW.MODEL,' ')              ¬= 0)  |
+     (INDEX(SUBSTR(RCBBIH0_PEW.SERIAL,1,7),' ') ¬= 0)  |
+     (INDEX(RCBBIH0_PEW.MACH_TYPE,' ')          ¬= 0))
+ THEN DO;
+   CALL RCBBIHM_MSG('0199');
+   RECORD_CORRECT = FALSE;
+ END;
+                                         /* VALIDATE SDF :           */
+                                         /* NO INCORPORATED BLANKS   */
+ IF ((INDEX(RCBBIH0_PEW.SDF,' ') ¬= 0))
+ THEN DO;
+   WRK_SDF = RCBBIH0_PEW.SDF;
+   CALL RCBBIHM_MSG('0223');
+   RECORD_CORRECT = FALSE;
+ END;
+                                                      /* SOC RB01285 */
+ IF (WARR_UPG) THEN
+ DO;
+   L_OK_START_DATE =
+       RCBBIHM_XVALID_DATE( RCBBIH0_PEW.SERV_START_DATE,
+                            L_XST,      'SERV START DATE' );
+
+                                         /*  CHECK SERVICE END DATE  */
+   L_OK_END_DATE =
+       RCBBIHM_XVALID_DATE( RCBBIH0_PEW.SERV_END_DATE,
+                              L_XST,      'SERV END DATE' );
+
+   L_OK = L_OK_START_DATE & L_OK_END_DATE;
+
+   IF (L_OK)
+   THEN
+   DO;                                      /* END DATE >= START DATE */
+     IF (RCBBIH0_PEW.SERV_END_DATE < RCBBIH0_PEW.SERV_START_DATE)
+     THEN
+     DO;
+       RECORD_CORRECT = FALSE;
+     END;
+   END;
+ END;
+                                                      /* EOC RB01285 */
+                                             /* CHECK SHIP DATE      */
+ L_OK_SHIP_DATE =
+       RCBBIHM_XVALID_DATE( RCBBIH0_PEW.SHIP_DATE,
+                            L_XST,      'SHIP DATE' );
+                                         /* CHECK WARRANTY EXP DATE  */
+ L_OK_WARRANTY_DATE =
+       RCBBIHM_XVALID_DATE( RCBBIH0_PEW.WAR_EXP_DATE,
+                              L_XST,      'WARRANTY EXP DATE' );
+
+ L_OK = L_OK_SHIP_DATE & L_OK_WARRANTY_DATE;
+
+ IF (L_OK)
+ THEN DO;                                 /* END DATE >= INSTALL DATE */
+   IF (RCBBIH0_PEW.WAR_EXP_DATE < RCBBIH0_PEW.SHIP_DATE)
+   THEN DO;
+     CALL RCBBIHM_MSG('0027');
+     RECORD_CORRECT = FALSE;
+   END;
+ END;
+ ELSE DO;
+   %IF ( RCBBIHM_DEBUG = 'Y' ) %THEN %DO;
+     PUT SKIP LIST( '#DEB# '||'#010'||'RECORD_CORRECT:=FALSE');
+   %END;
+   RECORD_CORRECT = FALSE;
+ END;
+   /* VALIDATE WETHER ALL TIME FIELDS ARE ACCEPTED */
+ IF ( ¬ L_OK )
+ THEN DO;
+   %IF ( RCBBIHM_DEBUG = 'Y' ) %THEN %DO;
+     PUT SKIP LIST( '#DEB# '||'#011'||'RECORD_CORRECT:=FALSE');
+   %END;
+   RECORD_CORRECT = FALSE;
+ END;
+
+                                         /* TOM/TOW BE FILLED BOTH   */
+ IF ((PARM.TYPE_OF_WARRANTY = ' ') &
+     (PARM.TYPE_OF_MAINT = ' '))
+ THEN DO;
+   CALL RCBBIHM_MSG('0031');
+   RECORD_CORRECT = FALSE;
+ END;
+                                         /* MACH NOT OUT OF WARRANTY:*/
+                                         /* TOW MUST BE FILLED       */
+ IF ((WRK_RUN_DATE < RCBBIH0_PEW.WAR_EXP_DATE) &
+     (PARM.TYPE_OF_WARRANTY = ' '))
+ THEN DO;
+   CALL RCBBIHM_MSG('0028');
+   RECORD_CORRECT = FALSE;
+ END;
+                                         /* SOC: WI-7013             */
+                                         /* NO 'S' RECORD IN T051    */
+ IF RECORD_CORRECT = TRUE
+ THEN DO;
+   CALL RCBBIHM_RETRIEVE_T051;
+   IF FOUND = '1'B
+    & TB_RCBV051.SOURCE_INDICATOR = 'S'
+    & SWITCH_PEW_SOURCE = FALSE                           /* RB01284 */
+   THEN DO;
+     CALL RCBBIHM_MSG('0232');
+     RECORD_CORRECT = FALSE;
+   END;
+ END;
+                                         /* EOC: WI-7013             */
+                                         /* IF NOT ALL CHECKS ARE OK */
+ IF (¬ RECORD_CORRECT)
+ THEN
+   CALL RCBBIHM_MSG('0033');             /* RECORD REJECTED          */
+ ELSE                                    /* COUNT AS ACCEPTED        */
+   G_CNTS.CNT.RCBBIH0_ACCEPT = G_CNTS.CNT.RCBBIH0_ACCEPT + 1;
+
+ END RCBBIHM_CHECK_PEWREC;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : XVALID_DATE                                   */
+ /* DESCRIPTION      : CHECKDATE FORMAT: 'EEYYMMDD'                  */
+ /*                    VALIDATE EXTENDED WITH MESSAGE REPORT         */
+ /*                                                                  */
+ /* ARGUMENT         : CHAR(10) DATE                                 */
+ /*                    BOOLEAN  ACCEPT_SPACE                         */
+ /*                    CHAR(25) LOGICAL NAME                         */
+ /* RETURNS          : BOOLEAN: TRUE/FALSE                           */
+ /*                                                                  */
+ /********************************************************************/
+0RCBBIHM_XVALID_DATE: PROC(A_DATE, A_ACCEPT_SPACE, A_NAME)
+                     RETURNS(BIT(1));
+
+ DCL A_DATE         CHAR(10);
+ DCL A_ACCEPT_SPACE BIT(1);
+ DCL A_NAME         CHAR(25);
+ DCL L_RET          BIT(1) INIT(TRUE);
+
+ SELECT;
+   WHEN ( ( A_ACCEPT_SPACE ) &
+          ( A_DATE = ''    ) )
+     DO;
+       /* DO NOTHING */
+     END;
+   OTHERWISE
+     DO;
+       DATE_AREA               = '';
+       DATE_AREA.WD_IN_FORMAT  = 'YYYY-MM-DD';
+       DATE_AREA.WD_OUT_FORMAT = 'ISO';
+       DATE_AREA.WD_FUNCTION   = 'C';   /*CALCULATE VOOR VALID FUNC.? */
+       DATE_AREA.WD_IN_DATE    = A_DATE;
+       CALL RCB004M (PTR_DATE_AREA);
+                                        /* TEST RESULT FROM RCB004M */
+       IF ( DATE_AREA.WD_STATUS ¬= ' ' ) THEN
+         DO;
+           L_RET = FALSE;
+           G_WRKMSG.TXTFIELD_1 = A_DATE;
+           G_WRKMSG.TXTFIELD_2 = A_NAME;
+           CALL RCBBIHM_MSG('0012');                /*DATE INCORRECT*/
+         END;
+     END;
+ END;
+
+ RETURN(L_RET);
+ END RCBBIHM_XVALID_DATE;
+1/********************************************************************/
+ /*                                                      SOC RB01285 */
+ /* MODULE NAME      : RCBBIHM_RETRIEVE_SDF                          */
+ /*                                                                  */
+ /* DESCRIPTION      : SELECT SDF FOR CONTRACT MACHINE RECORD        */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_RETRIEVE_SDF: PROC;
+
+ PTR_RCBV680  = ADDR (TB_RCBV680);
+ PTR_RCBV680I = ADDR (TB_RCBV680_I);
+
+ TB_RCBV680_I   = 0;
+ TB_RCBV680     = '';
+
+ TB_RCBV680.SDF = RCBBIH0_PEW.MA_SDF;
+
+ TB_RCBV680.PHASE = '1';
+                                       /* RETRIEVE CURRENT ROW        */
+ CALL RCBI68M (PTR_RCBV680,
+               PTR_RCBV680I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0);
+   WHEN (4) DO;
+     WRK_SDF = RCBBIH0_PEW.MA_SDF;
+     RECORD_CORRECT = FALSE;
+     CALL RCBBIHM_MSG('0223');
+   END;
+   OTHERWISE
+   DO;
+     CALL RCBBIHM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                        'DB2','#012');
+   END;
+ END;
+
+ END RCBBIHM_RETRIEVE_SDF;                            /* EOC RB01285 */
+1/********************************************************************/
+ /*                                                      SOC RB01285 */
+ /* MODULE NAME      : RCBBIHM_RETRIEVE_SVT                          */
+ /*                                                                  */
+ /* DESCRIPTION      : SELECT SVT FOR CONTRACT MACHINE RECORD        */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_RETRIEVE_SVT: PROC;
+
+ PTR_RCBV640  = ADDR (TB_RCBV640);
+ PTR_RCBV640I = ADDR (TB_RCBV640_I);
+
+ TB_RCBV640     = '';
+ TB_RCBV640_I   = '';
+
+ TB_RCBV640.SERVICE_DLVR_METHD = TB_RCBV680.SERVICE_DELIV;
+                                       /* SOC: WI-7004               */
+ WRK_SEARCH_FIELD = 'SDM';             /*SERV.DLVR.MTHD = SEARCH-ARG.*/
+
+                                       /* RETRIEVE CURRENT ROW       */
+ CALL RCBIBOM (PTR_RCBV640,
+               PTR_RCBV640I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA,
+               WRK_SEARCH_FIELD);
+                                       /* EOC: WI-7004               */
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0) DO;
+     WRK_SERV_TYPE = TB_RCBV640.SERVICE_TYPE;
+   END;
+
+   WHEN (4) DO;
+     WRK_SERV_TYPE = '';
+   END;
+   OTHERWISE
+   DO;
+     CALL RCBBIHM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                        'DB2','#013');
+   END;
+ END;
+
+ END RCBBIHM_RETRIEVE_SVT;                            /* EOC RB01285 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_HANDLE_USEREXIT                       */
+ /*                                                                  */
+ /* DESCRIPTION      : - PREPARATION BEFORE CALL TO RCBBIHU          */
+ /*                    - OVERWRITE CONCERNING FIELDS AFTER CORRECT   */
+ /*                      RETURN FROM USEREXIT RCBBIHU. KEY FIELDS,   */
+ /*                      TRANSACTION CODE AND SOURCE INDICATOR MAY   */
+ /*                      NOT BE OVERWRITTEN.                         */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_HANDLE_USEREXIT: PROC;
+
+ USER_FILE = '';
+                                         /* FOR LOCAL VALUES/ACTIONS */
+ IF SWITCH_USER_EXIT = TRUE
+ THEN
+ DO;
+   USER_FILE.COUNTRY_NUMBER        = FILE_RCBBIB0.COUNTRY_NUMBER;
+   USER_FILE.PRODUCT_TYPE          = FILE_RCBBIB0.PRODUCT_TYPE;
+   USER_FILE.ORIGIN                = FILE_RCBBIB0.ORIGIN;
+   USER_FILE.SEQUENCE_NUMBER       = FILE_RCBBIB0.SEQUENCE_NUMBER;
+   USER_FILE.MODEL_NUMBER          = FILE_RCBBIB0.MODEL_NUMBER;
+   USER_FILE.INSTALL_DATE          = FILE_RCBBIB0.INSTALL_DATE;
+   USER_FILE.WARRANTY_EXP_DATE     = FILE_RCBBIB0.WARRANTY_EXP_DATE;
+   USER_FILE.TYPE_OF_MAINT         = FILE_RCBBIB0.TYPE_OF_MAINT;
+   USER_FILE.TYPE_OF_WARRANTY      = FILE_RCBBIB0.TYPE_OF_WARRANTY;
+   USER_FILE.F_TYPE_OF_WARRANTY    = FILE_RCBBIB0.F_TYPE_OF_WARRANTY;
+                                                           /* RB01281 */
+   USER_FILE.WARRANTY_LIABILITY    = FILE_RCBBIB0.WARRANTY_LIABILITY;
+                                                           /* RB01283 */
+   USER_FILE.CUSTOMER_NUMBER       = FILE_RCBBIB0.CUSTOMER_NUMBER;
+   USER_FILE.OU_CODE               = FILE_RCBBIB0.OU_CODE;
+   USER_FILE.DEALER_NUMBER         = FILE_RCBBIB0.DEALER_NUMBER;
+   USER_FILE.SERVICE_LVL_CODE_1    = FILE_RCBBIB0.SERVICE_LVL_CODE_1;
+   USER_FILE.WARRANTY_SPLT_DATE    = FILE_RCBBIB0.WARRANTY_SPLT_DATE;
+   USER_FILE.SERVICE_LVL_CODE_2    = FILE_RCBBIB0.SERVICE_LVL_CODE_2;
+   USER_FILE.SERVICE_LVL_CODE_C    = FILE_RCBBIB0.SERVICE_LVL_CODE_C;
+                                                     /* SOC RB01285 */
+   USER_FILE.HVP_QUANTITY          = FILE_RCBBIC0.HVP_QUANTITY;
+   USER_FILE.CONTRACT_NUMBER       = FILE_RCBBIC0.CONTRACT_NUMBER;
+   USER_FILE.EFFECTIVE_DATE        = FILE_RCBBIC0.EFFECTIVE_DATE;
+   USER_FILE.END_DATE              = FILE_RCBBIC0.END_DATE;
+   USER_FILE.SERVICE_TYPE          = FILE_RCBBIC0.SERVICE_TYPE;
+   USER_FILE.SERVICE_MODULE_1      = FILE_RCBBIC0.SERVICE_MODULE_1;
+   USER_FILE.SERVICE_MODULE_2      = FILE_RCBBIC0.SERVICE_MODULE_2;
+   USER_FILE.SERVICE_MODULE_3      = FILE_RCBBIC0.SERVICE_MODULE_3;
+   USER_FILE.SERVICE_MODULE_4      = FILE_RCBBIC0.SERVICE_MODULE_4;
+   USER_FILE.SERVICE_MODULE_5      = FILE_RCBBIC0.SERVICE_MODULE_5;
+   USER_FILE.MONDAY_COVER_START    = FILE_RCBBIC0.MONDAY_COVER_START;
+   USER_FILE.MONDAY_COVER_END      = FILE_RCBBIC0.MONDAY_COVER_END;
+   USER_FILE.TUESDAY_COVER_START   = FILE_RCBBIC0.TUESDAY_COVER_START;
+   USER_FILE.TUESDAY_COVER_END     = FILE_RCBBIC0.TUESDAY_COVER_END;
+   USER_FILE.WEDNESDAY_COVER_START = FILE_RCBBIC0.WEDNESDAY_COVER_START;
+   USER_FILE.WEDNESDAY_COVER_END   = FILE_RCBBIC0.WEDNESDAY_COVER_END;
+   USER_FILE.THURSDAY_COVER_START  = FILE_RCBBIC0.THURSDAY_COVER_START;
+   USER_FILE.THURSDAY_COVER_END    = FILE_RCBBIC0.THURSDAY_COVER_END;
+   USER_FILE.FRIDAY_COVER_START    = FILE_RCBBIC0.FRIDAY_COVER_START;
+   USER_FILE.FRIDAY_COVER_END      = FILE_RCBBIC0.FRIDAY_COVER_END;
+   USER_FILE.SATURDAY_COVER_START  = FILE_RCBBIC0.SATURDAY_COVER_START;
+   USER_FILE.SATURDAY_COVER_END    = FILE_RCBBIC0.SATURDAY_COVER_END;
+   USER_FILE.SUNDAY_COVER_START    = FILE_RCBBIC0.SUNDAY_COVER_START;
+   USER_FILE.SUNDAY_COVER_END      = FILE_RCBBIC0.SUNDAY_COVER_END;
+   USER_FILE.SERVICE_LVL_CODE      = FILE_RCBBIC0.SERVICE_LVL_CODE;
+   USER_FILE.AUTHORISATION_CODE    = FILE_RCBBIC0.AUTHORISATION_CODE;
+                                                     /* EOC RB01285 */
+ /*USER_FILE.CUSTOMER_NUMBER   = FILE_RCBBIC0.CUSTOMER_NUMBER;      */
+                                                   /*  CEDS00000534 */
+                                                         /* RB01289 */
+
+   CALL RCBBIHU (ADDR(SWITCH_USER_EXIT)
+                ,ADDR(USER_FILE)
+                ,PTR_INT_AREA);
+
+   IF SWITCH_USER_EXIT = TRUE
+   THEN
+     DO;
+                                         /* OVERWRITE INVENTORY REC. */
+       FILE_RCBBIB0.MODEL_NUMBER       = USER_FILE.MODEL_NUMBER;
+       FILE_RCBBIB0.INSTALL_DATE       = USER_FILE.INSTALL_DATE;
+       FILE_RCBBIB0.WARRANTY_EXP_DATE  = USER_FILE.WARRANTY_EXP_DATE;
+       FILE_RCBBIB0.TYPE_OF_MAINT      = USER_FILE.TYPE_OF_MAINT;
+       FILE_RCBBIB0.TYPE_OF_WARRANTY   = USER_FILE.TYPE_OF_WARRANTY;
+       FILE_RCBBIB0.F_TYPE_OF_WARRANTY = USER_FILE.F_TYPE_OF_WARRANTY;
+                                                           /* RB01281 */
+       FILE_RCBBIB0.WARRANTY_LIABILITY = USER_FILE.WARRANTY_LIABILITY;
+                                                           /* RB01283 */
+       FILE_RCBBIB0.CUSTOMER_NUMBER    = USER_FILE.CUSTOMER_NUMBER;
+       FILE_RCBBIB0.OU_CODE            = USER_FILE.OU_CODE;
+       FILE_RCBBIB0.DEALER_NUMBER      = USER_FILE.DEALER_NUMBER;
+       FILE_RCBBIB0.SERVICE_LVL_CODE_1 = USER_FILE.SERVICE_LVL_CODE_1;
+       FILE_RCBBIB0.SERVICE_LVL_CODE_2 = USER_FILE.SERVICE_LVL_CODE_2;
+       FILE_RCBBIB0.SERVICE_LVL_CODE_C = USER_FILE.SERVICE_LVL_CODE_C;
+       FILE_RCBBIB0.WARRANTY_SPLT_DATE = USER_FILE.WARRANTY_SPLT_DATE;
+                                                      /* SOC RB01285 */
+                                         /* OVERWRITE CONTRACT REC.  */
+       FILE_RCBBIC0.HVP_QUANTITY       = USER_FILE.HVP_QUANTITY;
+       FILE_RCBBIC0.CONTRACT_NUMBER    = USER_FILE.CONTRACT_NUMBER;
+       FILE_RCBBIC0.EFFECTIVE_DATE     = USER_FILE.EFFECTIVE_DATE;
+       FILE_RCBBIC0.END_DATE           = USER_FILE.END_DATE;
+       FILE_RCBBIC0.SERVICE_TYPE       = USER_FILE.SERVICE_TYPE;
+       FILE_RCBBIC0.SERVICE_MODULE_1   = USER_FILE.SERVICE_MODULE_1;
+       FILE_RCBBIC0.SERVICE_MODULE_2   = USER_FILE.SERVICE_MODULE_2;
+       FILE_RCBBIC0.SERVICE_MODULE_3   = USER_FILE.SERVICE_MODULE_3;
+       FILE_RCBBIC0.SERVICE_MODULE_4   = USER_FILE.SERVICE_MODULE_4;
+       FILE_RCBBIC0.SERVICE_MODULE_5   = USER_FILE.SERVICE_MODULE_5;
+       FILE_RCBBIC0.MONDAY_COVER_START = USER_FILE.MONDAY_COVER_START;
+       FILE_RCBBIC0.MONDAY_COVER_END   = USER_FILE.MONDAY_COVER_END;
+       FILE_RCBBIC0.TUESDAY_COVER_START = USER_FILE.TUESDAY_COVER_START;
+       FILE_RCBBIC0.TUESDAY_COVER_END   = USER_FILE.TUESDAY_COVER_END;
+       FILE_RCBBIC0.WEDNESDAY_COVER_START =
+                                      USER_FILE.WEDNESDAY_COVER_START;
+       FILE_RCBBIC0.WEDNESDAY_COVER_END = USER_FILE.WEDNESDAY_COVER_END;
+       FILE_RCBBIC0.THURSDAY_COVER_START =
+                                      USER_FILE.THURSDAY_COVER_START;
+       FILE_RCBBIC0.THURSDAY_COVER_END = USER_FILE.THURSDAY_COVER_END;
+       FILE_RCBBIC0.FRIDAY_COVER_START = USER_FILE.FRIDAY_COVER_START;
+       FILE_RCBBIC0.FRIDAY_COVER_END   = USER_FILE.FRIDAY_COVER_END;
+       FILE_RCBBIC0.SATURDAY_COVER_START =
+                                      USER_FILE.SATURDAY_COVER_START;
+       FILE_RCBBIC0.SATURDAY_COVER_END = USER_FILE.SATURDAY_COVER_END;
+       FILE_RCBBIC0.SUNDAY_COVER_START = USER_FILE.SUNDAY_COVER_START;
+       FILE_RCBBIC0.SUNDAY_COVER_END   = USER_FILE.SUNDAY_COVER_END;
+       FILE_RCBBIC0.SERVICE_LVL_CODE   = USER_FILE.SERVICE_LVL_CODE;
+       FILE_RCBBIC0.AUTHORISATION_CODE = USER_FILE.AUTHORISATION_CODE;
+                                                      /* EOC RB01285 */
+       FILE_RCBBIC0.CUSTOMER_NUMBER    = USER_FILE.CUSTOMER_NUMBER;
+                                                          /* RB01289 */
+     END;
+ END;
+
+ END RCBBIHM_HANDLE_USEREXIT;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_FILL_INVENTORY                        */
+ /*                                                                  */
+ /* DESCRIPTION      : FILL RECORD FOR RCB INVENTORY FILE            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_FILL_INVENTORY: PROC;
+
+ /* CALCULATE L_INSTALL_DATE */
+ DATE_AREA                   = '';
+ DATE_AREA.WD_IN_FORMAT      = 'YYYY-MM-DD';
+ DATE_AREA.WD_OUT_FORMAT     = 'ISO';
+ DATE_AREA.WD_FUNCTION       = 'C'; /*CONVERSION*/
+ DATE_AREA.WD_PERIOD_TYPE    = 'D';
+ DATE_AREA.WD_PERIOD         = PARM.GRACE_PERIOD;
+ DATE_AREA.WD_IN_DATE        = RCBBIH0_PEW.SHIP_DATE;
+ CALL RCB004M (PTR_DATE_AREA);
+ IF ( DATE_AREA.WD_STATUS ¬= ' ' ) THEN
+   DO;
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#014');            /* ABORT */
+   END;
+ G_WRK_INSTALL_DATE = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+
+ IF WRK_PEW_WED_IND = 'Y' THEN
+   L_WARR_EXP_DATE = RCBBIH0_PEW.WAR_EXP_DATE;
+ ELSE DO;
+                                       /* CALCULATE L_WARR_EXP_DATE */
+   DATE_AREA                = '';
+   DATE_AREA.WD_IN_FORMAT   = 'ISO';
+   DATE_AREA.WD_OUT_FORMAT  = 'ISO';
+   DATE_AREA.WD_FUNCTION    = 'C';
+   DATE_AREA.WD_PERIOD_TYPE = 'M';
+   DATE_AREA.WD_PERIOD      = PARM.WARRANTY_PERIOD;
+   DATE_AREA.WD_IN_DATE     = G_WRK_INSTALL_DATE;
+   CALL RCB004M (PTR_DATE_AREA);
+   IF DATE_AREA.WD_STATUS ¬= ' ' THEN
+     CALL RCBBIHM_ERROR(NULL,'OTHER','#015');
+   L_WARR_EXP_DATE = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+ END;
+
+ FILE_RCBBIB0                   = '';
+ FILE_RCBBIB0.PRODUCT_TYPE      = RCBBIH0_PEW.MACH_TYPE;
+ FILE_RCBBIB0.ORIGIN            = WRK_ORIGIN;
+ FILE_RCBBIB0.SEQUENCE_NUMBER   = WRK_SEQUENCE_NUMBER;
+                                                      /* SOC RB01255 */
+ IF SPEC_PROD_COUNTRY = TRUE THEN
+   FILE_RCBBIB0.COUNTRY_NUMBER  = RCBPEW_REC.COUNTRY;
+ ELSE
+   FILE_RCBBIB0.COUNTRY_NUMBER  = WRK_CTRYNO;
+                                                      /* EOC RB01255 */
+ FILE_RCBBIB0.ACTION_CODE       = 'A';
+ FILE_RCBBIB0.MODEL_NUMBER      = RCBBIH0_PEW.MODEL;
+ FILE_RCBBIB0.BUILT_TO_MODEL_NR = RCBBIH0_PEW.BUILD_TO_MODEL;
+ FILE_RCBBIB0.INSTALL_DATE      = G_WRK_INSTALL_DATE;
+ FILE_RCBBIB0.WARRANTY_EXP_DATE = L_WARR_EXP_DATE;
+                                                    /* SOC RB01285 */
+ IF (WARR_UPG) THEN
+   FILE_RCBBIB0.TYPE_OF_MAINT    = '2';
+ ELSE                                               /* EOC RB01285 */
+ FILE_RCBBIB0.TYPE_OF_MAINT     = '3';
+ FILE_RCBBIB0.TYPE_OF_WARRANTY  = PARM.TYPE_OF_WARRANTY;
+
+                                                      /* SOC RB01320 */
+ /*
+ IF INDEX(RCBBIH0_PEW.CUSTOMER_NBR,' ') = 7 THEN
+   FILE_RCBBIB0.CUSTOMER_NUMBER =
+                       '00' || SUBSTR(RCBBIH0_PEW.CUSTOMER_NBR,1,6);
+ ELSE DO;
+   IF INDEX(RCBBIH0_PEW.CUSTOMER_NBR,' ') = 8 THEN
+     FILE_RCBBIB0.CUSTOMER_NUMBER =
+                        '0' || SUBSTR(RCBBIH0_PEW.CUSTOMER_NBR,1,7);
+   ELSE
+     FILE_RCBBIB0.CUSTOMER_NUMBER      =
+                               SUBSTR(RCBBIH0_PEW.CUSTOMER_NBR,1,8);
+ END;
+ */
+  DCL TEMP_CUSTOMER_NBR       CHAR(12) VAR;
+  DCL LEN_TEMP_CUSTOMER_NBR   FIXED BIN(31);
+
+ /* TEMP_CUSTOMER_NBR = ' ';                           CEDS00000766 */
+  TEMP_CUSTOMER_NBR = '';                            /*CEDS00000766 */
+  TEMP_CUSTOMER_NBR = TRIM(RCBBIH0_PEW.CUSTOMER_NBR,' ',' ');
+  LEN_TEMP_CUSTOMER_NBR   =   LENGTH(TEMP_CUSTOMER_NBR) ;
+
+                                                    /*SOC CEDS00000698*/
+ /* PUT SKIP LIST ('LENGTH OF CUSTOMER NO. : ',LEN_TEMP_CUSTOMER_NBR);*/
+                                                    /*EOC CEDS00000698*/
+   SELECT (LEN_TEMP_CUSTOMER_NBR);
+      WHEN (7)
+       FILE_RCBBIB0.CUSTOMER_NUMBER =
+                              '0' ||  TEMP_CUSTOMER_NBR;
+      WHEN (6)
+       FILE_RCBBIB0.CUSTOMER_NUMBER =
+                             '00' ||  TEMP_CUSTOMER_NBR;
+      WHEN (5)
+       FILE_RCBBIB0.CUSTOMER_NUMBER =
+                            '000' ||  TEMP_CUSTOMER_NBR;
+      WHEN (4)
+       FILE_RCBBIB0.CUSTOMER_NUMBER =
+                           '0000' ||  TEMP_CUSTOMER_NBR;
+      WHEN (3)
+       FILE_RCBBIB0.CUSTOMER_NUMBER =
+                          '00000' ||  TEMP_CUSTOMER_NBR;
+      OTHERWISE
+       DO;
+                                                   /*SOC CEDS00000698*/
+  /*   PUT SKIP LIST ('LENGTH OF CUSTOMER NUMBER :', */
+  /*                  TEMP_CUSTOMER_NBR, ' IS ', */
+  /*                  LENGTH(TEMP_CUSTOMER_NBR)); */
+                                                   /*EOC CEDS00000698*/
+                                                   /*SOC CEDS00000766*/
+  /*   FILE_RCBBIB0.CUSTOMER_NUMBER      =
+                               SUBSTR(TEMP_CUSTOMER_NBR,1,8); */
+       FILE_RCBBIB0.CUSTOMER_NUMBER      =
+                               SUBSTR(RCBBIH0_PEW.CUSTOMER_NBR,1,8);
+                                                   /*EOC CEDS00000766*/
+       END;
+   END; /* END OF SELECT  */
+                                                      /* EOC RB01320 */
+ FILE_RCBBIB0.CUSTOMER_NR_EXTEND = '000';
+ FILE_RCBBIB0.OU_CODE            = PARM.OU_CODE;
+
+ FILE_RCBBIB0.DEALER_NUMBER      = FILE_RCBBIB0.CUSTOMER_NUMBER;
+
+ FILE_RCBBIB0.SOURCE_INDICATOR   = 'P';
+ IF (WARR_UPG) THEN                                   /* SOC RB01285 */
+   FILE_RCBBIB0.SERVICE_DELIV_FLAG = RCBBIH0_PEW.MA_SDF;
+ ELSE                                                 /* EOC RB01285 */
+ FILE_RCBBIB0.SERVICE_DELIV_FLAG = RCBBIH0_PEW.SDF;
+                               /* FILL IN DEFAULT WARRANTY CONDITIONS */
+ FILE_RCBBIB0.SERVICE_LVL_CODE_1 = '';
+ FILE_RCBBIB0.WARRANTY_SPLT_DATE = '';
+ FILE_RCBBIB0.SERVICE_LVL_CODE_2 = '';
+ FILE_RCBBIB0.SERVICE_LVL_CODE_C = '';
+
+ CALL RCBBIHM_HANDLE_RCB023M;
+                                                     /* SOC RB01281 */
+ FILE_RCBBIB0.F_TYPE_OF_WARRANTY= '';
+ SWITCH_FLEXIBLE_WARRANTY        = FALSE;
+
+ IF SUBSTR(RCBBIH0_PEW.CONFIG_ID,1,1) = 'Y' THEN  /* SOC CEDS00000661 */
+    DO;
+      FILE_RCBBIB0.WARRANTY_LIABILITY = 'LEN';
+    END;
+ ELSE
+    DO;
+      IF SUBSTR(RCBBIH0_PEW.CONFIG_ID,1,1) = 'N' THEN
+        FILE_RCBBIB0.WARRANTY_LIABILITY = 'IBM';
+    END;
+
+ IF SWITCH_VENDOR_SERVICE = TRUE THEN
+    DO;
+      CALL RCBBIHM_PROD_REVENUE_DIV;
+      IF FILE_RCBBIB0.WARRANTY_LIABILITY = 'LEN' THEN
+         DO;
+           FILE_RCBBIB0.TYPE_OF_WARRANTY = 'C';
+         END;
+    END;
+                                                  /* EOC CEDS00000661 */
+ IF SWITCH_EMPTY_T690 = FALSE THEN                        /* RB01298 */
+ DO;                                                      /* RB01298 */
+ CALL RCBBIHM_RETRIEVE_FLEXIBLE;
+ IF SWITCH_FLEXIBLE_WARRANTY     = TRUE THEN
+    DO;
+                                                       /* SOC RB01298*/
+ /*  FILE_RCBBIB0.F_TYPE_OF_WARRANTY =
+                       SUBSTR(RCB063.F_WARRANTY_MACHINE,1,1); */
+      IF WRK_RULE = 'FW' THEN
+        FILE_RCBBIB0.F_TYPE_OF_WARRANTY = WRK_FWTOW;
+      ELSE IF WRK_RULE = 'HB' THEN
+        FILE_RCBBIB0.F_TYPE_OF_WARRANTY = WRK_HBTOM;
+
+   /*FILE_RCBBIB0.WARRANTY_SPLT_DATE  = RCBBIHM_CALC_DATE
+   /*          (G_WRK_INSTALL_DATE,'M',TB_RCBV690.BRAND_WARRANTY_MNT);
+
+   /*IF (FILE_RCBBIB0.WARRANTY_SPLT_DATE <=   /* SOC CEDS00000357 */
+   /*                  FILE_RCBBIB0.WARRANTY_EXP_DATE &
+   /*                  TB_RCBV690.SERVICE_LVL_CODE ¬= ' ')  THEN
+   /*DO;
+   /*  FILE_RCBBIB0.SERVICE_LVL_CODE_1 = TB_RCBV690.SERVICE_LVL_CODE;
+   /*  FILE_RCBBIB0.SERVICE_LVL_CODE_2 = TB_RCBV690.SERVICE_LVL_CODE;
+  /* END; */
+     FILE_RCBBIB0.WARRANTY_SPLT_DATE  = RCBBIHM_CALC_DATE
+                (G_WRK_INSTALL_DATE,'M',T690_ARRAY.A_B_W_MNTHS(L));
+                                                      /* SOC RB01312 */
+     IF T690_ARRAY.A_SLC(L) ¬= ' ' THEN
+      FILE_RCBBIB0.SERVICE_LVL_CODE_1 = T690_ARRAY.A_SLC(L);
+                                                      /* EOC RB01312 */
+                                                 /* SOC CEDS00000357 */
+     IF (FILE_RCBBIB0.WARRANTY_SPLT_DATE <=
+           FILE_RCBBIB0.WARRANTY_EXP_DATE) & T690_ARRAY.A_SLC(L) ¬= ' '
+     THEN DO;
+     /*       FILE_RCBBIB0.SERVICE_LVL_CODE_1 = T690_ARRAY.A_SLC(L);
+                                                              RB01312*/
+           IF WRK_RULE = 'FW' THEN
+              FILE_RCBBIB0.SERVICE_LVL_CODE_2 = T690_ARRAY.A_SLC(L);
+           ELSE IF WRK_RULE = 'HB' & T690_ARRAY.A_SLC2(L) ¬= '' THEN
+              FILE_RCBBIB0.SERVICE_LVL_CODE_2 = T690_ARRAY.A_SLC2(L);
+          END;
+                                                      /* EOC RB01298 */
+     IF FILE_RCBBIB0.WARRANTY_SPLT_DATE > FILE_RCBBIB0.WARRANTY_EXP_DATE
+     THEN DO;
+          FILE_RCBBIB0.WARRANTY_SPLT_DATE = '';
+          FILE_RCBBIB0.F_TYPE_OF_WARRANTY = '';
+     END;                                          /* EOC CEDS00000357*/
+    END;
+ ELSE
+                                                  /* SOC CEDS00000678 */
+     DO;
+       IF FILE_RCBBIB0.WARRANTY_SPLT_DATE ¬= '' THEN
+        FILE_RCBBIB0.F_TYPE_OF_WARRANTY = FILE_RCBBIB0.TYPE_OF_WARRANTY;Y;
+       ELSE
+        FILE_RCBBIB0.F_TYPE_OF_WARRANTY = '';
+     END;
+  END;
+ ELSE
+  DO;                                             /* EOC CEDS00000678 */
+    IF FILE_RCBBIB0.WARRANTY_SPLT_DATE ¬= ''  THEN
+       FILE_RCBBIB0.F_TYPE_OF_WARRANTY  = FILE_RCBBIB0.TYPE_OF_WARRANTY;
+    ELSE
+       FILE_RCBBIB0.F_TYPE_OF_WARRANTY = '';
+
+ END;                                                     /* RB01298 */
+ /*  IF (SWITCH_FLEXIBLE_WARRANTY    = TRUE  &
+        TB_RCBV690.SERVICE_LVL_CODE ¬= ' ')  THEN
+      DO;
+        FILE_RCBBIB0.SERVICE_LVL_CODE_1 = TB_RCBV690.SERVICE_LVL_CODE;
+        FILE_RCBBIB0.SERVICE_LVL_CODE_2 = TB_RCBV690.SERVICE_LVL_CODE;
+
+      END;  */                                       /* EOC RB01281  */
+                                                  /* SOC CEDS00000661 */
+ /*********************************************************************/
+ /* THE BELOW CODE HAS BEEN MOVED ABOVE FOR CEDS00000661              */
+ /*********************************************************************/
+ /*IF SUBSTR(RCBBIH0_PEW.CONFIG_ID,1,1) = 'Y' THEN                    */
+ /*   DO;                                                             */
+ /*     FILE_RCBBIB0.WARRANTY_LIABILITY = 'LEN';                      */
+ /*   END;                                                            */
+ /*ELSE                                                               */
+ /*   DO;                                                             */
+ /*     IF SUBSTR(RCBBIH0_PEW.CONFIG_ID,1,1) = 'N' THEN               */
+ /*       FILE_RCBBIB0.WARRANTY_LIABILITY = 'IBM';                    */
+ /*   END;                                          */ /* EOC RB01283 */
+ /*                                                                   */
+ /*IF SWITCH_VENDOR_SERVICE = TRUE THEN            */  /* SOC RB01278 */
+ /*   DO;                                                             */
+ /*     CALL RCBBIHM_PROD_REVENUE_DIV;         */ /* EOC CEDS00000661 */
+ /*   IF (G_WRK_INSTALL_DATE   >=  WRK_LENOVO_DATE |      SOC RB01283 */
+ /*      SUBSTR(WRK_ORIGIN,1,1) =  'L')            &                  */
+ /*      TB_RCBV400.PROD_REVENUE_DIV = '44' THEN          EOC RB01283 */
+                                                  /* SOC CEDS00000661 */
+ /*     IF FILE_RCBBIB0.WARRANTY_LIABILITY = 'LEN' THEN  *//* RB01283 */
+ /*        DO;                                                        */
+ /*          FILE_RCBBIB0.TYPE_OF_WARRANTY = 'C';                     */
+ /*        END;                                                       */
+ /*   END;                                          */ /* EOC RB01278 */
+                                                  /* EOC CEDS00000661 */
+
+ IF SWITCH_FLEXIBLE_WARRANTY = FALSE THEN DO; /* PCR P10-308 RB01312 */
+   IF SWITCH_PEW_SOURCE = TRUE THEN                    /* SOC RB01284 */
+     DO;
+       CALL RCBBIHM_PEWSOURCE_ON;
+     END;                                              /* EOC RB01284 */
+ END;                                         /* PCR P10-308 RB01312 */
+ END RCBBIHM_FILL_INVENTORY;
+1/********************************************************************/
+ /*                                                      SOC RB01285 */
+ /* MODULE NAME      : RCBBIHM_FILL_CONTRACT                         */
+ /*                                                                  */
+ /* DESCRIPTION      : FILL RECORD FOR RCB CONTRACT FILE             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_FILL_CONTRACT: PROC;
+
+ CALL RCBBIHM_RETRIEVE_SVT;
+
+ FILE_RCBBIC0.PRODUCT_TYPE       = RCBBIH0_PEW.MACH_TYPE;
+ FILE_RCBBIC0.ORIGIN             = WRK_ORIGIN;
+ FILE_RCBBIC0.SEQUENCE_NUMBER    = WRK_SEQUENCE_NUMBER;
+ FILE_RCBBIC0.COUNTRY_NUMBER     = WRK_CTRYNO;
+ FILE_RCBBIC0.ACTION_CODE        = 'A';
+ FILE_RCBBIC0.HVP_QUANTITY       = 1;
+ FILE_RCBBIC0.CONTRACT_NUMBER    = RCBBIH0_PEW.MFG_PART_NBR;
+ FILE_RCBBIC0.EFFECTIVE_DATE     = RCBBIH0_PEW.SERV_START_DATE;
+ FILE_RCBBIC0.END_DATE           = RCBBIH0_PEW.SERV_END_DATE;
+ FILE_RCBBIC0.SERVICE_TYPE       = WRK_SERV_TYPE;
+ FILE_RCBBIC0.SERVICE_MODULE_1   = PARM.SERVICE_MODULES(1);
+ FILE_RCBBIC0.SERVICE_MODULE_2   = PARM.SERVICE_MODULES(2);
+ FILE_RCBBIC0.SERVICE_MODULE_3   = PARM.SERVICE_MODULES(3);
+ FILE_RCBBIC0.SERVICE_MODULE_4   = PARM.SERVICE_MODULES(4);
+ FILE_RCBBIC0.SERVICE_MODULE_5   = PARM.SERVICE_MODULES(5);
+
+ /*MONDAY*/
+ FILE_RCBBIC0.MONDAY_COVER_START    = TB_RCBV680.MON_START;
+ FILE_RCBBIC0.MONDAY_COVER_END      = TB_RCBV680.MON_STOP;
+ /*TUESDAY*/
+ FILE_RCBBIC0.TUESDAY_COVER_START   = TB_RCBV680.TUE_START;
+ FILE_RCBBIC0.TUESDAY_COVER_END     = TB_RCBV680.TUE_STOP;
+ /*WEDNESDAY*/
+ FILE_RCBBIC0.WEDNESDAY_COVER_START = TB_RCBV680.WED_START;
+ FILE_RCBBIC0.WEDNESDAY_COVER_END   = TB_RCBV680.WED_STOP;
+ /*THURSDAY*/
+ FILE_RCBBIC0.THURSDAY_COVER_START  = TB_RCBV680.THU_START;
+ FILE_RCBBIC0.THURSDAY_COVER_END    = TB_RCBV680.THU_STOP;
+ /*FRIDAY*/
+ FILE_RCBBIC0.FRIDAY_COVER_START    = TB_RCBV680.FRI_START;
+ FILE_RCBBIC0.FRIDAY_COVER_END      = TB_RCBV680.FRI_STOP;
+ /*SATURDAY*/
+ FILE_RCBBIC0.SATURDAY_COVER_START  = TB_RCBV680.SAT_START;
+ FILE_RCBBIC0.SATURDAY_COVER_END    = TB_RCBV680.SAT_STOP;
+ /*SUNDAY*/
+ FILE_RCBBIC0.SUNDAY_COVER_START    = TB_RCBV680.SUN_START;
+ FILE_RCBBIC0.SUNDAY_COVER_END      = TB_RCBV680.SUN_STOP;
+
+ FILE_RCBBIC0.SOURCE_INDICATOR   = 'P';
+ FILE_RCBBIC0.AUTHORISATION_CODE = '';
+ FILE_RCBBIC0.CUSTOMER_NUMBER    = FILE_RCBBIB0.CUSTOMER_NUMBER;
+                                                          /* RB01289 */
+
+ END RCBBIHM_FILL_CONTRACT;                           /* EOC RB01285 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_HANDLE_RCB023M                        */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /* DETERMINE WARRANTY CONDITIONS VIA PROGRAM RCB023M. IF NO         */
+ /* SPECIFIC WARRANTY CONDITIONS CAN BE DETERMINED, THE DEFAULT      */
+ /* WARRANTY CONDITIONS OUT OF THE PARAMETER FILE RCBBIHR REMAIN     */
+ /* VALID, OTHERWISE THEY WILL BE OVERWRITTEN.                       */
+ /********************************************************************/
+ RCBBIHM_HANDLE_RCB023M: PROC;
+
+                               /* DETERMINE SPECIFIC WARR. CONDITIONS */
+ PARM_RCBZ32S                         = '';
+ PARM_RCBZ32S.INAREA.COUNTRY_NUMBER   = FILE_RCBBIB0.COUNTRY_NUMBER;
+ PARM_RCBZ32S.INAREA.PRODUCT_TYPE     = FILE_RCBBIB0.PRODUCT_TYPE;
+ PARM_RCBZ32S.INAREA.MODEL            = FILE_RCBBIB0.MODEL_NUMBER;
+ PARM_RCBZ32S.INAREA.EFFECTIVE_DATE   = FILE_RCBBIB0.INSTALL_DATE;
+ PARM_RCBZ32S.INOUT.END_DATE          = FILE_RCBBIB0.WARRANTY_EXP_DATE;
+ PARM_RCBZ32S.INOUT.TYPE_OF_WARRANTY  = FILE_RCBBIB0.TYPE_OF_WARRANTY;
+
+ CALL RCB023M (ADDR(PARM_RCBZ32S),PTR_INT_AREA);
+
+ SELECT;
+   WHEN(PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_1 ¬= HIGH(3) &
+        PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_2 ¬= HIGH(3))
+   DO;                     /* BOTH SERVICE LEVEL CODES ARE DETERMINED */
+     FILE_RCBBIB0.WARRANTY_EXP_DATE  = PARM_RCBZ32S.OUTAREA.END_DATE_2;
+     FILE_RCBBIB0.TYPE_OF_WARRANTY   =
+                           PARM_RCBZ32S.INOUT.TYPE_OF_WARRANTY;
+     FILE_RCBBIB0.SERVICE_LVL_CODE_1 =
+                           PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_1;
+     FILE_RCBBIB0.WARRANTY_SPLT_DATE =
+                           PARM_RCBZ32S.OUTAREA.START_DATE_2;
+     FILE_RCBBIB0.SERVICE_LVL_CODE_2 =
+                           PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_2;
+   END;
+   WHEN(PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_1 ¬= HIGH(3))
+   DO;                     /* ONLY SERVICE LEVEL CODE 1 IS DETERMINED */
+     FILE_RCBBIB0.WARRANTY_EXP_DATE  = PARM_RCBZ32S.OUTAREA.END_DATE_1;
+     FILE_RCBBIB0.TYPE_OF_WARRANTY   =
+                           PARM_RCBZ32S.INOUT.TYPE_OF_WARRANTY;
+     FILE_RCBBIB0.SERVICE_LVL_CODE_1 =
+                           PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_1;
+   END;
+   WHEN(PARM_RCBZ32S.INOUT.TYPE_OF_WARRANTY > '')
+   DO;                     /* ONLY TYPE OF WARRANTY IS DETERMINED     */
+     FILE_RCBBIB0.WARRANTY_EXP_DATE  = PARM_RCBZ32S.OUTAREA.END_DATE_1;
+     FILE_RCBBIB0.TYPE_OF_WARRANTY   =
+                           PARM_RCBZ32S.INOUT.TYPE_OF_WARRANTY;
+   END;
+   OTHERWISE;            /* DEFAULT FROM PARAMETER FILE REMAINS VALID */
+ END;
+ IF PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_C ¬= HIGH(3)
+ THEN
+   FILE_RCBBIB0.SERVICE_LVL_CODE_C =
+                         PARM_RCBZ32S.OUTAREA.SERVICE_LVL_CODE_C;
+
+ END RCBBIHM_HANDLE_RCB023M;
+1/********************************************************************/
+ /*                                                   /* SOC RB01284 */
+ /* MODULE NAME      : RCBBIHM_PEWSOURCE_ON                          */
+ /*                                                                  */
+ /* DESCRIPTION      : WHEN PEW AUTHORITATIVE SOURCE SWITCH          */
+ /*                    IS ON, CHECK FOR LENOVO AND LEGACY OR         */
+ /*                    ALL TYPE OF MACHINES                          */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_PEWSOURCE_ON: PROC;
+
+ CALL RCBBIHM_PROD_REVENUE_DIV;
+
+ IF RCB151.PEW_AUTH_SOURCE   = 'L' THEN  /* LENOVO & LEGACY MACHINES */
+   DO;
+     IF FILE_RCBBIB0.WARRANTY_LIABILITY = 'LEN' THEN/* LENOVO MACHINE*/
+        CALL RCBBIHM_SDF_SLC;
+     ELSE
+       DO;
+        IF TB_RCBV400.PROD_REVENUE_DIV  = '44' THEN /* LEGACY MACHINE*/
+           CALL RCBBIHM_SDF_SLC;
+       END;
+   END;
+ ELSE
+   DO;
+     IF RCB151.PEW_AUTH_SOURCE = 'Y' THEN           /* ALL MACHINES  */
+        CALL RCBBIHM_SDF_SLC;
+   END;
+
+ END RCBBIHM_PEWSOURCE_ON;                            /* EOC RB01284 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_WRITE_INVENTORY                       */
+ /*                                                                  */
+ /* DESCRIPTION      : FILL AND WRITE RECORD FOR RCB INVENTORY FILE  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_WRITE_INVENTORY: PROC;
+
+ WRITE FILE(RCBBIB0) FROM (FILE_RCBBIB0);
+ G_CNTS.CNT.RCBBIB0_WRITE = G_CNTS.CNT.RCBBIB0_WRITE + 1;
+
+ END RCBBIHM_WRITE_INVENTORY;
+1/********************************************************************/
+ /*                                                   /* SOC RB01285 */
+ /* MODULE NAME      : RCBBIHM_WRITE_CONTRACT                        */
+ /*                                                                  */
+ /* DESCRIPTION      : FILL AND WRITE RECORD FOR RCB CONTRACT FILE   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_WRITE_CONTRACT: PROC;
+
+ WRITE FILE(RCBBIC0) FROM (FILE_RCBBIC0);
+ G_CNTS.CNT.RCBBIC0_WRITE = G_CNTS.CNT.RCBBIC0_WRITE + 1;
+
+ END RCBBIHM_WRITE_CONTRACT;                          /* EOC RB01285 */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_SKIP_RECORD                           */
+ /*                                                                  */
+ /* DESCRIPTION      : SKIP RECORD FOR NON-PROCESSED COUNTRY         */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_SKIP_RECORD: PROC;
+
+ G_CNTS.CNT.RCBBIH0_SKIP = G_CNTS.CNT.RCBBIH0_SKIP + 1;
+
+ END RCBBIHM_SKIP_RECORD;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_REJECT_RECORD                         */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE INPUTRECORD TO REJECTED RECORDS FILE    */
+ /*                    WHEN VALIDATION IS NOT COMPLETELY CORRECT     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_REJECT_RECORD: PROC;
+
+ WRITE FILE(RCBBIH1) FROM (FILE_RCBBIH0);
+ G_CNTS.CNT.RCBBIH0_REJECT = G_CNTS.CNT.RCBBIH0_REJECT + 1;
+
+ %IF ( RCBBIHM_DEBUG = 'Y' ) %THEN %DO;
+   PUT SKIP LIST( '#DBG# '||'REJECT_REC.:'|| RCBBIHM_GET_KEYSPEC() );
+ %END;
+
+ END RCBBIHM_REJECT_RECORD;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_PROCESS_TRAILER                       */
+ /*                                                                  */
+ /* DESCRIPTION      : SKIP TRAILER RECORD.                          */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_PROCESS_TRAILER: PROC;
+
+ G_CNTS.TOT.RCBBIH0_READ   = G_CNTS.TOT.RCBBIH0_READ   + 1;
+ G_CNTS.TOT.RCBBIH0_ACCEPT = G_CNTS.TOT.RCBBIH0_ACCEPT + 1;
+ G_CNTS.TRAILER_SEQ        = G_CNTS.TOT.RCBBIH0_READ;
+ G_CNTS.COMPARE_TOTAL      = RCBBIH0_TRAILER.REC_COUNT;
+
+ CALL RCBBIHM_READ_RECORD;                   /* READ TO REACH EOF    */
+ IF (¬ EOF_RCBBIH0)                          /* RECORD AFTER TRAILER */
+ THEN
+   DO;
+     CALL RCBBIHM_MSG('0015');
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#016');              /*ABORT*/
+   END;
+
+ END RCBBIHM_PROCESS_TRAILER;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_CONTROL_COUNTERS                      */
+ /*                                                                  */
+ /* DESCRIPTION      : VALIDATE PROCES CONTROL COUNTERS              */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_CONTROL_COUNTERS: PROC;
+                                 /************************************/
+                                 /* VERIFY COUNTERS                  */
+                                 /************************************/
+ IF (G_CNTS.TRAILER_SEQ = 0)                 /* NO TRAILER RECORD    */
+ THEN
+   DO;
+     CALL RCBBIHM_MSG('0017');
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#017');              /*ABORT*/
+   END;
+                                             /* CHECK RECORDCOUNT    */
+ IF (G_CNTS.COMPARE_TOTAL ¬= G_CNTS.TOT.RCBBIH0_READ - 2)
+ THEN
+   DO;
+     CALL RCBBIHM_MSG('0007');
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#018');              /*ABORT*/
+   END;
+
+ END RCBBIHM_CONTROL_COUNTERS;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_PROD_REVENUE_DIV         SOC RB01278  */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIVE PRODUCT REVENUE DIVISION FROM TABLE   */
+ /*                    400                                           */
+ /********************************************************************/
+ RCBBIHM_PROD_REVENUE_DIV: PROC;
+
+ TB_RCBV400           = '';
+ TB_RCBV400_I         = '';
+
+ EXEC SQL
+   SELECT PROD_REVENUE_DIV,SERVICE_LVL_CODE_1             /* RB01284 */
+   INTO   :TB_RCBV400.PROD_REVENUE_DIV   :WRK_INDNULL
+         ,:TB_RCBV400.SERVICE_LVL_CODE_1 :WRK_INDNULL     /* RB01284 */
+   /*SELECT PROD_REVENUE_DIV
+   INTO   :TB_RCBV400.PROD_REVENUE_DIV
+          :WRK_INDNULL */
+   FROM   RCBV0400_PO_MOD1 T400
+   WHERE  T400.COUNTRY_NUMBER   = :WRK_CTRYNO
+   AND    T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+   AND    T400.MODEL_NUMBER     = :WRK_MODEL
+   AND    :WRK_RUN_DATE BETWEEN
+          T400.EFFECTIVE_DATE  AND T400.END_DATE;
+
+ SELECT(SQLCODE);
+   WHEN(0);
+   WHEN(100)
+     DO;
+      EXEC SQL
+        SELECT PROD_REVENUE_DIV,SERVICE_LVL_CODE_1        /* RB01284 */
+        INTO :TB_RCBV400.PROD_REVENUE_DIV   :WRK_INDNULL
+            ,:TB_RCBV400.SERVICE_LVL_CODE_1 :WRK_INDNULL  /* RB01284 */
+        /*SELECT PROD_REVENUE_DIV
+        INTO :TB_RCBV400.PROD_REVENUE_DIV
+             :WRK_INDNULL*/
+        FROM       RCBV0400_PO_MOD1 T400
+        WHERE T400.COUNTRY_NUMBER        = :WRK_CTRYNO
+        AND        T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+        AND        T400.MODEL_NUMBER     = ''
+        AND        :WRK_RUN_DATE BETWEEN
+               T400.EFFECTIVE_DATE AND T400.END_DATE;
+      SELECT(SQLCODE);
+        WHEN(0);
+        WHEN(100);
+        OTHERWISE
+          DO;
+            CALL RCBBIHM_ERROR (ADDR (SQLCA),
+                                'DB2',
+                                '#018');
+          END;
+      END;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBBIHM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#022');
+     END;
+ END;
+
+ END RCBBIHM_PROD_REVENUE_DIV;                        /* EOC RB01278 */
+ /********************************************************************/
+ /*                                                   /* SOC RB01284 */
+ /* MODULE NAME      : RCBBIHM_SDF_SLC                               */
+ /*                                                                  */
+ /* DESCRIPTION      : IF PEW AUTHORITATIVE SOURCE SWITCH IS ON,     */
+ /*                    THEN TRANSLATE SDF TO SLC                     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_SDF_SLC: PROC;
+
+ SWITCH_PER_CALL = FALSE;
+ CALL RCBBIHM_TRANS_SLC;
+
+ IF ((SWITCH_SDF_SLC = TRUE   &       /* SLC FROM T0650 */   /* RULE 1*/
+    TB_RCBV650.SERVICE_LVL_CODE_1 = RCB153.SLC_NOT_SUPPORTED)) THEN
+   DO;
+      FILE_RCBBIB0.SERVICE_LVL_CODE_1 =
+                                TB_RCBV650.SERVICE_LVL_CODE_1;
+      IF FILE_RCBBIB0.WARRANTY_SPLT_DATE ¬= '' THEN
+         FILE_RCBBIB0.SERVICE_LVL_CODE_2 =
+                                TB_RCBV650.SERVICE_LVL_CODE_2;
+   END;
+ ELSE
+   DO;
+     IF SWITCH_SDF_SLC = TRUE THEN
+       DO;
+         IF TB_RCBV400.SERVICE_LVL_CODE_1 ¬=
+                                RCB153.SLC_NOT_SUPPORTED THEN
+           DO;
+             FILE_RCBBIB0.SERVICE_LVL_CODE_1 =
+                                TB_RCBV650.SERVICE_LVL_CODE_1;
+             IF FILE_RCBBIB0.WARRANTY_SPLT_DATE ¬= '' THEN
+                FILE_RCBBIB0.SERVICE_LVL_CODE_2 =           /* RULE 4 */
+                                TB_RCBV650.SERVICE_LVL_CODE_2;
+           END;
+       END;
+     ELSE
+       IF TB_RCBV400.SERVICE_LVL_CODE_1 ¬=
+                                RCB153.SLC_NOT_SUPPORTED THEN
+          FILE_RCBBIB0.SERVICE_LVL_CODE_1 =                 /* RULE 5 */
+                                RCB152.NO_SERVICE_LEVEL;
+   END;
+
+   IF (FILE_RCBBIB0.TYPE_OF_MAINT = '3' &
+       FILE_RCBBIB0.WARRANTY_EXP_DATE < WRK_RUN_DATE) THEN
+     DO;
+       SWITCH_PER_CALL = TRUE;
+       IF FILE_RCBBIB0.SERVICE_LVL_CODE_C = '' THEN
+          FILE_RCBBIB0.SERVICE_LVL_CODE_C = RCB154.SLC_PER_CALL;
+     END;
+
+   IF (FILE_RCBBIB0.SERVICE_LVL_CODE_1 = '' &
+                         SWITCH_PER_CALL = FALSE) THEN
+     DO;
+       FILE_RCBBIB0.SERVICE_LVL_CODE_1 =
+                       RCB152.NO_SERVICE_LEVEL;    /* RULE 2 */
+     END;
+
+   IF FILE_RCBBIB0.SERVICE_LVL_CODE_2 = LOW(3) THEN  /* CEDS00000421 */
+      FILE_RCBBIB0.SERVICE_LVL_CODE_2 = '';          /* CEDS00000421 */
+
+ END RCBBIHM_SDF_SLC;                                 /* EOC RB01284 */
+ /********************************************************************/
+ /*                                                   /* SOC RB01281 */
+ /* MODULE NAME      : RCBBIHM_RETRIEVE_FLEXIBLE                     */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE THE FLEXIBLE RECORD                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_RETRIEVE_FLEXIBLE: PROC;
+
+ WRK_RULE             = '';                           /* SOC RB01298 */
+
+ /* TB_RCBV400           = '';
+    TB_RCBV400_I         = '';
+
+    TB_RCBV690           = '';
+    TB_RCBV690_I         = '';
+
+   EXEC SQL
+     SELECT T690.COUNTRY_NUMBER,
+            T690.PRODUCT_TYPE,
+            T690.MODEL_NUMBER,
+            T690.BRAND_WARRANTY_MNT,
+            T690.SERVICE_LVL_CODE,
+            T690.EFFECTIVE_DATE,
+            T690.END_DATE,
+            T690.LAST_CHANGE_DATE
+   INTO   :TB_RCBV690
+          :TB_RCBV690_I.INDNULL
+   FROM   RCBV0400_PO_MOD1   T400,
+          RCBV0690_FLEX_WARR T690
+   WHERE  T400.COUNTRY_NUMBER   = :WRK_CTRYNO
+   AND    T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+   AND    T400.MODEL_NUMBER     = :WRK_MODEL
+   AND    T690.COUNTRY_NUMBER   = T400.COUNTRY_NUMBER
+   AND    T690.PRODUCT_TYPE     = T400.PRODUCT_TYPE
+   AND    T690.MODEL_NUMBER     = T400.MODEL_NUMBER
+   AND    (:G_WRK_INSTALL_DATE BETWEEN
+          T690.EFFECTIVE_DATE  AND T690.END_DATE)
+   AND    (:RUN_DATE_AREA.RUN_DATE BETWEEN
+          T400.EFFECTIVE_DATE  AND T400.END_DATE);
+
+ SELECT (SQLCODE);
+   WHEN (0)
+         SWITCH_FLEXIBLE_WARRANTY = TRUE;
+   WHEN (100)
+   DO;
+ EXEC SQL
+   SELECT T690.COUNTRY_NUMBER,
+          T690.PRODUCT_TYPE,
+          T690.MODEL_NUMBER,
+          T690.BRAND_WARRANTY_MNT,
+          T690.SERVICE_LVL_CODE,
+          T690.EFFECTIVE_DATE,
+          T690.END_DATE,
+          T690.LAST_CHANGE_DATE
+   INTO   :TB_RCBV690
+          :TB_RCBV690_I.INDNULL
+   FROM   RCBV0400_PO_MOD1   T400,
+          RCBV0690_FLEX_WARR T690
+   WHERE  T400.COUNTRY_NUMBER   = :WRK_CTRYNO
+   AND    T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+   AND    T400.MODEL_NUMBER     = ''
+   AND    T690.COUNTRY_NUMBER   = T400.COUNTRY_NUMBER
+   AND    T690.PRODUCT_TYPE     = T400.PRODUCT_TYPE
+   AND    T690.MODEL_NUMBER     = '***'
+   AND    (:G_WRK_INSTALL_DATE BETWEEN
+          T690.EFFECTIVE_DATE  AND T690.END_DATE)
+   AND    (:RUN_DATE_AREA.RUN_DATE BETWEEN
+          T400.EFFECTIVE_DATE  AND T400.END_DATE);
+   END;
+   OTHERWISE
+       DO;
+         CALL RCBBIHM_ERROR (ADDR (SQLCA),'DB2','#094');
+       END;
+   END;
+
+ SELECT (SQLCODE);
+   WHEN (0)
+         SWITCH_FLEXIBLE_WARRANTY = TRUE;
+   WHEN (100)
+   DO;
+ EXEC SQL
+   SELECT T690.COUNTRY_NUMBER,
+          T690.PRODUCT_TYPE,
+          T690.MODEL_NUMBER,
+          T690.BRAND_WARRANTY_MNT,
+          T690.SERVICE_LVL_CODE,
+          T690.EFFECTIVE_DATE,
+          T690.END_DATE,
+          T690.LAST_CHANGE_DATE
+   INTO   :TB_RCBV690
+          :TB_RCBV690_I.INDNULL
+   FROM   RCBV0400_PO_MOD1   T400,
+          RCBV0690_FLEX_WARR T690
+   WHERE  T400.COUNTRY_NUMBER   = :WRK_CTRYNO
+   AND    T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+   AND    T400.MODEL_NUMBER     = :WRK_MODEL
+   AND    T690.COUNTRY_NUMBER   = '***'
+   AND    T690.PRODUCT_TYPE     = T400.PRODUCT_TYPE
+   AND    T690.MODEL_NUMBER     = T400.MODEL_NUMBER
+   AND    (:G_WRK_INSTALL_DATE BETWEEN
+          T690.EFFECTIVE_DATE  AND T690.END_DATE)
+   AND    (:RUN_DATE_AREA.RUN_DATE BETWEEN
+          T400.EFFECTIVE_DATE  AND T400.END_DATE);
+   END;
+   OTHERWISE
+       DO;
+         CALL RCBBIHM_ERROR (ADDR (SQLCA),'DB2','#093');
+       END;
+   END;
+
+ SELECT (SQLCODE);
+   WHEN (0)
+         SWITCH_FLEXIBLE_WARRANTY = TRUE;
+   WHEN (100)
+   DO;
+ EXEC SQL
+   SELECT T690.COUNTRY_NUMBER,
+          T690.PRODUCT_TYPE,
+          T690.MODEL_NUMBER,
+          T690.BRAND_WARRANTY_MNT,
+          T690.SERVICE_LVL_CODE,
+          T690.EFFECTIVE_DATE,
+          T690.END_DATE,
+          T690.LAST_CHANGE_DATE
+   INTO   :TB_RCBV690
+          :TB_RCBV690_I.INDNULL
+   FROM   RCBV0400_PO_MOD1   T400,
+          RCBV0690_FLEX_WARR T690
+   WHERE  T400.COUNTRY_NUMBER   = :WRK_CTRYNO
+   AND    T400.PRODUCT_TYPE     = :WRK_PRODUCT_TYPE
+   AND    T400.MODEL_NUMBER     = ''
+   AND    T690.COUNTRY_NUMBER   = '***'
+   AND    T690.PRODUCT_TYPE     = T400.PRODUCT_TYPE
+   AND    T690.MODEL_NUMBER     = '***'
+   AND    (:G_WRK_INSTALL_DATE BETWEEN
+          T690.EFFECTIVE_DATE  AND T690.END_DATE)
+   AND    (:RUN_DATE_AREA.RUN_DATE BETWEEN
+          T400.EFFECTIVE_DATE  AND T400.END_DATE);
+   END;
+   OTHERWISE
+       DO;
+         CALL RCBBIHM_ERROR (ADDR (SQLCA),'DB2','#092');
+       END;
+   END;
+  SELECT (SQLCODE);
+    WHEN (0)
+          SWITCH_FLEXIBLE_WARRANTY = TRUE;
+    WHEN (100)
+          SWITCH_FLEXIBLE_WARRANTY = FALSE;
+    OTHERWISE
+         CALL RCBBIHM_ERROR(ADDR(SQLCA),'DB2','#091');
+  END; */
+
+  DO M = 1 TO REC_COUNT BY 1;
+      IF  T690_ARRAY.A_COUNTRY(M)   =  WRK_CTRYNO          &
+          T690_ARRAY.A_TYPE(M)      =  WRK_PRODUCT_TYPE    &
+          T690_ARRAY.A_MODEL(M)     =  WRK_MODEL           &
+          T690_ARRAY.A_EFF_DATE(M) <=  G_WRK_INSTALL_DATE  &
+          G_WRK_INSTALL_DATE       <=  T690_ARRAY.A_END_DATE(M)
+      THEN DO;
+             SWITCH_FLEXIBLE_WARRANTY = TRUE;
+             WRK_RULE = T690_ARRAY.A_RULE(M);
+             L = M;
+             M = REC_COUNT;
+           END;
+      ELSE
+        SWITCH_FLEXIBLE_WARRANTY = FALSE;
+  END;
+
+  IF SWITCH_FLEXIBLE_WARRANTY = FALSE THEN
+  DO M = 1 TO REC_COUNT BY 1;
+      IF  T690_ARRAY.A_COUNTRY(M)   =  WRK_CTRYNO          &
+          T690_ARRAY.A_TYPE(M)      =  WRK_PRODUCT_TYPE    &
+          T690_ARRAY.A_MODEL(M)     =  '***'               &
+          T690_ARRAY.A_EFF_DATE(M) <=  G_WRK_INSTALL_DATE  &
+          G_WRK_INSTALL_DATE       <=  T690_ARRAY.A_END_DATE(M)
+      THEN DO;
+             SWITCH_FLEXIBLE_WARRANTY = TRUE;
+             WRK_RULE = T690_ARRAY.A_RULE(M);
+             L = M;
+             M = REC_COUNT;
+           END;
+      ELSE
+        SWITCH_FLEXIBLE_WARRANTY = FALSE;
+  END;
+
+  IF SWITCH_FLEXIBLE_WARRANTY = FALSE THEN
+  DO M = 1 TO REC_COUNT BY 1;
+      IF  T690_ARRAY.A_COUNTRY(M)   =  '***'               &
+          T690_ARRAY.A_TYPE(M)      =  WRK_PRODUCT_TYPE    &
+          T690_ARRAY.A_MODEL(M)     =  WRK_MODEL           &
+          T690_ARRAY.A_EFF_DATE(M) <=  G_WRK_INSTALL_DATE  &
+          G_WRK_INSTALL_DATE       <=  T690_ARRAY.A_END_DATE(M)
+      THEN DO;
+             SWITCH_FLEXIBLE_WARRANTY = TRUE;
+             WRK_RULE = T690_ARRAY.A_RULE(M);
+             L = M;
+             M = REC_COUNT;
+           END;
+      ELSE
+        SWITCH_FLEXIBLE_WARRANTY = FALSE;
+  END;
+
+  IF SWITCH_FLEXIBLE_WARRANTY = FALSE THEN
+  DO M = 1 TO REC_COUNT BY 1;
+      IF  T690_ARRAY.A_COUNTRY(M)   =  '***'               &
+          T690_ARRAY.A_TYPE(M)      =  WRK_PRODUCT_TYPE    &
+          T690_ARRAY.A_MODEL(M)     =  '***'               &
+          T690_ARRAY.A_EFF_DATE(M) <=  G_WRK_INSTALL_DATE  &
+          G_WRK_INSTALL_DATE       <=  T690_ARRAY.A_END_DATE(M)
+      THEN DO;
+             SWITCH_FLEXIBLE_WARRANTY = TRUE;
+             WRK_RULE = T690_ARRAY.A_RULE(M);
+             L = M;
+             M = REC_COUNT;
+           END;
+      ELSE
+        SWITCH_FLEXIBLE_WARRANTY = FALSE;
+  END;
+                                                      /* EOC RB01298 */
+ END RCBBIHM_RETRIEVE_FLEXIBLE;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_FILL_T690_ARRAY           SOC RB01298 */
+ /*                                                                  */
+ /* DESCRIPTION      : GET THE FLEXIBLE WARRANTY RECORDS FROM T690   */
+ /*                    INTO T690 ARRAY                               */
+ /********************************************************************/
+0RCBBIHM_FILL_T690_ARRAY: PROC;
+
+  READ FILE (RCBBIHB) INTO (FILE_RCBBIHB);           /* CEDS00000678 */
+  DO  WHILE (¬EOF_RCBBIHB);
+      READ FILE (RCBBIHB) INTO (FILE_RCBBIHB);
+      REC_COUNT = REC_COUNT + 1;
+  END;
+
+  CLOSE  FILE (RCBBIHB);
+  EOF_RCBBIHB   = FALSE;
+
+  IF REC_COUNT > 0 THEN
+   DO;
+     ALLOCATE T690_ARRAY;
+     OPEN FILE (RCBBIHB);
+     DO N = 1 TO REC_COUNT BY 1;
+      READ FILE (RCBBIHB) INTO (FILE_RCBBIHB);
+
+      T690_ARRAY.A_COUNTRY(N)    = FILE_RCBBIHB.COUNTRY_NUMBER;
+      T690_ARRAY.A_TYPE(N)       = FILE_RCBBIHB.PRODUCT_TYPE;
+      T690_ARRAY.A_MODEL(N)      = FILE_RCBBIHB.MODEL_NUMBER;
+      T690_ARRAY.A_B_W_MNTHS(N)  = FILE_RCBBIHB.BRAND_WARRANTY_MNT;
+      T690_ARRAY.A_SLC_NULLIND(N)= FILE_RCBBIHB.NULL_SERVICE_LVL_CODE;
+      T690_ARRAY.A_SLC(N)        = FILE_RCBBIHB.SERVICE_LVL_CODE;
+      T690_ARRAY.A_EFF_DATE(N)   = FILE_RCBBIHB.EFFECTIVE_DATE;
+      T690_ARRAY.A_END_DATE(N)   = FILE_RCBBIHB.END_DATE;
+      T690_ARRAY.A_LAST_CHANGE_DATE(N) = FILE_RCBBIHB.LAST_CHANGE_DATE;
+      T690_ARRAY.A_SLC2_NULLIND(N)=FILE_RCBBIHB.NULL_SERVICE_LVL_CODE2;
+      T690_ARRAY.A_SLC2(N)       = FILE_RCBBIHB.SERVICE_LVL_CODE_2;
+      T690_ARRAY.A_RULE(N)       = FILE_RCBBIHB.RULE;
+     END;
+   END;
+  ELSE
+    SWITCH_EMPTY_T690 = TRUE;
+
+0END RCBBIHM_FILL_T690_ARRAY;                         /* EOC RB01298 */
+ /********************************************************************/
+ /*                                                   /* SOC RB01284 */
+ /* MODULE NAME      : RCBBIHM_TRANS_SLC                             */
+ /*                                                                  */
+ /* DESCRIPTION      : TO GET SLC FROM RCBT0650_TRANS_SDF            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_TRANS_SLC: PROC;
+
+ WRK_PEW_SDF       = FILE_RCBBIB0.SERVICE_DELIV_FLAG;
+ SWITCH_SDF_SLC    = FALSE;
+
+ EXEC SQL
+   SELECT SERVICE_LVL_CODE_1,SERVICE_LVL_CODE_2
+   INTO   :TB_RCBV650.SERVICE_LVL_CODE_1 :TB_RCBV650_I.INDNULL
+         ,:TB_RCBV650.SERVICE_LVL_CODE_2 :TB_RCBV650_I.INDNULL
+   FROM   RCBV0650_TRANS_SDF T650
+   WHERE  T650.COUNTRY_NUMBER       = :WRK_CTRYNO
+   AND    T650.SERVICE_DELIV_FLAG   = :WRK_PEW_SDF;
+
+   SELECT(SQLCODE);
+     WHEN(0)
+         IF TB_RCBV650.SERVICE_LVL_CODE_1 ¬= ''
+         THEN
+              SWITCH_SDF_SLC = TRUE;
+         ELSE
+              SWITCH_SDF_SLC = FALSE;
+     WHEN(100)
+              SWITCH_SDF_SLC = FALSE;
+     OTHERWISE
+         DO;
+           CALL RCBBIHM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#245');
+         END;
+   END;
+
+ END RCBBIHM_TRANS_SLC;                              /* EOC RB01284 */
+ /********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_CALC_DATE                             */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS DATE USING RCB004M                    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_CALC_DATE: PROC   (EFF_DATE,
+                            CALC_TYPE,
+                            CALC_VALUE) RETURNS(CHAR(10));
+
+ DCL EFF_DATE     CHAR(10);
+ DCL CALC_TYPE    CHAR(1);
+ DCL CALC_VALUE   FIXED DEC(3,0);
+
+ DATE_AREA.WD_IN_FORMAT   = 'ISO';
+ DATE_AREA.WD_OUT_FORMAT  = 'ISO';
+ DATE_AREA.WD_FUNCTION    = 'C';
+ DATE_AREA.WD_PERIOD_TYPE = CALC_TYPE;
+ DATE_AREA.WD_PERIOD      = CALC_VALUE;
+ DATE_AREA.WD_IN_DATE     = EFF_DATE;
+
+ CALL RCB004M (ADDR (DATE_AREA));;
+
+ IF DATE_AREA.WD_STATUS  ¬= ' '
+ THEN
+   DO;
+     CALL RCBBIHM_ERROR (NULL,
+                         'OTHER',
+                         '#026');
+   END;
+
+ RETURN(DATE_AREA.WD_OUT_DATE);
+
+ END RCBBIHM_CALC_DATE;                                /* EOC RB01281*/
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_TERM_COUNTRY                          */
+ /*                                                                  */
+ /* DESCRIPTION      : TERMINATE CURRENT COUNTRY                     */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_TERM_COUNTRY: PROC;
+
+ IF SKIP_COUNTRY = '1'B THEN
+   PARM_INT_AREA.COUNTRY_NUMBER  = WRK_CTRY_FILE_PREV;
+ ELSE DO;
+   PARM_INT_AREA.COUNTRY_NUMBER  = WRK_CTRYNO;
+                           /******************************************/
+                           /* GIVE WARNING IF ALL COUNTS ZERO FOR    */
+                           /* A COUNTRY (MSG 184) -->COUNTRY MISSING */
+                           /******************************************/
+   IF G_CNTS.CNT.RCBBIH0_READ = 0 THEN
+     CALL RCBBIHM_MSG('0184');
+ END;
+                                 /************************************/
+                                 /* ADAPT THE COUNTERS               */
+                                 /************************************/
+ G_CNTS.TOT.RCBBIH0_READ   = G_CNTS.TOT.RCBBIH0_READ +
+                             G_CNTS.CNT.RCBBIH0_READ;
+ G_CNTS.TOT.RCBBIH0_SKIP   = G_CNTS.TOT.RCBBIH0_SKIP +
+                             G_CNTS.CNT.RCBBIH0_SKIP;
+ G_CNTS.TOT.RCBBIH0_REJECT = G_CNTS.TOT.RCBBIH0_REJECT +
+                             G_CNTS.CNT.RCBBIH0_REJECT;
+ G_CNTS.TOT.RCBBIH0_ACCEPT = G_CNTS.TOT.RCBBIH0_ACCEPT +
+                             G_CNTS.CNT.RCBBIH0_ACCEPT;
+ G_CNTS.TOT.RCBBIH0_BLOCK  = G_CNTS.TOT.RCBBIH0_BLOCK +
+                             G_CNTS.CNT.RCBBIH0_BLOCK;
+ G_CNTS.TOT.RCBBIH0_SPROD  = G_CNTS.TOT.RCBBIH0_SPROD +
+                             G_CNTS.CNT.RCBBIH0_SPROD;    /* RB01255 */
+ G_CNTS.TOT.RCBBIB0_WRITE  = G_CNTS.TOT.RCBBIB0_WRITE +
+                             G_CNTS.CNT.RCBBIB0_WRITE;
+                                                      /* SOC RB01285 */
+ G_CNTS.TOT.RCBBIC0_WRITE  = G_CNTS.TOT.RCBBIC0_WRITE +
+                             G_CNTS.CNT.RCBBIC0_WRITE;
+                                                      /* EOC RB01285 */
+                                 /************************************/
+                                 /* WRITE COUNT MESSAGES             */
+                                 /************************************/
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.CNT.RCBBIH0_READ;
+ G_WRKMSG.NUMFIELD_3 = G_CNTS.CNT.RCBBIH0_ACCEPT;
+ G_WRKMSG.NUMFIELD_4 = G_CNTS.CNT.RCBBIH0_REJECT;
+ G_WRKMSG.NUMFIELD_5 = G_CNTS.CNT.RCBBIH0_SKIP;
+ CALL RCBBIHM_MSG('0003');
+                                                       /*SOC RB01255 */
+ IF G_CNTS.CNT.RCBBIH0_SPROD > 0
+ THEN DO;
+   G_WRKMSG.NUMFIELD_2 = G_CNTS.CNT.RCBBIH0_SPROD;
+   CALL RCBBIHM_MSG('0235');
+ END;
+                                                       /*SOC RB01255 */
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIB0';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.CNT.RCBBIB0_WRITE;
+ CALL RCBBIHM_MSG('0004');
+                                                      /* SOC RB01285 */
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIC0';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.CNT.RCBBIC0_WRITE;
+ CALL RCBBIHM_MSG('0004');
+                                                      /* EOC RB01285 */
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIH1';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.CNT.RCBBIH0_REJECT;
+ CALL RCBBIHM_MSG('0004');
+
+ END RCBBIHM_TERM_COUNTRY;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_TERM_PROGRAM                          */
+ /*                                                                  */
+ /* DESCRIPTION      : TERMINATE PROGRAM                             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_TERM_PROGRAM: PROC;
+
+ TB_RCBV500             = '';
+ TB_RCBV500_I           = '';
+                                            /* UPDATE FILE SEQ.NUMBER */
+ IF WRK_FILE_SEQ = 999 THEN                                /* PTM1410 */
+   WRK_FILE_SEQ = 0;
+
+ RCB035.FILE_SEQ_NUM_SC = WRK_FILE_SEQ + 1;
+
+ TB_RCB035              = RCB035 , BY NAME;
+
+ CALL RCBG50M(PTR_RCBV500,
+              PTR_RCBV500I,
+              PTR_RETURN_AREA,
+              PTR_INT_AREA);
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN(0);
+   OTHERWISE
+     CALL RCBBIHM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                       'DB2','#019');
+ END;
+ PARM_INT_AREA.COUNTRY_NUMBER  = '';
+                                 /************************************/
+                                 /* WRITE COUNT MESSAGES             */
+                                 /************************************/
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.TOT.RCBBIH0_READ;
+ G_WRKMSG.NUMFIELD_3 = G_CNTS.TOT.RCBBIH0_ACCEPT;
+ G_WRKMSG.NUMFIELD_4 = G_CNTS.TOT.RCBBIH0_REJECT;
+ G_WRKMSG.NUMFIELD_5 = G_CNTS.TOT.RCBBIH0_SKIP;
+ CALL RCBBIHM_MSG('0003');
+                                                       /*SOC RB01255 */
+ IF G_CNTS.TOT.RCBBIH0_SPROD > 0
+ THEN DO;
+   G_WRKMSG.NUMFIELD_2 = G_CNTS.TOT.RCBBIH0_SPROD;
+   CALL RCBBIHM_MSG('0235');
+ END;
+                                                       /*SOC RB01255 */
+
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIB0';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.TOT.RCBBIB0_WRITE;
+ CALL RCBBIHM_MSG('0004');
+                                                      /* SOC RB01285 */
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIC0';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.TOT.RCBBIC0_WRITE;
+ CALL RCBBIHM_MSG('0004');
+                                                      /* EOC RB01285 */
+ G_WRKMSG.TXTFIELD_1 = 'RCBBIH1';
+ G_WRKMSG.NUMFIELD_2 = G_CNTS.TOT.RCBBIH0_REJECT;
+ CALL RCBBIHM_MSG('0004');
+                                 /************************************/
+                                 /* CLOSE ALL FILES                  */
+                                 /************************************/
+ CLOSE FILE (RCBPEW);
+ CLOSE FILE (RCBBIH0);
+ CLOSE FILE (RCBBIH1);
+ CLOSE FILE (RCBBIH2);                                    /* RB01255 */
+ CLOSE FILE (RCBBIB0);
+ CLOSE FILE (RCBBIC0);                                    /* RB01285 */
+ CLOSE FILE (RCBBIHB);                                    /* RB01298 */
+
+ CALL RCBBIHM_MSG('9999');
+                      /* CLOSE MESSAGE FILE  (ALWAYS LAST ACTION..!) */
+ PARM_INT_AREA.MSG_REQUEST    = 'C';
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ END RCBBIHM_TERM_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_MSG                                   */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON MESSAGE ROUTINE TO PRINT     */
+ /*                    THE RIGHT MESSAGE                             */
+ /*                                                                  */
+ /********************************************************************/
+0RCBBIHM_MSG: PROC (A_MSG_NR);
+
+ DCL A_MSG_NR          CHAR(04);
+
+ /*RESET COMMON FIELDS*/
+ PARM_INT_AREA.MSG_VAR_CODES = ' ';
+
+ SELECT (A_MSG_NR);
+
+   /* 0003: NUMBERS RECORDS READ,BLOCKED,ACCEPTED,REJECTED OR SKIPPED*/
+   WHEN ('0003') DO;
+
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'C1';
+     L_CNT_PIC9                     = G_WRKMSG.NUMFIELD_2;
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = L_CNT_PIC9;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'C3';
+     L_CNT_PIC9                     = G_WRKMSG.NUMFIELD_3;
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = L_CNT_PIC9;
+     PARM_INT_AREA.MSG_VAR_CODE_9   = 'C4';
+     L_CNT_PIC9                     = G_WRKMSG.NUMFIELD_4;
+     PARM_INT_AREA.MSG_VAR_VALUE_9  = L_CNT_PIC9;
+     PARM_INT_AREA.MSG_VAR_CODE_10  = 'C5';
+     L_CNT_PIC9                     = G_WRKMSG.NUMFIELD_5;
+     PARM_INT_AREA.MSG_VAR_VALUE_10 = L_CNT_PIC9;
+   END;
+
+   /* 0004: NUMBERS OF RECORDS WRITTEN */
+   WHEN ('0004') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = G_WRKMSG.TXTFIELD_1; /*FILENAME*/
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'C6';
+     L_CNT_PIC10                    = G_WRKMSG.NUMFIELD_2; /*NROF_REC*/
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = L_CNT_PIC10;
+   END;
+
+   /* 0005: NO COUNTRY FOUND FOR PROGRAM */
+   WHEN ('0005') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+   END;
+
+   /* 0007: NUMBERS OF RECORDS READ INCONSISTENT WITH TRAILERCOUNT */
+   WHEN ('0007') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'FL';
+     L_CNT_PIC10                    = G_CNTS.COMPARE_TOTAL;
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = L_CNT_PIC10;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'C7';
+     L_CNT_PIC10                    = G_CNTS.TOT.RCBBIH0_READ - 2;
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = L_CNT_PIC10;
+   END;
+
+   /* 0012: DATE INCORRECT */
+   WHEN ('0012') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = G_WRKMSG.TXTFIELD_1; /*DATE_1*/
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'DN';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = G_WRKMSG.TXTFIELD_2; /*DATE_2*/
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'RC';
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = DATE_AREA.WD_STATUS;
+   END;
+
+   /* 0013: EMPTY FILE OR DATABASE */
+   WHEN ('0013') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+   END;
+
+   /* 0014: INVALID HEADER FOUND */
+   WHEN ('0014') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+   END;
+
+   /* 0015: RECORDS FOUND AFTER TRAILER */
+   WHEN ('0015') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+   END;
+
+   /* 0016: NO HEADER FOUND */
+   WHEN ('0016') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+   END;
+
+   /* 0017: NO TRAILER FOUND */
+   WHEN ('0017') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCBBIH0';
+   END;
+
+   /* 0027: INCORRECT DATE SEQUENCE */
+   WHEN ('0027') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'D4';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = RCBBIH0_PEW.WAR_EXP_DATE;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'D5';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = RCBBIH0_PEW.SHIP_DATE;
+   END;
+
+   /* 0028: WARRANTY TYPE NOT FILLED IN DURING WARRANTY */
+   WHEN ('0028') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+   END;
+
+   /* 0031: BOTH TYPE OF MAINTENANCE AND TYPE OF WARRANTY ARE BLANC */
+   WHEN ('0031') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+   END;
+
+   /* 0033: THE INPUT RECORD WAS REJECTED */
+   WHEN ('0033') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'SK';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = RCBBIHM_GET_KEYSPEC();
+   END;
+
+   /* I050: RECORD NOT FOUND FOR PK PN ST */
+   WHEN('I050') DO;
+     PARM_INT_AREA.COUNTRY_NUMBER   = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'PN';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = 'RCB035';
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'PK';
+     PARM_INT_AREA.MSG_VAR_VALUE_7  =  TB_RCBV500.PARAMETER_KEY;
+   END;
+
+   /* 0180: RUNS ARE OUT OF SEQUENCE */
+   WHEN ('0180') DO;
+     PARM_INT_AREA.COUNTRY_NUMBER   = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = G_WRKMSG.TXTFIELD_1;
+     PARM_INT_AREA.MSG_VAR_CODE_7   = 'SQ';
+     WRK_FILE_SEQ        = RCBBIH0_HEADER.SEQ_NBR;
+     PARM_INT_AREA.MSG_VAR_VALUE_7  = WRK_FILE_SEQ;
+     PARM_INT_AREA.MSG_VAR_CODE_8   = 'SQ';
+     WRK_FILE_SEQ                   = RCB035.FILE_SEQ_NUM_SC;
+     PARM_INT_AREA.MSG_VAR_VALUE_8  = WRK_FILE_SEQ;
+   END;
+
+   /* 0181: COUNTRY NUMBER SKIPPED */
+   WHEN ('0181') DO;
+     PARM_INT_AREA.COUNTRY_NUMBER   = RCBBIH0_PEW.COUNTRY;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = RCBBIH0_PEW.COUNTRY;
+   END;
+
+   /* 0184: COUNTRY REAUESTED, BUT NOT PRESENT */
+   WHEN ('0184') DO;
+     PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'CY';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_CTRYNO;
+   END;
+
+   /* 0198: CUSTOMER NUMBER INVALID */
+   WHEN ('0198') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'CU';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = RCBBIH0_PEW.CUSTOMER_NBR;
+   END;
+
+   /* 0199: MACHINE SERIAL NUMBER INVALID */
+   WHEN ('0199') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'HW';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = RCBBIH0_PEW.MACH_TYPE ||
+                                      RCBBIH0_PEW.SERIAL;
+   END;
+
+   /* 0216: PROGRAM RUN DATE RETRIEVED */
+   WHEN ('0216') DO;
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6    = 'DT';
+     PARM_INT_AREA.MSG_VAR_VALUE_6   = WRK_RUN_DATE;
+     PARM_INT_AREA.MSG_VAR_CODE_7    = 'CY';
+     IF SPEC_PROD_COUNTRY = TRUE THEN                     /* RB01255 */
+       PARM_INT_AREA.MSG_VAR_VALUE_7 = RCBBIH0_PEW.COUNTRY
+                                       || ' = ' || RCBPEW_REC.COUNTRY;
+     ELSE
+       PARM_INT_AREA.MSG_VAR_VALUE_7 = WRK_CTRYNO;
+   END;
+
+   /* 0223: SDF INVALID */
+   WHEN ('0223') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'CU';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_SDF;
+   END;
+
+   /* 0232: RECORD ALREADY EXISTS */
+   WHEN ('0232') DO;
+     PARM_INT_AREA.MESSAGE_TYPE    = 'BU';
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'SK';
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = RCBBIH0_PEW.MACH_TYPE ||
+                                     RCBBIH0_PEW.SERIAL;
+   END;
+                                                      /* SOC RB01255 */
+   /* 0235: SPECIAL PRODUCT RECORD COUNT */
+   WHEN ('0235') DO;
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+     PARM_INT_AREA.MSG_VAR_CODE_6  = 'C1';
+     L_CNT_PIC10                   = G_WRKMSG.NUMFIELD_2;
+     PARM_INT_AREA.MSG_VAR_VALUE_6 = L_CNT_PIC10;
+   END;
+                                                      /* EOC RB01255 */
+   /* 9999: PROGRAM SUCCESFULLY ENDED */
+   WHEN ('9999') DO;
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+   END;
+
+   OTHERWISE DO;
+     %IF (RCBBIHM_DEBUG = 'Y' ) %THEN %DO;
+       PUT SKIP LIST( '#DBG# '||'A_MSG_NR=' || A_MSG_NR);
+     %END;
+     CALL RCBBIHM_ERROR (NULL, 'OTHER', '#020');              /*ABORT*/
+   END;
+ END;
+
+ /* MESSAGE IS VALID, REPORT MESSAGE */
+ PARM_INT_AREA.MESSAGE_NUMBER = A_MSG_NR;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ /* PREVENT PRINTING PREVIOUS MESSAGE WORK FIELDS */
+ G_WRKMSG = '';
+
+ END RCBBIHM_MSG;
+                                         /* SOC: WI-7013             */
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      : RETRIEVE T051                                  */
+ /*                                                                   */
+ /* DESCRIPTION      : FIND ROW IN RCBV051 USING RCBI82M              */
+ /*                                                                   */
+ /*********************************************************************/
+ RCBBIHM_RETRIEVE_T051: PROC;
+
+ TB_RCBV051_I = 0;
+ TB_RCBV051   = ' ';
+                                                      /* SOC RB01255 */
+ IF SPEC_PROD_COUNTRY = TRUE THEN
+   TB_RCBV051.COUNTRY_NUMBER = RCBPEW_REC.COUNTRY;
+ ELSE
+   TB_RCBV051.COUNTRY_NUMBER = WRK_CTRYNO;
+                                                      /* EOC RB01255 */
+ TB_RCBV051.PRODUCT_TYPE    = RCBBIH0_PEW.MACH_TYPE;
+ TB_RCBV051.ORIGIN          = WRK_ORIGIN;
+ TB_RCBV051.SEQUENCE_NUMBER = WRK_SEQUENCE_NUMBER;
+ FOUND = '0'B;
+                                       /* RETRIEVE CURRENT ROW        */
+ CALL RCBI82M (PTR_RCBV051,
+               PTR_RCBV051I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT (RETURN_AREA.RETURN_CODE);
+ WHEN (0)
+   FOUND = '1'B;
+ WHEN (4)
+   FOUND = '0'B;
+ OTHERWISE
+   DO;
+     CALL RCBBIHM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                        'DB2','#021');
+   END;
+ END;
+
+ END RCBBIHM_RETRIEVE_T051;
+                                         /* EOC: WI-7013             */
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBIHM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE                */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBIHM_ERROR: PROC (PTR_ERROR,
+                      ERR_TYPE,
+                      CALL_ID);
+
+ DCL PTR_ERROR             PTR;
+ DCL ERR_TYPE              CHAR (8);
+ DCL CALL_ID               CHAR (4);
+
+ PARM_INT_AREA.PTR_ERROR = PTR_ERROR;
+ PARM_INT_AREA.ERR_TYPE  = ERR_TYPE;
+ PARM_INT_AREA.CALL_ID   = CALL_ID;
+ CALL RCB0E1M (PTR_INT_AREA);
+
+ END RCBBIHM_ERROR;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBBIHM);                      /* MODULE TO BE COMPILED   */
+0/*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+ END RCBBIHM;

@@ -1,0 +1,1140 @@
+1/* RCBDTFM - BMT CUSTOMER: EXTRACT                                  */
+ /********************************************************************/
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /********************************************************************/
+ /* PROGRAM          : RCBDTFM                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLISQL                                        */
+ /*                                                                  */
+ /* TYPE             : BATCH                                         */
+ /*                                                                  */
+ /* DESCRIPTION      : THE EXTRACT OF CUSTOMER RELATED               */
+ /*                    INFORMATION FOR THE COUNTRIES GIVEN           */
+ /*                    AND FOR WHICH INFORMATION HAS CHANGED         */
+ /*                    SINCE THE LAST BMT CU EXTRACT                 */
+ /*                                                                  */
+ /* INPUT            : - DB2   : RCBV0010_CUSTOMER                   */
+ /*                              RCBV0011_PI_CUST                    */
+ /*                              RCBV0051_PI_HW_PR           RC01158 */
+ /*                              RCBV0150_CUST_ADDR                  */
+ /*                              RCBV0350_CUST_MOD                   */
+ /*                              RCBV0500_PARM                       */
+ /*                              RCBV0751_BMT_CU                     */
+ /*                                                                  */
+ /* OUTPUT           : - FILE  : RCBDTF1                             */
+ /*                              RCB0M10                             */
+ /*                                                                  */
+ /* EXTERNAL MODULES : RCB0E1M   COMMON ERROR ROUTINE                */
+ /*                    RCB0M1M   COMMON MESSAGE ROUTINE              */
+ /*                    RCB0T1M   RETRIEVE SYSTEM DATE                */
+ /*                    RCB018M   UPDATE HASH TOTAL                   */
+ /*                    RCB019M   RETRIEVE COUNTRY NUMBERS            */
+ /*                    RCB020M   RETRIEVE RUN DATE                   */
+ /*                    RCBI50M   RETRIEVE PARAMETER                  */
+ /*                    RCBF50M   INSERT PARAMETER                    */
+ /*                    RCBG50M   UPDATE PARAMETER                    */
+ /*                    RCBDT2U   BMT CUSTOMER USER EXIT              */
+ /*                    RCB024M   LOCK DB2 TABLE PARTITIONS   RC01219 */
+ /*                                                                  */
+ /* MESSAGES         : 0002,0004,0005,9999                           */
+ /*                                                                  */
+ /* DEPENDENCIES     : NONE                                          */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT                                */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*                                                                  */
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */
+ /* ---------------------------------------------------------------- */
+ /*  1999-03-23 | RA01217      | NEW INTERFACE TO BMT                */
+ /*  1999-07-06 | RC01219      | DORO                                */
+ /*  2000-01-11 | PTM1290      | FILL ZIP CODE & LOCATION FOR PI     */
+ /*  2012-10-12 | RC01323      | PCEDSP-0241: PROCESS VALUE 'I'      */
+ /*             |              | SIMILAR TO 'Y' FOR                  */
+ /*             |              | PARM_RCB005.PI_TO_BMT               */
+ /********************************************************************/
+ /*(CHECK(
+ R001_LOCK_TABLES                       ,
+ R700_FETCH_CURSOR_V751                 ,
+ R710_RETR_BAU_DATA                     ,
+ R720_RETR_PI_DATA                      ,
+ R730_FILL_RCBDTF1_RECORD               ,
+ R740_CALL_USER_EXIT                    ,
+ R750_WRITE_RCBDTF1_RECORD              ,
+ R800_INIT_COUNTRY                      ,
+ R899_INIT_COUNTRY                      ,
+ R900_INIT_PROGRAM                      ,
+ R999_END_PROGRAM                       ,
+ RCBDTFM_ERROR                        )):                            */
+1RCBDTFM: PROC
+          OPTIONS (MAIN)
+          REORDER;
+ DEFAULT RANGE (*)        STATIC;
+1/********************************************************************/
+ /*  PARAMETERS                                                      */
+ /********************************************************************/
+ DCL PTR_INT_AREA        PTR;          /* INTERFACE AREA             */
+ DCL PTR_RETURN_AREA_BB  PTR;          /* RETURN AREA FROM BB        */
+ DCL PTR_COUNTRY_AREA    PTR;          /* INTERFACE RCB019M          */
+ DCL PTR_RUN_DATE_AREA   PTR;          /* INTERFACE RCB020M          */
+
+ DCL 1 PARM_INT_AREA,                         /* INTERFACE AREA      */
+       %INCLUDE (RCBZ01S);;
+ DCL 1 RETURN_AREA_BB,                        /* RETURN AREA         */
+       %INCLUDE (RCBZ02S);;
+ DCL 1 COUNTRY_AREA,                          /* COUNTRY AREA        */
+       %INCLUDE (RCBZ26S);;
+ DCL 1 RUN_DATE_AREA,                         /* RUN DATE AREA       */
+       %INCLUDE (RCBZ28S);;
+ DCL 1 PARM_RCB005,                           /* BMT EXTR PARM       */
+      %INCLUDE (RCBP05S);;
+ DCL 1 PARM_RCB024M,                          /* RCB024M PARM        */
+      %INCLUDE (RCBZ33S);;
+1/********************************************************************/
+ /* EXTERNAL ENTRIES                                                 */
+ /********************************************************************/
+ DCL PLIXOPT          EXTERNAL CHAR (30) VAR INIT ('ISA(10K),NOSTAE');
+
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGES ROUT     */
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* RETRIEVE SYSTEM DATE     */
+ DCL RCB018M   ENTRY  EXTERNAL;          /* UPDATE HASH TOTAL        */
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* RETRIEVE PARAMETER       */
+ DCL RCBF50M   ENTRY  EXTERNAL;          /* INSERT PARAMETER         */
+ DCL RCBG50M   ENTRY  EXTERNAL;          /* UPDATE PARAMETER         */
+ DCL RCBDT2U   ENTRY  EXTERNAL;          /* USER EXIT                */
+ DCL RCB024M   ENTRY  EXTERNAL;          /* LOCK DB2 TABLE PARTITION */
+1/********************************************************************/
+ /*  FILE DECLARATIONS                                               */
+ /********************************************************************/
+ DCL RCBDTF1        FILE         /* EXTRACT (CEDS)                   */
+                    RECORD
+                    OUTPUT
+                    SEQUENTIAL
+                    ENV (FB RECSIZE(95));
+1/********************************************************************/
+ /* DB2 TABLE STRUCTURES                                             */
+ /********************************************************************/
+ DCL 1 TB_RCBV010,
+      %INCLUDE (RCB010S);;
+
+ DCL 1 TB_RCBV011,
+      %INCLUDE (RCB011S);;
+
+ DCL 1 TB_RCBV051,
+      %INCLUDE (RCB051S);;
+
+ DCL 1 TB_RCBV150,
+      %INCLUDE (RCB150S);;
+
+ DCL 1 TB_RCBV350,
+      %INCLUDE (RCB350S);;
+
+ DCL 1 TB_RCBV500,
+      %INCLUDE (RCB500S);;
+ DCL 1 TB_RCBV500_I,
+      %INCLUDE (RCB500SI);;
+ DCL 1 TB_RCBP05S            BASED (ADDR(TB_RCBV500)),
+      %INCLUDE (RCBP05S);;
+ DCL 1 TB_RCBP24S            BASED (ADDR(TB_RCBV500)),
+      %INCLUDE (RCBP24S);;
+1/********************************************************************/
+ /* SELECT STRUCTURES                                                */
+ /********************************************************************/
+ /********************************************************************/
+ /*  RECORD STRUCTURES                                               */
+ /********************************************************************/
+ DCL IO_AREA_RCBDTF1        CHAR(95) ;
+ DCL 1 RCBDTF1_REC          BASED(ADDR(IO_AREA_RCBDTF1)),
+      %INCLUDE (RCBDTFS);,               /* BMT CUSTOMER EXTRACT REC */
+       3 SOURCED_FROM_PI    CHAR(1);
+
+ DCL 1 RCBDTF1_REC_HT       BASED(ADDR(IO_AREA_RCBDTF1)),
+      %INCLUDE (RCBD01S);;               /* DELTA DOWNSTREAM H/T REC */
+ /********************************************************************/
+ /*  USER EXIT INFORMATION                                           */
+ /********************************************************************/
+ DCL 1 USER_RCBDTF1_REC        LIKE RCBDTF1_REC;
+ DCL 1 USER_RCBDTF1_REC_PI     LIKE RCBDTF1_REC;
+ DCL 1 USER_EXTRA_INFO,
+      %INCLUDE (RCBDTFSU);;
+ DCL   DATA_ORIGIN               CHAR(1)             INIT ('');
+ /********************************************************************/
+ /*  BIT SWITCHES                                                    */
+ /********************************************************************/
+ DCL 1 SWITCHES,
+     3 TRUE                      BIT (1)             INIT ('1'B),
+     3 FALSE                     BIT (1)             INIT ('0'B),
+     3 SWITCH_EOC_CU             BIT (1)             INIT ('0'B),
+     3 SW_BAU_DATA_RETRIEVED     BIT (1)             INIT ('0'B),
+     3 SW_PI_DATA_RETRIEVED      BIT (1)             INIT ('0'B);
+ DCL   SWITCH_USER_EXIT          BIT (1)             INIT ('1'B);
+ /********************************************************************/
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */
+ /********************************************************************/
+ DCL 1 WORK_FIELDS,
+    3 WRK_MOD_NAME                      CHAR (08)  INIT ('RCBDTFM'),
+    3 WRK_PRG_NAME                      CHAR (08)  INIT ('RCBDTFP'),
+    3 WRK_SYSTEM_TYPE                   CHAR (01)  INIT ('B'),
+    3 WRK_PROC_ID                       CHAR (04),
+    3 WRK_CTRYNO                        CHAR (03),
+    3 WRK_CTRYNO_NO                     FIXED BIN(15) INIT(1),
+    3 WRK_CUSTNO                        CHAR (08),
+    3 WRK_PGR_TYPE                      CHAR (03),
+    3 WRK_RUN_DATE                      CHAR (10),
+    3 WRK_TIME_STAMP                    CHAR(20),
+    3 WRK_FILE_NAME                     CHAR (07)  INIT ('RCBDTF1'),
+    3 WRK_V010_ENT_NR_NI                FIXED BIN(15),
+    3 WRK_V011_CUSTNAME_NI              FIXED BIN(15),
+    3 WRK_V011_ADDR1_NI                 FIXED BIN(15),
+    3 WRK_V011_ADDR2_NI                 FIXED BIN(15),
+    3 WRK_V011_ADDR3_NI                 FIXED BIN(15),
+    3 WRK_V011_ZIP_CODE_NI              FIXED BIN(15),      /*PTM1290*/
+    3 WRK_V350_CU_ENG_OU_NI             FIXED BIN(15),
+    3 WRK_V350_MKT_INST_OU_NI           FIXED BIN(15),
+    3 WRK_CNT_COUNTRY                   FIXED BIN(31) INIT(0),
+    3 WRK_CNT_RCBDTF1                   FIXED BIN(31) INIT(0),
+    3 WRK_HASH_TOTAL                    FIXED DEC(15) INIT(0),
+    3 WRK_LINE_NUMBER                   PIC'99',
+    3 WRK_IND_PRODUCT                   CHAR(01),
+    3 WRK_PIC_10                        PIC 'Z,ZZZ,ZZZ,ZZ9',
+    3 WRK_ADDRESS_MASK                  CHAR(4) INIT ('__1%');
+
+1/********************************************************************/
+ /*  BUILTIN FUNCTIONS                                               */
+ /********************************************************************/
+ DCL (ADDR,
+     NULL,
+     HIGH,
+     LOW,
+     STG,
+     SUBSTR,
+     TIME)                   BUILTIN;
+1/********************************************************************/
+ /* ON ERROR CONDITIONS                                              */
+ /********************************************************************/
+ %INCLUDE (RCB0E0M);
+ END;
+1/********************************************************************/
+ /* DB2/SQL SQLCA                                                    */
+ /********************************************************************/
+ EXEC SQL
+   INCLUDE SQLCA
+   ;
+ /********************************************************************/
+ /* DB2/SQL CURSORS                                                  */
+ /********************************************************************/
+                                           /* RETRIEVE ALL CUSTOMERS */
+ EXEC SQL
+   DECLARE CURSOR_V751 CURSOR FOR
+   SELECT DISTINCT CUSTOMER_NUMBER
+   FROM RCBV0751_BMT_CU
+   WHERE COUNTRY_NUMBER      = :WRK_CTRYNO
+
+   ORDER BY CUSTOMER_NUMBER
+   FOR FETCH ONLY                                         /* RC01219 */ 04911000
+           ;
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /********************************************************************/
+
+ CALL R900_INIT_PROGRAM;
+
+ DO WHILE (WRK_CTRYNO_NO <= COUNTRY_AREA.COUNT_CTRY);
+
+   CALL R800_INIT_COUNTRY;
+   CALL R700_FETCH_CURSOR_V751;
+
+   DO WHILE ( ¬ SWITCH_EOC_CU);
+
+     CALL R710_RETR_BAU_DATA;
+
+ /*    IF PARM_RCB005.PI_TO_BMT = 'Y' */               /* SOC RC01323 */
+     IF PARM_RCB005.PI_TO_BMT = 'Y' | PARM_RCB005.PI_TO_BMT = 'I'
+                                                      /* EOC RC01323 */
+       THEN DO;
+         CALL R720_RETR_PI_DATA;
+         END;
+
+     IF SW_BAU_DATA_RETRIEVED | SW_PI_DATA_RETRIEVED
+       THEN DO;
+         CALL R730_FILL_RCBDTF1_RECORD;
+         CALL R740_CALL_USER_EXIT;
+         CALL R750_WRITE_RCBDTF1_RECORD;
+         END;
+                                      /* RETRIEVE NEXT CUSTOMER       */
+     CALL R700_FETCH_CURSOR_V751;
+     END;
+
+   CALL R899_END_COUNTRY;
+ END;
+
+ CALL R999_END_PROGRAM;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R001_LOCK_TABLES                              */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R001_LOCK_TABLES: PROC;
+
+ PARM_RCB024M.COUNTRY_NUMBER = WRK_CTRYNO;            /* SOC RC01219 */
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0010_CUSTOMER';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#001');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#002');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0011_PI_CUST';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#003');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#004');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0051_PI_HW_PR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#005');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#006');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0150_CUST_ADDR';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#007');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#008');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0350_CUST_MOD';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#009');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#010');
+     END;
+ END;
+
+ /********************************************************************/
+
+ PARM_RCB024M.VIEW_NAME      = 'RCBT0751_BMT_CU';
+ PARM_RCB024M.LOCK_MODE      = 'S';                    /* SHARE MODE */
+
+ CALL RCB024M (ADDR(PARM_RCB024M),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+   WHEN (0);
+   WHEN (4)                        /* INVALID OR AMBIGUOUS PARAMETER */
+     DO;
+       CALL RCBDTFM_ERROR (NULL, 'OTHER', '#011');
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#012');
+     END;
+ END;
+
+ END R001_LOCK_TABLES;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R700_FETCH_CURSOR_V751                        */
+ /*                                                                   */
+ /* DESCRIPTION      :  RETRIEVE NEXT ROW OF RCBV0751_BMT_CU          */
+ /*                                                                   */
+ /*********************************************************************/
+ R700_FETCH_CURSOR_V751: PROC;
+
+ WRK_CUSTNO = '';
+
+ EXEC SQL
+   FETCH CURSOR_V751
+   INTO :WRK_CUSTNO
+   ;
+
+ SELECT (SQLCODE);
+   WHEN (0)
+     DO;
+       SWITCH_EOC_CU = FALSE;
+     END;
+   WHEN (100)
+     DO;
+       SWITCH_EOC_CU = TRUE;
+     END;
+   OTHERWISE
+     DO;
+        CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                    'DB2',
+                    '#013');
+     END;
+ END;
+
+ END R700_FETCH_CURSOR_V751;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R710_RETR_BAU_DATA                            */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CUSTOMER INFORMATION FROM TABLE       */
+ /*                    RCBT0010_CUSTOMER. IF CUSTOMER FOUND, THEN     */
+ /*                    RETRIEVE INSTALLATION ADDRESS INFO FROM TABLE  */
+ /*                    RCBT0150_CUST_ADDR, AND EXTRA CUSTOMER INFO    */
+ /*                    FROM TABLE RCBT0350_CUST_MOD.                  */
+ /*                                                                   */
+ /*********************************************************************/
+ R710_RETR_BAU_DATA: PROC;
+
+ TB_RCBV010 = '';
+ TB_RCBV150 = '';
+ TB_RCBV350 = '';
+                             /* RETRIEVE DATA FROM RCBV0010_CUSTOMER  */
+
+ EXEC SQL
+   SELECT CUSTOMER_NAME
+         ,ENTERPRISE_NUMBER
+         ,CUSTOMER_LOCATION
+     INTO
+          :TB_RCBV010.CUSTOMER_NAME
+         ,:TB_RCBV010.ENTERPRISE_NUMBER      :WRK_V010_ENT_NR_NI
+         ,:TB_RCBV010.CUSTOMER_LOCATION
+    FROM RCBV0010_CUSTOMER
+   WHERE COUNTRY_NUMBER      = :WRK_CTRYNO
+     AND CUSTOMER_NUMBER     = :WRK_CUSTNO
+     AND :WRK_RUN_DATE       BETWEEN EFFECTIVE_DATE
+                                 AND END_DATE
+    ;
+
+ SELECT(SQLCODE);
+   WHEN(0)
+     DO;
+       SW_BAU_DATA_RETRIEVED = TRUE;
+
+       IF WRK_V010_ENT_NR_NI = -1
+         THEN DO;
+           TB_RCBV010.ENTERPRISE_NUMBER = '';
+           END;
+     END;
+   WHEN(100)
+     DO;
+       SW_BAU_DATA_RETRIEVED = FALSE;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#014');
+     END;
+ END;
+
+ IF SW_BAU_DATA_RETRIEVED
+   THEN DO;
+                                     /* RETRIEVE 1ST INSTALLING ADDR. */
+     EXEC SQL
+       SELECT ZIP_CODE
+       INTO :TB_RCBV150.ZIP_CODE
+       FROM RCBV0150_CUST_ADDR
+       WHERE COUNTRY_NUMBER        = :WRK_CTRYNO
+         AND CUSTOMER_NUMBER       = :WRK_CUSTNO
+         AND ADDRESS_MASK          LIKE :WRK_ADDRESS_MASK
+         AND ADDRESS_NUMBER   =
+             (SELECT MIN(ADDRESS_NUMBER)
+              FROM RCBV0150_CUST_ADDR
+              WHERE COUNTRY_NUMBER      = :WRK_CTRYNO
+                AND CUSTOMER_NUMBER     = :WRK_CUSTNO
+                AND ADDRESS_MASK     LIKE :WRK_ADDRESS_MASK
+                AND :WRK_RUN_DATE BETWEEN EFFECTIVE_DATE AND END_DATE)
+         AND :WRK_RUN_DATE BETWEEN EFFECTIVE_DATE
+                                   AND END_DATE
+       ;
+
+     SELECT(SQLCODE);
+       WHEN(0);
+       WHEN(100);
+       OTHERWISE
+         DO;
+           CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#015');
+         END;
+       END;
+                               /* RETRIEVE CUSTOMER MODIFIABLE INFO  */
+     EXEC SQL
+       SELECT CU_ENGINEERING_OU
+             ,MKT_INSTALLING_OU
+         INTO
+              :TB_RCBV350.CU_ENGINEERING_OU   :WRK_V350_CU_ENG_OU_NI
+             ,:TB_RCBV350.MKT_INSTALLING_OU   :WRK_V350_MKT_INST_OU_NI
+        FROM RCBV0350_CUST_MOD
+       WHERE COUNTRY_NUMBER      = :WRK_CTRYNO
+         AND CUSTOMER_NUMBER     = :WRK_CUSTNO
+         AND :WRK_RUN_DATE       BETWEEN EFFECTIVE_DATE
+                                     AND END_DATE
+       ;
+
+     SELECT(SQLCODE);
+       WHEN(0) DO;
+         IF WRK_V350_CU_ENG_OU_NI = -1
+           THEN DO;
+             TB_RCBV350.CU_ENGINEERING_OU = '';
+             END;
+
+         IF WRK_V350_MKT_INST_OU_NI = -1
+           THEN DO;
+             TB_RCBV350.MKT_INSTALLING_OU = '';
+             END;
+         END;
+       WHEN(100);
+       OTHERWISE
+         DO;
+           CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#016');
+         END;
+       END;
+     END;
+
+ END R710_RETR_BAU_DATA;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R720_RETR_PI_DATA                             */
+ /*                                                                   */
+ /* DESCRIPTION      : RETRIEVE CUSTOMER INFORMATION FROM TABLE       */
+ /*                    RCBT0011_PI_CUST. IF NO CUSTOMER FOUND, THEN   */
+ /*                    RETRIEVE CUSTOMER INFO FROM TABLE              */
+ /*                    RCBT0051_PI_HW_PR.                             */
+ /*                                                                   */
+ /*********************************************************************/
+ R720_RETR_PI_DATA: PROC;
+
+ TB_RCBV011 = '';
+ TB_RCBV051 = '';
+                           /* RETRIEVE DATA FROM RCBV0011_PI_CUST     */
+                           /* ADD ZIP_CODE TO SELECT STATEMENT*PTM1290*/
+
+ EXEC SQL
+   SELECT CUSTOMER_NAME
+         ,ADDRESS_LINE_1
+         ,ADDRESS_LINE_2
+         ,ADDRESS_LINE_3
+         ,ZIP_CODE
+     INTO
+          :TB_RCBV011.CUSTOMER_NAME          :WRK_V011_CUSTNAME_NI
+         ,:TB_RCBV011.ADDRESS_LINE_1         :WRK_V011_ADDR1_NI
+         ,:TB_RCBV011.ADDRESS_LINE_2         :WRK_V011_ADDR2_NI
+         ,:TB_RCBV011.ADDRESS_LINE_3         :WRK_V011_ADDR3_NI
+         ,:TB_RCBV011.ZIP_CODE               :WRK_V011_ZIP_CODE_NI
+    FROM RCBV0011_PI_CUST
+   WHERE COUNTRY_NUMBER      = :WRK_CTRYNO
+     AND CUSTOMER_NUMBER     = :WRK_CUSTNO
+     AND CUSTOMER_NR_EXTEND  = '000'
+    ;
+
+ SELECT(SQLCODE);
+   WHEN(0)
+     DO;
+       SW_PI_DATA_RETRIEVED = TRUE;
+
+       IF WRK_V011_CUSTNAME_NI = -1
+         THEN DO;
+           TB_RCBV011.CUSTOMER_NAME = '';
+           END;
+
+       IF WRK_V011_ADDR1_NI = -1
+         THEN DO;
+           TB_RCBV011.ADDRESS_LINE_1 = '';
+           END;
+
+       IF WRK_V011_ADDR2_NI = -1
+         THEN DO;
+           TB_RCBV011.ADDRESS_LINE_2 = '';
+           END;
+
+       IF WRK_V011_ADDR3_NI = -1
+         THEN DO;
+           TB_RCBV011.ADDRESS_LINE_3 = '';
+           END;
+
+       IF WRK_V011_ZIP_CODE_NI = -1                     /* SOC*PTM1290*/
+         THEN DO;
+           TB_RCBV011.ZIP_CODE = '';
+           END;                                         /* EOC*PTM1290*/
+     END;
+   WHEN(100)
+     DO;
+       SW_PI_DATA_RETRIEVED = FALSE;
+     END;
+   OTHERWISE
+     DO;
+       CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                           'DB2',
+                           '#017');
+     END;
+ END;
+
+ IF SW_PI_DATA_RETRIEVED = FALSE
+   THEN DO;
+                           /* RETRIEVE DATA FROM RCBV0051_PI_HW_PR    */
+     EXEC SQL
+       SELECT DISTINCT CUSTOMER_NUMBER
+       INTO :TB_RCBV051.CUSTOMER_NUMBER
+       FROM RCBV0051_PI_HW_PR
+       WHERE COUNTRY_NUMBER        = :WRK_CTRYNO
+         AND CUSTOMER_NUMBER       = :WRK_CUSTNO
+         AND CUSTOMER_NR_EXTEND    = '000'
+       ;
+
+     SELECT(SQLCODE);
+       WHEN(0)
+         DO;
+           SW_PI_DATA_RETRIEVED = TRUE;
+         END;
+       WHEN(100)
+         DO;
+           SW_PI_DATA_RETRIEVED = FALSE;
+         END;
+       OTHERWISE
+         DO;
+           CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                               'DB2',
+                               '#018');
+         END;
+       END;
+     END;
+
+ END R720_RETR_PI_DATA;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R730_FILL_RCBDTF1_RECORD                      */
+ /*                                                                   */
+ /* DESCRIPTION      :                                                */
+ /*                                                                   */
+ /*********************************************************************/
+ R730_FILL_RCBDTF1_RECORD: PROC;
+
+ RCBDTF1_REC                = '';
+ USER_RCBDTF1_REC_PI        = '';
+ USER_EXTRA_INFO            = '';
+
+ RCBDTF1_REC.COUNTRY_NUMBER      = WRK_CTRYNO;
+ RCBDTF1_REC.CUSTOMER_NUMBER     = WRK_CUSTNO;
+
+ DATA_ORIGIN = '';
+
+ IF SW_BAU_DATA_RETRIEVED
+   THEN DO;
+
+     RCBDTF1_REC.ENTERPRISE_NUMBER =  TB_RCBV010.ENTERPRISE_NUMBER;
+     RCBDTF1_REC.CUSTOMER_NAME     =  TB_RCBV010.CUSTOMER_NAME;
+     RCBDTF1_REC.CUSTOMER_LOCATION =  TB_RCBV010.CUSTOMER_LOCATION;
+     RCBDTF1_REC.ZIP_CODE          =  TB_RCBV150.ZIP_CODE;
+     RCBDTF1_REC.CU_ENGINEERING_OU =  TB_RCBV350.CU_ENGINEERING_OU;
+     RCBDTF1_REC.MKT_INSTALLING_OU =  TB_RCBV350.MKT_INSTALLING_OU;
+
+     IF SW_PI_DATA_RETRIEVED
+       THEN DO;
+         USER_RCBDTF1_REC_PI.CUSTOMER_NAME   = TB_RCBV011.CUSTOMER_NAME;
+         USER_RCBDTF1_REC_PI.COUNTRY_NUMBER  = WRK_CTRYNO;
+         USER_RCBDTF1_REC_PI.CUSTOMER_NUMBER = WRK_CUSTNO;
+                                                        /* SOC*PTM1290*/
+         USER_RCBDTF1_REC_PI.ZIP_CODE        = TB_RCBV011.ZIP_CODE;
+         USER_RCBDTF1_REC_PI.CUSTOMER_LOCATION =
+                              SUBSTR(TB_RCBV011.ADDRESS_LINE_2,1,12);
+                                                        /* EOC*PTM1290*/
+         DATA_ORIGIN = '2';
+         RCBDTF1_REC.SOURCED_FROM_PI = 'Y';
+         END;
+       ELSE DO;
+         DATA_ORIGIN = '0';
+         RCBDTF1_REC.SOURCED_FROM_PI = 'N';
+         END;
+     END;
+
+   ELSE DO;
+     IF SW_PI_DATA_RETRIEVED
+       THEN DO;
+         RCBDTF1_REC.CUSTOMER_NAME     = TB_RCBV011.CUSTOMER_NAME;
+                                                        /* SOC*PTM1290*/
+         RCBDTF1_REC.ZIP_CODE          = TB_RCBV011.ZIP_CODE;
+         RCBDTF1_REC.CUSTOMER_LOCATION =
+                              SUBSTR(TB_RCBV011.ADDRESS_LINE_2,1,12);
+                                                        /* EOC*PTM1290*/
+         DATA_ORIGIN = '1';
+         RCBDTF1_REC.SOURCED_FROM_PI = 'Y';
+         END;
+     END;
+
+
+ IF SW_PI_DATA_RETRIEVED
+   THEN DO;
+     USER_EXTRA_INFO.ADDR_LINES(1)     = TB_RCBV011.ADDRESS_LINE_1;
+     USER_EXTRA_INFO.ADDR_LINES(2)     = TB_RCBV011.ADDRESS_LINE_2;
+     USER_EXTRA_INFO.ADDR_LINES(3)     = TB_RCBV011.ADDRESS_LINE_3;
+     END;
+
+ END R730_FILL_RCBDTF1_RECORD;
+
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R740_CALL_USER_EXIT                           */
+ /*                                                                   */
+ /* DESCRIPTION      :                                                */
+ /*                                                                   */
+ /*********************************************************************/
+ R740_CALL_USER_EXIT: PROC;
+
+ IF SWITCH_USER_EXIT = TRUE
+ THEN DO;
+   USER_RCBDTF1_REC = RCBDTF1_REC, BY NAME;
+   CALL RCBDT2U (ADDR(SWITCH_USER_EXIT),
+                 ADDR(DATA_ORIGIN),
+                 ADDR(USER_RCBDTF1_REC),
+                 ADDR(USER_RCBDTF1_REC_PI),
+                 ADDR(USER_EXTRA_INFO),
+                 PTR_INT_AREA);
+
+   IF SWITCH_USER_EXIT = TRUE
+   THEN DO;
+     RCBDTF1_REC.ENTERPRISE_NUMBER = USER_RCBDTF1_REC.ENTERPRISE_NUMBER;
+     RCBDTF1_REC.CUSTOMER_NAME     = USER_RCBDTF1_REC.CUSTOMER_NAME;
+     RCBDTF1_REC.CUSTOMER_LOCATION = USER_RCBDTF1_REC.CUSTOMER_LOCATION;
+     RCBDTF1_REC.ZIP_CODE          = USER_RCBDTF1_REC.ZIP_CODE;
+     RCBDTF1_REC.CU_ENGINEERING_OU = USER_RCBDTF1_REC.CU_ENGINEERING_OU;
+     RCBDTF1_REC.MKT_INSTALLING_OU = USER_RCBDTF1_REC.MKT_INSTALLING_OU;
+     RCBDTF1_REC.CUST_IACC         = USER_RCBDTF1_REC.CUST_IACC;
+     RCBDTF1_REC.CUST_ISU          = USER_RCBDTF1_REC.CUST_ISU;
+     RCBDTF1_REC.CUST_A            = USER_RCBDTF1_REC.CUST_A;
+     RCBDTF1_REC.CUST_TALL         = USER_RCBDTF1_REC.CUST_TALL;
+     RCBDTF1_REC.TALL2             = USER_RCBDTF1_REC.TALL2;
+     END;
+   END;
+
+ END R740_CALL_USER_EXIT;
+
+1/*********************************************************************/
+ /*                                                                   */
+ /* MODULE NAME      :  R750_WRITE_RCBDTF1_RECORD                     */
+ /*                                                                   */
+ /* DESCRIPTION      :                                                */
+ /*                                                                   */
+ /*********************************************************************/
+ R750_WRITE_RCBDTF1_RECORD: PROC;
+
+                               /* UPDATE HASH_TOTAL                  */
+ CALL RCB018M (SUBSTR(RCBDTF1_REC.CUSTOMER_NUMBER,3,4),
+               WRK_HASH_TOTAL,
+               PTR_INT_AREA);
+
+ WRITE FILE(RCBDTF1) FROM (IO_AREA_RCBDTF1);
+ WRK_CNT_COUNTRY = WRK_CNT_COUNTRY + 1;
+
+ END R750_WRITE_RCBDTF1_RECORD;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R800_INIT_COUNTRY                             */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R800_INIT_COUNTRY: PROC;
+
+ WRK_CTRYNO      = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).CTRYNO;
+ WRK_PGR_TYPE    = COUNTRY_AREA.CTRY_ARRAY(WRK_CTRYNO_NO).PGR_TYPE;
+                                                /* LOCK TABLES       */
+ CALL R001_LOCK_TABLES;
+                                                /* RETRIEVE RUNDATE  */
+ RUN_DATE_AREA.PROC_ID   =  WRK_PROC_ID;
+ RUN_DATE_AREA.CTRYNO    =  WRK_CTRYNO;
+ RUN_DATE_AREA.PGR_TYPE  =  WRK_PGR_TYPE;
+
+ CALL RCB020M (PTR_RUN_DATE_AREA,
+               PTR_INT_AREA);
+
+ IF RUN_DATE_AREA.RUN_DATE = ''         /* NO RUN DATE RCB001 FOUND  */
+ THEN
+   DO;
+     WRK_RUN_DATE = PARM_INT_AREA.SYSTEM_DATE;
+   END;
+ ELSE
+   DO;
+     WRK_RUN_DATE = RUN_DATE_AREA.RUN_DATE;
+   END;
+
+                                      /* WRITE MESSAGE WITH RUN DATE */
+ PARM_INT_AREA.COUNTRY_NUMBER   = WRK_CTRYNO;
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RUN_DATE;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                       /* RETRIEVE BMT EXTRACT PARM  */
+ TB_RCBV500   = '';
+ TB_RCBV500_I = '';
+ TB_RCBP05S.NUMBER   = 'RCB005';
+ TB_RCBP05S.CTRYNO   = WRK_CTRYNO;
+ TB_RCBP05S.PGR_TYPE = WRK_PGR_TYPE;
+
+0CALL RCBI50M ('U',                                       /* RC01219 */ 10120000
+               ADDR(TB_RCBV500),
+               ADDR(TB_RCBV500_I),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+  WHEN (0)
+    DO;
+      PARM_RCB005        = TB_RCBP05S, BY NAME;
+    END;
+  WHEN (4)                             /* NO BMT EXTR PARM FOUND     */
+    DO;
+      PARM_RCB005.PI_TO_BMT = 'N';
+    END;
+  OTHERWISE DO;
+       CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                                 'DB2',
+                                 '#019');
+            END;
+ END;
+                                         /* INIT CURSOR              */
+ EXEC SQL
+   OPEN CURSOR_V751;
+
+ SELECT (SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+        CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                    'DB2',
+                    '#020');
+     END;
+ END;
+
+ WRK_CNT_COUNTRY = 0;
+
+ END R800_INIT_COUNTRY;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R899_END_COUNTRY                              */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R899_END_COUNTRY: PROC;
+
+                                    /* WRITE COUNT MESSAGE           */
+                                    /* RCBDTF1 WRITTEN               */
+ PARM_INT_AREA.MESSAGE_TYPE                 = 'IS';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER      = '0004';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = WRK_FILE_NAME;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C6';
+ WRK_PIC_10                                 = WRK_CNT_COUNTRY;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = WRK_PIC_10;
+ CALL RCB0M1M (PTR_INT_AREA);
+                                      /* ADD CNT_COUNTRY TO TOTAL    */
+ WRK_CNT_RCBDTF1     = WRK_CNT_RCBDTF1 + WRK_CNT_COUNTRY;
+                             /* CLOSE CURSOR CURSOR_V751             */
+ EXEC SQL
+   CLOSE CURSOR_V751;
+
+ SELECT (SQLCODE);
+   WHEN (0);
+   OTHERWISE
+     DO;
+        CALL RCBDTFM_ERROR (ADDR (SQLCA),
+                            'DB2',
+                            '#021');
+     END;
+ END;
+
+                                      /* INCREASE FOR NEXT CTRYNO    */
+ WRK_CTRYNO_NO = WRK_CTRYNO_NO + 1;
+
+ END R899_END_COUNTRY;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R900_INIT_PROGRAM                             */
+ /*                                                                  */
+ /* DESCRIPTION      : INIT PROGRAM                                  */
+ /*                                                                  */
+ /********************************************************************/
+ R900_INIT_PROGRAM: PROC;
+                                             /* INITIALISE POINTERS  */
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);
+ PTR_RETURN_AREA_BB = ADDR(RETURN_AREA_BB);
+ PTR_COUNTRY_AREA   = ADDR (COUNTRY_AREA);
+ PTR_RUN_DATE_AREA  = ADDR (RUN_DATE_AREA);
+                                             /* INITIALISE VARIABLES */
+ PARM_INT_AREA.MSG_AREA       = '';
+ PARM_INT_AREA.ERR_AREA       = ' ';
+ PARM_INT_AREA.MSG_REQUEST    = 'O';
+ PARM_INT_AREA.MSG_TARGET     = 'F';
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PRG_NAME;
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;
+ PARM_INT_AREA.TXN_CODE       = '';
+ PARM_INT_AREA.VERSION        = '';
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;
+                                              /* OPEN MESSAGE FILE   */
+ CALL RCB0M1M(PTR_INT_AREA);
+                                              /* RETR. SYSTEM DATE   */
+ CALL RCB0T1M(PTR_INT_AREA);
+                           /* DETERMINE TIMESTAMP FOR HEADER + HASH  */
+ WRK_TIME_STAMP = PARM_INT_AREA.SYSTEM_DATE || '.' || TIME();
+
+                                              /* RETRIEVE COUNTRIES  */
+ CALL RCB019M (PTR_COUNTRY_AREA,
+               PTR_INT_AREA);
+
+ IF COUNTRY_AREA.COUNT_CTRY = 0               /* NO COUNTRIES FOUND  */
+ THEN
+   DO;
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';
+     PARM_INT_AREA.MSG_VAR_CODES     = '';
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBDTFM_ERROR (NULL, 'OTHER', '#022');
+   END;
+ ELSE
+   DO;
+     WRK_PROC_ID  = COUNTRY_AREA.PROC_ID;
+     WRK_CTRYNO   = COUNTRY_AREA.CTRY_ARRAY(1).CTRYNO;
+     WRK_PGR_TYPE = COUNTRY_AREA.CTRY_ARRAY(1).PGR_TYPE;
+   END;
+
+                                            /* OPEN FILES            */
+ OPEN FILE (RCBDTF1);
+
+                                        /* INIT AND FILL HEADER REC  */
+ RCBDTF1_REC = '';
+ RCBDTF1_REC_HT.KEY                     = LOW(20);
+ RCBDTF1_REC_HT.PROCESS_NAME            = 'BMT CUST';
+ RCBDTF1_REC_HT.FILE_TYPE               = 'DELTA EXTR';
+ RCBDTF1_REC_HT.COUNTRY_NUMBER          = '';
+ RCBDTF1_REC_HT.RUN_DATE                = '';
+ RCBDTF1_REC_HT.TIME_STAMP              = WRK_TIME_STAMP;
+
+                                        /* WRITE HEADER REC          */
+ WRITE FILE(RCBDTF1) FROM(IO_AREA_RCBDTF1);
+ END R900_INIT_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : R999_END_PROGRAM                              */
+ /*                                                                  */
+ /* DESCRIPTION      :                                               */
+ /*                                                                  */
+ /********************************************************************/
+ R999_END_PROGRAM:  PROC;
+                                        /* INIT AND FILL TRAILER REC */
+ RCBDTF1_REC = '';
+ RCBDTF1_REC_HT.KEY                     = HIGH(20);
+ RCBDTF1_REC_HT.PROCESS_NAME            = 'BMT CUST';
+ RCBDTF1_REC_HT.FILE_TYPE               = 'DELTA EXTR';
+ RCBDTF1_REC_HT.COUNTRY_NUMBER          = '';
+ RCBDTF1_REC_HT.RUN_DATE                = '';
+ RCBDTF1_REC_HT.TIME_STAMP              = WRK_TIME_STAMP;
+
+                                        /* WRITE TRAILER REC         */
+ WRITE FILE(RCBDTF1) FROM(IO_AREA_RCBDTF1);
+
+                               /* CLOSE FILE RCBDTF1                 */
+ CLOSE FILE(RCBDTF1);
+
+                              /* SAVE HASH TOTAL IN PARAMETER RCB024 */
+ TB_RCBV500 = '';
+ TB_RCBV500_I = '';
+ TB_RCBP24S.NUMBER     = 'RCB024';
+ TB_RCBP24S.PROC_ID    = WRK_PROC_ID;
+ TB_RCBP24S.CTRYNO     = COUNTRY_AREA.CTRY_SET_ID;        /* RC01219 */
+ TB_RCBP24S.FILE_NAME  = WRK_FILE_NAME;
+ TB_RCBP24S.TIME_STAMP = WRK_TIME_STAMP;
+ TB_RCBP24S.HASH_TOTAL = WRK_HASH_TOTAL;
+ TB_RCBP24S.LENGTH_PARM = STG(TB_RCBP24S.TIME_STAMP) +
+                          STG(TB_RCBP24S.HASH_TOTAL);
+
+ CALL RCBG50M (ADDR(TB_RCBV500),
+               ADDR(TB_RCBV500_I),
+               PTR_RETURN_AREA_BB,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA_BB.RETURN_CODE);
+ WHEN (0);
+ WHEN (4)                          /* WHEN NOT FOUND THEN INSERT  */
+   DO;
+     CALL RCBF50M (ADDR(TB_RCBV500),
+                   ADDR(TB_RCBV500_I),
+                   PTR_RETURN_AREA_BB,
+                   PTR_INT_AREA);
+     SELECT(RETURN_AREA_BB.RETURN_CODE);
+     WHEN (0);
+     OTHERWISE
+       DO;
+         CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                             'DB2',
+                             '#023');
+       END;
+     END;
+   END;
+ OTHERWISE
+   DO;
+     CALL RCBDTFM_ERROR (ADDR (RETURN_AREA_BB.RETURN_SQL),
+                         'DB2',
+                         '#024');
+   END;
+ END;
+
+                                    /* WRITE COUNT MESSAGE           */
+                                   /* RCBDTF1 WRITTEN                */
+ PARM_INT_AREA.COUNTRY_NUMBER               = '';
+ PARM_INT_AREA.MESSAGE_TYPE                 = 'IS';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER      = '0004';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = WRK_FILE_NAME;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C6';
+ WRK_PIC_10                                 = WRK_CNT_RCBDTF1;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = WRK_PIC_10;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                    /* WRITE SUCCESFULLY ENDED MSG   */
+ PARM_INT_AREA.COUNTRY_NUMBER               = '';
+ PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER  = '9999';
+ PARM_INT_AREA.MSG_VAR_CODES   = '';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                    /* CLOSE MESSAGE FILE            */
+ PARM_INT_AREA.MSG_REQUEST = 'C';
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ END R999_END_PROGRAM;
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBDTFM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBDTFM_ERROR: PROC             (PTR_ERROR,
+                         ERR_TYPE,
+                         CALL_ID);
+ DCL PTR_ERROR    PTR;
+ DCL ERR_TYPE      CHAR(8);
+ DCL CALL_ID       CHAR(4);
+ PARM_INT_AREA.PTR_ERROR          = PTR_ERROR;
+ PARM_INT_AREA.ERR_TYPE           = ERR_TYPE;
+ PARM_INT_AREA.CALL_ID            = CALL_ID;
+ CALL RCB0E1M (ADDR(PARM_INT_AREA));
+ END RCBDTFM_ERROR;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+ %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBDTFM);                      /* MODULE TO BE COMPILED   */
+ /*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+ END RCBDTFM;

@@ -1,0 +1,279 @@
+ /* ROLDP1M - SEPERATE SAUDI SBM RECORDS FROM H/W INVENTORY          */ 00010099
+ /*                                                                  */ 00020099
+ /********************************************************************/ 00030099
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00040099
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00050099
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00060099
+ /********************************************************************/ 00070099
+ /*                                                                  */ 00080099
+ /* MODULE NAME      : ROLDP1M                                       */ 00090099
+ /*                                                                  */ 00100099
+ /* PROGRAM NAME     : ROLDP1P                                       */ 00110099
+ /*                                                                  */ 00120099
+ /* LANGUAGE         : PLI                                           */ 00130099
+ /*                                                                  */ 00140099
+ /* TYPE             : BATCH                                         */ 00150099
+ /*                                                                  */ 00160099
+ /* DESCRIPTION      : SPLIT S32 DATA FROM CPPS EXTRACT              */ 00170099
+ /*                    AND CREATE NEW SETOF FILES RCBDPG4,RCBDSBM    */ 00180099
+ /*                                                                  */ 00190099
+ /* INPUT            : FILES : VSDCD0                                */ 00200099
+ /*                            RCBDPC4                               */ 00210099
+ /*                            RCBDPC2 FULL FILE                     */ 00220099
+ /*                                                                  */ 00230099
+ /* OUTPUT           : RCBDPG4 (CPPS EXTRACT WITHOUT S32)            */ 00240099
+ /*                  : RCBDSBM (SAUIDI SBM EXTRACT-S32)              */ 00241099
+ /*                  : RCBDPG2 (FILE FOR DP02 EXTRACT)               */ 00250099
+ /*                                                                  */ 00260099
+ /*                                                                  */ 00270099
+ /*  MAINTENANCE LOG :                                               */ 00280099
+ /*  ---------------                                                 */ 00290099
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */ 00300099
+ /*  --------------------------------------------------------------  */ 00310099
+ /*  2011-12-02 | PCR-153      | CEDS INITIAL DEVELOPMENT            */ 00320099
+ /*             | RMT  R09-0242| SEPERATE SAUIDI SBM DATA            */ 00330099
+ /*                                                                  */ 00340099
+ /********************************************************************/ 00350099
+ ROLDP1M: PROC OPTIONS(MAIN)                                            00360099
+               REORDER;                                                 00370099
+ /********************************************************************/ 00380099
+ /*                  FILE DECLARATIONS                               */ 00390099
+ /********************************************************************/ 00400099
+ DCL VSDCD0  FILE KEYED  INPUT DIRECT ENV(VSAM);                        00410099
+ DCL RCBDPC4 FILE RECORD INPUT;                                         00420099
+ DCL RCBDPC2 FILE RECORD INPUT;                                         00430099
+ DCL RCBDPG4 FILE RECORD OUTPUT;                                        00440099
+ DCL RCBDSBM FILE RECORD OUTPUT;                                        00441099
+ DCL RCBDPG2 FILE RECORD OUTPUT;                                        00450099
+ /********************************************************************/ 00460099
+ /*                   OTHER VARIABLES                                */ 00470099
+ /********************************************************************/ 00480099
+ DCL KEY_VALUE CHAR(13);                                                00490099
+ DCL SAVE_TIME_STAMP CHAR(10);                                          00500099
+ DCL COUNT_RCBDPC4        FIXED BIN (31) INIT (0);                      00510099
+ DCL COUNT_RCBDSBM        FIXED BIN (31) INIT (0);                      00511099
+ DCL KEY_NOT_FOUND CHAR(5);                                             00512099
+ /********************************************************************/ 00520099
+ /*                   EOF DECLARATIONS                               */ 00530099
+ /********************************************************************/ 00540099
+ DCL EOF BIT(1) STATIC INIT ('0'B);                                     00550099
+ DCL PC4EOF BIT(1) STATIC INIT ('0'B);                                  00560099
+ DCL PC2EOF BIT(1) STATIC INIT ('0'B);                                  00570099
+ /********************************************************************/ 00580099
+ /*                      BUILTINS                                    */ 00590099
+ /********************************************************************/ 00600099
+ DCL (ONCODE,DATETIME) BUILTIN;                                         00610099
+ DCL PLIRETC           BUILTIN;                                         00611099
+ /********************************************************************/ 00620099
+ /*                   FILE STRUCTRURES                               */ 00630099
+ /********************************************************************/ 00640099
+ DCL 1 FILE_VSDCD0,                                                     00650099
+      %INCLUDE RRDCD1N;                                                 00660099
+ DCL 1 FILE_RCBDPC4,                                                    00670099
+      2 RECORD_INFO,                                                    00680099
+      %INCLUDE RCBDPCS0;;                                               00690099
+ DCL 1 FILE_RCBDPC4_H BASED(ADDR(FILE_RCBDPC4)),                        00700099
+       3 REC_ID           CHAR(04),                                     00710099
+       3 COUNTRY_NUMBER   CHAR(03),                                     00720099
+       3 FILE_NAME        CHAR(08),                                     00730099
+       3 FILE_DESC        CHAR(20),                                     00740099
+       3 RUN_DATE         CHAR(08),                                     00750099
+       3 FILLER           CHAR(22);                                     00760099
+ DCL 1 FILE_RCBDPC4_T BASED(ADDR(FILE_RCBDPC4)),                        00770099
+       3 REC_ID           CHAR(04),                                     00780099
+       3 RECORD_COUNT    FIXED(07),                                     00790099
+       3 FILLER           CHAR(57);                                     00800099
+ DCL 1 FILE_RCBDSBM_T BASED(ADDR(FILE_RCBDPC4)),                        00801099
+       3 REC_ID           CHAR(04),                                     00802099
+       3 RECORD_COUNT    FIXED(07),                                     00803099
+       3 FILLER           CHAR(57);                                     00804099
+ DCL 1 FILE_RCBDPC2,                                                    00810099
+       3 PRODUCT_TYPE    CHAR(4),                                       00820099
+       3 ORIGIN          CHAR(2),                                       00830099
+       3 SEQUENCE_NUMBER CHAR(5),                                       00840099
+       2 RECORD_INFO,                                                   00850099
+       %INCLUDE RCBDPBS;,                                               00860099
+       3 LAST_PROCESSED_DATE CHAR(10);;                                 00870099
+ DCL 1 FILE_RCBDPG2,                                                    00880099
+       3 COUNTRY_NUM    CHAR(3),                                        00890099
+       3 PRODUCT_TYPE   CHAR(4),                                        00900099
+       3 ORIGIN         CHAR(2),                                        00910099
+       3 SEQUENCE_NUM   CHAR(7),                                        00920099
+       3 ORDER_NO       CHAR(6),                                        00930099
+       3 CUST_NUM       CHAR(6);                                        00940099
+ /********************************************************************/ 00950099
+ /*                   END FILE / NO KEY CONDITIONS                   */ 00960099
+ /********************************************************************/ 00970099
+      ON ENDFILE(RCBDPC4) PC4EOF = '1'B;                                00980099
+      ON ENDFILE(RCBDPC2) PC2EOF = '1'B;                                00990099
+      ON KEY(VSDCD0)                                                    01000099
+       BEGIN;                                                           01010099
+         SELECT(ONCODE);                                                01020099
+         WHEN(51)                                                       01030099
+         DO;                                                            01031099
+             KEY_NOT_FOUND = 'TRUE' ;                                   01040099
+         /*  CALL ROLDP1M_ERROR ( 'INVALID CUSTOMER ID',                01041099
+                            '#001'); */                                 01042099
+         END;                                                           01043099
+         OTHERWISE;                                                     01050099
+         END;                                                           01060099
+      END;                                                              01070099
+ /********************************************************************/ 01080099
+ /*                 S T A R T   P R O C E S S I N G                  */ 01090099
+ /********************************************************************/ 01100099
+                                                                        01110099
+ CALL OPEN_FILES;                                                       01120099
+ CALL CREATE_RCBDPG2;                                                   01130099
+ CALL READ_FILES;                                                       01140099
+ CALL CLOSE_FILES;                                                      01150099
+ /********************************************************************/ 01160099
+ /*                  OPEN FILES                                      */ 01170099
+ /********************************************************************/ 01180099
+ OPEN_FILES: PROC;                                                      01190099
+      OPEN FILE(VSDCD0);                                                01200099
+      OPEN FILE(RCBDPC4);                                               01210099
+      OPEN FILE(RCBDPG4);                                               01220099
+      OPEN FILE(RCBDSBM);                                               01221099
+      OPEN FILE(RCBDPC2);                                               01230099
+      OPEN FILE(RCBDPG2);                                               01240099
+ END OPEN_FILES;                                                        01250099
+ /********************************************************************/ 01270099
+ /*                     CREATE FILE RCBDPG2                          */ 01280099
+ /********************************************************************/ 01290099
+ CREATE_RCBDPG2: PROC;                                                  01300099
+      READ FILE(RCBDPC2) INTO(FILE_RCBDPC2);                            01310099
+      DO WHILE(¬PC2EOF);                                                01320099
+       IF(FILE_RCBDPC2.PRODUCT_TYPE = ' ' |                             01350099
+               FILE_RCBDPC2.PRODUCT_TYPE = '9999') THEN                 01360099
+          DO;                                                           01370099
+          END;                                                          01400099
+       ELSE DO;                                                         01410099
+         IF FILE_RCBDPC2.CTRYNO  = '832'  THEN                          01411099
+         DO                                                             01412099
+           FILE_RCBDPG2.COUNTRY_NUM  = FILE_RCBDPC2.CTRYNO;             01420099
+           FILE_RCBDPG2.PRODUCT_TYPE = FILE_RCBDPC2.PRODUCT_TYPE;       01430099
+           FILE_RCBDPG2.ORIGIN       = FILE_RCBDPC2.ORIGIN;             01440099
+           FILE_RCBDPG2.SEQUENCE_NUM =                                  01450099
+                         '00'||FILE_RCBDPC2.SEQUENCE_NUMBER;            01451099
+           FILE_RCBDPG2.ORDER_NO     = FILE_RCBDPC2.ORDER_NO;           01460099
+           FILE_RCBDPG2.CUST_NUM     = FILE_RCBDPC2.CUST_NO;            01470099
+           WRITE FILE(RCBDPG2) FROM(FILE_RCBDPG2);                      01480099
+          END;                                                          01490099
+         END;                                                           01491099
+      READ FILE(RCBDPC2) INTO(FILE_RCBDPC2);                            01500099
+      END;                                                              01510099
+ END CREATE_RCBDPG2;                                                    01520099
+                                                                        01530099
+ /********************************************************************/ 01540099
+ /*                  READ FILES                                      */ 01550099
+ /********************************************************************/ 01560099
+ READ_FILES: PROC;                                                      01570099
+      READ FILE(RCBDPC4) INTO(FILE_RCBDPC4);                            01580099
+      DO WHILE(¬PC4EOF);                                                01590099
+       DO;                                                              01600099
+        SELECT(FILE_RCBDPC4.REC_ID);                                    01610099
+        WHEN('RM01')                                                    01620099
+        DO;                                                             01630099
+         WRITE FILE(RCBDPG4) FROM(FILE_RCBDPC4_H);                      01631099
+         SAVE_TIME_STAMP = DATE();                                      01640099
+         FILE_RCBDPC4_H.REC_ID = FILE_RCBDPC4.REC_ID;                   01650099
+         FILE_RCBDPC4_H.COUNTRY_NUMBER = 'S32';                         01660099
+         FILE_RCBDPC4_H.FILE_NAME     = 'EDALM3F';                      01670099
+         FILE_RCBDPC4_H.FILE_DESC     = 'DELTA MACHINE FILE';           01680099
+         FILE_RCBDPC4_H.RUN_DATE = '20'||SAVE_TIME_STAMP;               01690099
+         FILE_RCBDPC4_H.FILLER = '';                                    01700099
+         WRITE FILE(RCBDSBM) FROM(FILE_RCBDPC4_H);                      01711099
+        END;                                                            01720099
+        WHEN('RM02')                                                    01730099
+        DO;                                                             01740099
+         CALL MAIN_PROCESS;                                             01750099
+        END;                                                            01760099
+        WHEN('RM03')                                                    01770099
+        DO;                                                             01780099
+        FILE_RCBDPC4_T.REC_ID = FILE_RCBDPC4.REC_ID;                    01790099
+        FILE_RCBDPC4_T.RECORD_COUNT= COUNT_RCBDPC4;                     01800099
+        WRITE FILE(RCBDPG4) FROM(FILE_RCBDPC4_T);                       01800199
+                                                                        01800299
+        FILE_RCBDSBM_T.REC_ID = FILE_RCBDPC4.REC_ID;                    01801099
+        FILE_RCBDSBM_T.RECORD_COUNT= COUNT_RCBDSBM;                     01802099
+        WRITE FILE(RCBDSBM) FROM(FILE_RCBDSBM_T);                       01811099
+        END;                                                            01820099
+        OTHERWISE                                                       01830099
+        DO;                                                             01831099
+          EOF = '1'B;                                                   01831199
+          CALL ROLDP1M_ERROR ('INVALID RECORD',                         01832099
+                                 '#002');                               01833099
+        END;                                                            01834099
+       END;                                                             01840099
+      END;                                                              01850099
+         READ FILE(RCBDPC4) INTO(FILE_RCBDPC4)                          01860099
+      END;                                                              01870099
+ END READ_FILES;                                                        01880099
+ /********************************************************************/ 01890099
+ /* MAIN PROCESS                                                     */ 01900099
+ /* DESCRIPTION : IF A CUSTOMER NUMBER WAS IDENTIFIED AS SBM         */ 01910099
+ /*               THEN CHANGE THE COUNTRY NUMBER TO S32 AND WRITE    */ 01920099
+ /*               TO RCBDSBM FILE , ALL OTHER RECORDS MUST BE WRITTEN*/ 01930099
+ /*               TO RCBDPG4 FILE                                    */ 01940099
+ /********************************************************************/ 02020099
+ MAIN_PROCESS: PROC;                                                    02030099
+      KEY_VALUE = ' '||FILE_RCBDPC4.CTRYNO||'CD'||                      02040099
+              FILE_RCBDPC4.CUST_NO||'1';                                02050099
+       IF FILE_RCBDPC4.CTRYNO = '832' THEN                              02100099
+        DO;                                                             02120099
+          READ FILE(VSDCD0) INTO(FILE_VSDCD0) KEY(KEY_VALUE);           02120199
+          IF KEY_NOT_FOUND ='TRUE' THEN                                 02120299
+          DO;                                                           02120399
+            WRITE FILE(RCBDPG4) FROM(FILE_RCBDPC4);                     02120499
+            COUNT_RCBDPC4 = COUNT_RCBDPC4 + 1 ;                         02120599
+            KEY_NOT_FOUND = 'FALSE' ;                                   02120699
+          END;                                                          02120799
+          ELSE                                                          02120899
+          IF FILE_VSDCD0.RBOXS ¬= '832' THEN                            02121099
+          DO;                                                           02140099
+            FILE_RCBDPC4.CTRYNO = 'S32';                                02150099
+            WRITE FILE(RCBDSBM) FROM(FILE_RCBDPC4);                     02151099
+            COUNT_RCBDSBM = COUNT_RCBDSBM + 1 ;                         02152099
+          END;                                                          02160099
+          ELSE                                                          02160199
+          DO;                                                           02160299
+           WRITE  FILE(RCBDPG4) FROM(FILE_RCBDPC4);                     02160399
+           COUNT_RCBDPC4 = COUNT_RCBDPC4 + 1 ;                          02160499
+          END;                                                          02160799
+        END;                                                            02161099
+        ELSE                                                            02162099
+        DO;                                                             02163099
+           WRITE  FILE(RCBDPG4) FROM(FILE_RCBDPC4);                     02164099
+           COUNT_RCBDPC4 = COUNT_RCBDPC4 + 1 ;                          02165099
+        END;                                                            02230099
+ END MAIN_PROCESS;                                                      02470099
+ /********************************************************************/ 02470199
+ /*               ERROR ROUTINE                                      */ 02470299
+ /********************************************************************/ 02470399
+ ROLDP1M_ERROR: PROC (ERR_TYPE,                                         02471099
+                       CALL_ID);                                        02472099
+ DCL ERR_TYPE     CHAR(30);                                             02473099
+ DCL CALL_ID      CHAR(4);                                              02474099
+ CALL PLIRETC (12);                                                     02474199
+ PUT SKIP LIST('                            ERROR DETAILS     ');       02474299
+ PUT SKIP LIST('                            -------------       ');     02474399
+ PUT SKIP LIST('ERROR TYPE            :         ', ERR_TYPE);           02475099
+ PUT SKIP LIST('CALL_ID               :         ', CALL_ID);            02476099
+ IF CALL_ID = '#001' THEN                                               02477099
+ PUT SKIP LIST('KEY VALUE             :         ', KEY_VALUE);          02477199
+ ELSE                                                                   02479099
+ PUT SKIP LIST('INVALID RECORD FOUND  :        ', FILE_RCBDPC4.REC_ID); 02479199
+           READ FILE(RCBDPC4) INTO(FILE_RCBDPC4);                       02479399
+ END ROLDP1M_ERROR;                                                     02479499
+ /********************************************************************/ 02480099
+ /*               CLOSE ALL OPENED FILES                             */ 02490099
+ /********************************************************************/ 02500099
+ CLOSE_FILES: PROC;                                                     02510099
+   CLOSE FILE(VSDCD0);                                                  02520099
+   CLOSE FILE(RCBDPC4);                                                 02530099
+   CLOSE FILE(RCBDPG4);                                                 02540099
+   CLOSE FILE(RCBDSBM);                                                 02541099
+   CLOSE FILE(RCBDPC2);                                                 02550099
+   CLOSE FILE(RCBDPC4);                                                 02560099
+ END CLOSE_FILES;                                                       02570099
+ END ROLDP1M;                                                           02580099

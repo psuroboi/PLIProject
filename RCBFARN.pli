@@ -1,0 +1,999 @@
+ /* RCBFARN - INT.SUP. RCBV0180_OU_SW                                */ 00019312
+ /*                                                                  */ 00020000
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */ 00030000
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */ 00040000
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */ 00050000
+ /*                                                                  */ 00060000
+ /********************************************************************/ 00070000
+ /* PROGRAM          : RCBFARN                                       */ 00080000
+ /*                                                                  */ 00090000
+ /* LANGUAGE         : PLISQL                                        */ 00100000
+ /*                                                                  */ 00110000
+ /* TYPE             : LINKABLE MODULE                               */ 00120000
+ /*                                                                  */ 00130000
+ /* DESCRIPTION      : INTEGRATE SUPERIOR INTO TABLE                 */ 00140000
+ /*                    RCBV0180_OU_SW                                */ 00150000
+ /*                    CICS VERSION WITH RCB0M1M REMOVED             */ 00160000
+ /*                                                                  */ 00170000
+ /* INPUT            : RCBV0180_OU_SW                                */ 00180000
+ /*                                                                  */ 00190000
+ /* OUTPUT           : RCBV0180_OU_SW                                */ 00200000
+ /*                                                                  */ 00210000
+ /* EXTERNAL MODULES    : - RCBF18N   INSERT BUILDING BLOCK          */ 00220000
+ /*                       - RCBG18N   UPDATE BUILDING BLOCK          */ 00230000
+ /*                       - RCBH18N   DELETE BUILDING BLOCK          */ 00240000
+ /*                       - RCB004N   DATE CALCULATION               */ 00250000
+ /*                                                                  */ 00260000
+ /* MESSAGES            :                                            */ 00270000
+ /*                                                                  */ 00280000
+ /* PROCESSING DETAILS  : THIS PROGRAM IS MANUALLY MAINTAINED        */ 00290000
+ /*                                                                  */ 00300000
+ /* NOTE                : DETECTED ERRORS SHOULD NOT BE HANDLED IN   */ 00310000
+ /*                       THIS BUILDING BLOCK, BUT IN THE CALLING    */ 00320000
+ /*  MODULE. THEREFOR THE PROCESSING HAS TO STOP IMMEDIATELY IF AN   */ 00330000
+ /*  ERROR IS DETECTED, WITHOUT CAUSING AN ABEND. TO IMPROVE         */ 00340000
+ /*  READABILITY THIS HAS BEEN DONE USING A 'EXIT LABEL' INSTEAD     */ 00350000
+ /*  OF THE CONTINUOUS 'IF TO CONTINUE' CLAUSE.                      */ 00360000
+ /*                                                                  */ 00370000
+ /*  THE FOLLOWING PICTURES GIVE AN ILLUSTRATION OF THE POSSIBLE     */ 00380000
+ /*  SITUATIONS, WHICH MAY OCCUR AND HAVE TO BE HANDLED              */ 00390000
+ /*                                                                  */ 00400000
+ /*  INPUT:           |--------------|                               */ 00410000
+ /*                                                                  */ 00420000
+ /*  CEDS:  1 - |----|                                               */ 00430000
+ /*         2 - |----------|                                         */ 00440000
+ /*         3 - |--------------------------|                         */ 00450000
+ /*         4 -            |----|                                    */ 00460000
+ /*         5 -            |---------------|                         */ 00470000
+ /*         6 -                       |----|                         */ 00480000
+ /*                                                                  */ 00490000
+ /*  THOSE FIELDS IN CEDS FOR WHICH THE INPUT IS NOT THE OWNER,      */ 00500000
+ /*  I.E. INDNULL HAS BEEN SET TO '99', ARE TO REMAIN UNCHANGED      */ 00510000
+ /*                                                                  */ 00520000
+ /*  CONCURRENT PERIODS WITH THE SAME DATA ARE TO BE MERGED          */ 00530000
+ /*                                                                  */ 00540000
+ /*  INPUT RECORD IS FILLED CORRECTLY, I.E. FIELD IS BLANK OR        */ 00550000
+ /*  DECIMAL ZERO IF NULL.                                           */ 00560000
+ /*                                                                  */ 00570000
+ /* MESSAGES         :                                               */ 00580000
+ /*                                                                  */ 00590000
+ /* MAINTENANCE LOG  :                                               */ 00600000
+ /* ---------------                                                  */ 00610000
+ /*                                                                  */ 00620000
+ /* DATE       | WORK-ITEMNO. | DESCRIPTION                          */ 00630000
+ /* ---------------------------------------------------------------  */ 00640000
+ /* 2001-10-24 | RC01230      | CSP TO PL1/CICS CONVERSION           */ 00650000
+ /*            |              |                                      */ 00660000
+ /********************************************************************/ 00670000
+1RCBFARN: PROC    (PTR_RCB180S_IN,                                      00680000
+                   PTR_RCB180SI_IN,                                     00690000
+                   PTR_RET_AREA_BB,                                     00700000
+                   PTR_INT_AREA)                                        00710000
+          OPTIONS (REENTRANT)                                           00720000
+          REORDER;                                                      00730000
+0/********************************************************************/ 00740000
+ /*  PARAMETERS                                                      */ 00750000
+ /********************************************************************/ 00760000
+0DCL PTR_RCB180S_IN          PTR;                                       00770000
+ DCL PTR_RCB180SI_IN         PTR;                                       00780000
+ DCL PTR_RET_AREA_BB         PTR;                                       00790000
+ DCL PTR_INT_AREA            PTR;                                       00800000
+ DCL PTR_DATE_CALC           PTR;                                       00810000
+0/********************************************************************/ 00820000
+ /* EXTERNAL ENTRIES                                                 */ 00830000
+ /********************************************************************/ 00840000
+0DCL RCBF18N   ENTRY  EXTERNAL;      /* INSERT BUILDING BLOCK        */ 00850000
+ DCL RCBG18N   ENTRY  EXTERNAL;      /* UPDATE BUILDING BLOCK        */ 00860000
+ DCL RCBH18N   ENTRY  EXTERNAL;      /* DELETE BUILDING BLOCK        */ 00870000
+ DCL RCB004N   ENTRY  EXTERNAL;      /* DATE CALCULATION             */ 00880000
+0/********************************************************************/ 00890000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 00900000
+ /********************************************************************/ 00910000
+0DCL 1 PARM_INT_AREA    BASED (PTR_INT_AREA),                           00920000
+       %INCLUDE (RCBZ01S);;                                             00930000
+ DCL 1 PARM_RET_AREA_BB BASED (PTR_RET_AREA_BB),                        00940000
+       %INCLUDE (RCBZ02S);;                                             00950000
+ DCL 1 PARM_DATE_CALC,                                                  00960000
+       %INCLUDE (RCBZ03S);;                                             00970000
+0/********************************************************************/ 00980000
+ /* DB2 TABLE STRUCTURES                                             */ 00990000
+ /********************************************************************/ 01000000
+0DCL PTR_RCB180S_FETCH       PTR;                                       01010000
+ DCL PTR_RCB180SI_FETCH      PTR;                                       01020000
+ DCL PTR_RCB180S_OLD         PTR;                                       01030000
+ DCL PTR_RCB180SI_OLD        PTR;                                       01040000
+ DCL PTR_RCB180S_MERGE       PTR;                                       01050000
+ DCL PTR_RCB180SI_MERGE      PTR;                                       01060000
+ DCL PTR_RCB180S_OUT         PTR;                                       01070000
+ DCL PTR_RCB180SI_OUT        PTR;                                       01080000
+0DCL 1 RCB180S_IN       BASED (PTR_RCB180S_IN),                         01090000
+       %INCLUDE (RCB180S);;                                             01100000
+ DCL 1 RCB180SI_IN      BASED (PTR_RCB180SI_IN),                        01110000
+       %INCLUDE (RCB180SI);;                                            01120000
+ DCL 1 RCB180S_FETCH,                                                   01130000
+       %INCLUDE (RCB180S);;                                             01140000
+ DCL 1 RCB180SI_FETCH,                                                  01150000
+       %INCLUDE (RCB180SI);;                                            01160000
+ DCL 1 RCB180S_OLD,                                                     01170000
+       %INCLUDE (RCB180S);;                                             01180000
+ DCL 1 RCB180SI_OLD,                                                    01190000
+       %INCLUDE (RCB180SI);;                                            01200000
+ DCL 1 RCB180S_MERGE,                                                   01210000
+       %INCLUDE (RCB180S);;                                             01220000
+ DCL 1 RCB180SI_MERGE,                                                  01230000
+       %INCLUDE (RCB180SI);;                                            01240000
+ DCL 1 RCB180S_OUT,                                                     01250000
+       %INCLUDE (RCB180S);;                                             01260000
+ DCL 1 RCB180SI_OUT,                                                    01270000
+       %INCLUDE (RCB180SI);;                                            01280000
+0/********************************************************************/ 01290000
+ /*  BIT SWITCHES                                                    */ 01300000
+ /********************************************************************/ 01310000
+0DCL TRUE                  BIT (1)         INIT ('1'B);                 01320000
+ DCL FALSE                 BIT (1)         INIT ('0'B);                 01330000
+ DCL SWITCH_CURSOR_OPEN    BIT (1)         INIT ('0'B);                 01340000
+ DCL SWITCH_END_OF_CURSOR  BIT (1)         INIT ('0'B);                 01350000
+ DCL SWITCH_CHANGE         BIT (1)         INIT ('0'B);                 01360000
+ DCL SWITCH_MERGE_ALLOWED  BIT (1)         INIT ('1'B);                 01370000
+ DCL SWITCH_CHANGE_ALLOWED BIT (1)         INIT ('1'B);                 01380000
+0/********************************************************************/ 01390000
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */ 01400000
+ /********************************************************************/ 01410000
+0DCL 1 WRK_SQLCA  BASED (ADDR(PARM_RET_AREA_BB.RETURN_SQL))             01420000
+                  LIKE SQLCA;                                           01430000
+0DCL 1 WRK_FIELDS,                                                      01440000
+       3 WRK_LEVEL          FIXED BIN (15),                             01450000
+       3 WRK_MOD_NAME       CHAR (08),                                  01460000
+       3 WRK_TABLE_NAME     CHAR (25)  INIT ('RCBV0180_OU_SW'),         01470000
+       3 WRK_PREV_DATE      CHAR (10),                                  01480000
+       3 WRK_NEXT_DATE      CHAR (10);                                  01490000
+0/********************************************************************/ 01500000
+ /*  BUILTIN FUNCTIONS                                               */ 01510000
+ /********************************************************************/ 01520000
+0DCL (ADDR,                                                             01530000
+      LOW,                                                              01540000
+      HIGH,                                                             01550000
+      NULL,                                                             01560000
+      STRING,                                                           01570000
+      SUBSTR,                                                           01580000
+      VERIFY)   BUILTIN;                                                01590000
+0/********************************************************************/ 01600000
+ /*  DB2/SQL SQLCA                                                   */ 01610000
+ /********************************************************************/ 01620000
+0 EXEC SQL                                                              01630000
+    INCLUDE SQLCA                                                       01640000
+    ;                                                                   01650000
+0/********************************************************************/ 01660000
+ /* DB2/SQL CURSORS                                                  */ 01670000
+ /********************************************************************/ 01680000
+0 EXEC SQL                                /* CURSOR TABEL            */ 01690000
+    DECLARE CURS_TABLE CURSOR FOR                                       01700000
+    SELECT *                                                            01710000
+    FROM RCBV0180_OU_SW                                                 01720000
+    WHERE COUNTRY_NUMBER           = :RCB180S_IN.COUNTRY_NUMBER         01730000
+      AND PRODUCT_TYPE             = :RCB180S_IN.PRODUCT_TYPE           01740000
+      AND MODEL_NUMBER             = :RCB180S_IN.MODEL_NUMBER           01750000
+      AND ORIGIN                   = :RCB180S_IN.ORIGIN                 01760000
+      AND SEQUENCE_NUMBER          = :RCB180S_IN.SEQUENCE_NUMBER        01770000
+      AND TYPE_OF_RELATION         = :RCB180S_IN.TYPE_OF_RELATION       01780000
+      AND EFFECTIVE_DATE          <= :WRK_NEXT_DATE                     01790000
+      AND END_DATE                >= :WRK_PREV_DATE                     01800000
+    ORDER BY                                                            01810000
+      EFFECTIVE_DATE                                                    01820000
+    FOR FETCH ONLY                                        /* RC01219 */ 01830000
+    ;                                                                   01840000
+1/********************************************************************/ 01850000
+ /*                 S T A R T   P R O C E S S I N G                  */ 01860000
+ /********************************************************************/ 01870000
+0 CALL RCBFARN_INIT_COMMON;                                             01880000
+0 CALL RCBFARN_OPEN_CURS_TABLE;                                         01890000
+  CALL RCBFARN_FETCH_CURS_TABLE;                                        01900000
+                                     /* PROCESS ALL CEDS TABLE INFO  */ 01910000
+0 DO WHILE (¬ SWITCH_END_OF_CURSOR);                                    01920000
+    CALL RCBFARN_PROCESS_FETCH;                                         01930000
+                                     /* STILL INFO LEFT TO INSERT    */ 01940000
+0   IF RCB180S_IN.EFFECTIVE_DATE <= RCB180S_IN.END_DATE                 01950000
+    THEN                                                                01960000
+      DO;                                                               01970000
+        CALL RCBFARN_FETCH_CURS_TABLE_1;                                01980000
+      END;                                                              01990000
+    ELSE                                                                02000000
+      DO;                                                               02010000
+        SWITCH_END_OF_CURSOR = TRUE;                                    02020000
+      END;                                                              02030000
+  END;                                                                  02040000
+  CALL RCBFARN_PROCESS_RECORD;                                          02050000
+                                     /* EXIT LABEL, SEE PROLOGUE     */ 02060000
+  RCBFARN_EXIT:                                                         02070000
+0 IF SWITCH_CURSOR_OPEN                                                 02080000
+  THEN                                                                  02090000
+    DO;                                                                 02100000
+      CALL RCBFARN_CLOSE_CURS_TABLE;                                    02110000
+    END;                                                                02120000
+0 CALL RCBFARN_END_COMMON;                                              02130000
+1/********************************************************************/ 02140000
+ /*                                                                  */ 02150000
+ /* MODULE NAME      : RCBFARN_INIT_COMMON                           */ 02160000
+ /*                                                                  */ 02170000
+ /* DESCRIPTION      : INIT PROGRAM                                  */ 02180000
+ /*                                                                  */ 02190000
+ /********************************************************************/ 02200000
+0RCBFARN_INIT_COMMON: PROC;                                             02210000
+                                     /* INITIALISE POINTERS          */ 02220000
+  PTR_RCB180S_FETCH  = ADDR(RCB180S_FETCH);                             02230000
+  PTR_RCB180SI_FETCH = ADDR(RCB180SI_FETCH);                            02240000
+  PTR_RCB180S_OLD    = ADDR(RCB180S_OLD);                               02250000
+  PTR_RCB180SI_OLD   = ADDR(RCB180SI_OLD);                              02260000
+  PTR_RCB180S_MERGE  = ADDR(RCB180S_MERGE);                             02270000
+  PTR_RCB180SI_MERGE = ADDR(RCB180SI_MERGE);                            02280000
+  PTR_RCB180S_OUT    = ADDR(RCB180S_OUT);                               02290000
+  PTR_RCB180SI_OUT   = ADDR(RCB180SI_OUT);                              02300000
+  PTR_DATE_CALC      = ADDR(PARM_DATE_CALC);                            02310000
+                                     /* ADAPT MESSAGE AREA           */ 02320000
+  WRK_MOD_NAME  = SDAISTP.SDAINAM;                                      02330000
+  WRK_LEVEL     = PARM_INT_AREA.ID_MOD_LEVEL + 1;                       02340000
+  PARM_INT_AREA.ID_MOD_PATH(WRK_LEVEL) = WRK_MOD_NAME;                  02350000
+  PARM_INT_AREA.ID_MOD_LEVEL           = WRK_LEVEL;                     02360000
+                                     /* START PROCESSING             */ 02370000
+  PARM_RET_AREA_BB.RETURN_CODE = 0;                                     02380000
+                                     /* SET SEARCH BOUNDARIES        */ 02390000
+  IF RCB180S_IN.EFFECTIVE_DATE = '0001-01-01'                           02400000
+  THEN                                                                  02410000
+    DO;                                                                 02420000
+      WRK_PREV_DATE = '0001-01-01';                                     02430000
+    END;                                                                02440000
+  ELSE                                                                  02450000
+    DO;                                                                 02460000
+      CALL RCBFARN_TRANS_DATE (RCB180S_IN.EFFECTIVE_DATE, -1,           02470000
+                               WRK_PREV_DATE);                          02480000
+    END;                                                                02490000
+  IF RCB180S_IN.END_DATE = '9999-12-31'                                 02500000
+  THEN                                                                  02510000
+    DO;                                                                 02520000
+      WRK_NEXT_DATE = '9999-12-31';                                     02530000
+    END;                                                                02540000
+  ELSE                                                                  02550000
+    DO;                                                                 02560000
+      CALL RCBFARN_TRANS_DATE (RCB180S_IN.END_DATE,+1,                  02570000
+                               WRK_NEXT_DATE);                          02580000
+    END;                                                                02590000
+                                     /* STORE NEW PREVIOUS RECORD    */ 02600000
+  RCB180S_OLD              = '';                                        02610000
+  RCB180SI_OLD.INDNULL (*) = -1;                                        02620000
+0 END RCBFARN_INIT_COMMON;                                              02630000
+1/********************************************************************/ 02640000
+ /*                                                                  */ 02650000
+ /* MODULE NAME      : PROCESS_FETCH                                 */ 02660000
+ /*                                                                  */ 02670000
+ /* DESCRIPTION      : PROCESS FETCHED RECORD                        */ 02680000
+ /*                                                                  */ 02690000
+ /********************************************************************/ 02700000
+0RCBFARN_PROCESS_FETCH: PROC;                                           02710000
+ SELECT;                                                                02720000
+                                     /* SITUATION - 1                */ 02730000
+ WHEN (RCB180S_FETCH.END_DATE       <  RCB180S_IN.EFFECTIVE_DATE)       02740000
+   DO;                                                                  02750000
+                                     /* STORE NEW PREVIOUS RECORD    */ 02760000
+     RCB180S_OLD  = RCB180S_FETCH, BY NAME;                             02770000
+     RCB180SI_OLD = RCB180SI_FETCH, BY NAME;                            02780000
+   END;                                                                 02790000
+                                     /* SITUATION - 2                */ 02800000
+ WHEN (RCB180S_FETCH.EFFECTIVE_DATE <  RCB180S_IN.EFFECTIVE_DATE &      02810000
+       RCB180S_FETCH.END_DATE       >= RCB180S_IN.EFFECTIVE_DATE &      02820000
+       RCB180S_FETCH.END_DATE       <= RCB180S_IN.END_DATE)             02830000
+   DO;                                                                  02840000
+                                     /* STORE NEW PREVIOUS RECORD    */ 02850000
+     RCB180S_OLD  = RCB180S_FETCH, BY NAME;                             02860000
+     RCB180SI_OLD = RCB180SI_FETCH, BY NAME;                            02870000
+                                     /* MERGE NEW INFORMATION        */ 02880000
+     CALL RCBFARN_MERGE;                                                02890000
+                                     /* CHECK IF MERGE ALLOWED       */ 02900000
+     CALL RCBFARN_MERGE_ALLOWED;                                        02910000
+     IF SWITCH_MERGE_ALLOWED                                            02920000
+     THEN                                                               02930000
+       DO;                                                              02940000
+         CALL RCBFARN_COMPARE;                                          02950000
+         IF SWITCH_CHANGE                                               02960000
+         THEN                                                           02970000
+           DO;                                                          02980000
+                                     /* CHECK IF CHANGE ALLOWED      */ 02990000
+             CALL RCBFARN_CHANGE_ALLOWED;                               03000000
+             IF SWITCH_CHANGE_ALLOWED                                   03010000
+             THEN                                                       03020000
+               DO;                                                      03030000
+                                     /* STORE NEW PREVIOUS RECORD    */ 03040000
+                 RCB180S_OLD          = RCB180S_MERGE, BY NAME;         03050000
+                 RCB180SI_OLD         = RCB180SI_MERGE, BY NAME;        03060000
+                 RCB180S_OLD.END_DATE = RCB180S_FETCH.END_DATE;         03070000
+                                     /* INSERT NEW PREVIOUS RECORD   */ 03080000
+                 RCB180S_OUT          = RCB180S_OLD, BY NAME;           03090000
+                 RCB180SI_OUT         = RCB180SI_OLD, BY NAME;          03100000
+                 CALL RCBFARN_INSERT;                                   03110000
+                                     /* CLOSE CEDS RECORD            */ 03120000
+                 RCB180S_OUT          = RCB180S_FETCH, BY NAME;         03130000
+                 RCB180SI_OUT         = RCB180SI_FETCH, BY NAME;        03140000
+                 RCB180S_OUT.END_DATE = WRK_PREV_DATE;                  03150000
+                 CALL RCBFARN_UPDATE;                                   03160000
+               END;                                                     03170000
+           END;                                                         03180000
+       END;                                                             03190000
+                                     /* SET REMAINING PERIOD         */ 03200000
+     IF RCB180S_FETCH.END_DATE = '9999-12-31'                           03210000
+     THEN                                                               03220000
+       DO;                                      /* TO FORCE LOOP END */ 03230000
+         RCB180S_IN.EFFECTIVE_DATE = '9999-99-99';                      03240000
+       END;                                                             03250000
+     ELSE                                                               03260000
+       DO;                                                              03270000
+         CALL RCBFARN_TRANS_DATE (RCB180S_FETCH.END_DATE, +1,           03280000
+                                  RCB180S_IN.EFFECTIVE_DATE);           03290000
+       END;                                                             03300000
+   END;                                                                 03310000
+                                     /* SITUATION - 3                */ 03320000
+ WHEN (RCB180S_FETCH.EFFECTIVE_DATE <  RCB180S_IN.EFFECTIVE_DATE &      03330000
+       RCB180S_FETCH.END_DATE       >  RCB180S_IN.END_DATE)             03340000
+   DO;                                                                  03350000
+                                     /* STORE NEW PREVIOUS RECORD    */ 03360000
+     RCB180S_OLD  = RCB180S_FETCH, BY NAME;                             03370000
+     RCB180SI_OLD = RCB180SI_FETCH, BY NAME;                            03380000
+                                     /* MERGE NEW INFORMATION        */ 03390000
+     CALL RCBFARN_MERGE;                                                03400000
+                                     /* CHECK IF MERGE ALLOWED       */ 03410000
+     CALL RCBFARN_MERGE_ALLOWED;                                        03420000
+     IF SWITCH_MERGE_ALLOWED                                            03430000
+     THEN                                                               03440000
+       DO;                                                              03450000
+         CALL RCBFARN_COMPARE;                                          03460000
+         IF SWITCH_CHANGE                                               03470000
+         THEN                                                           03480000
+           DO;                                                          03490000
+                                     /* CHECK IF CHANGE ALLOWED      */ 03500000
+             CALL RCBFARN_CHANGE_ALLOWED;                               03510000
+             IF SWITCH_CHANGE_ALLOWED                                   03520000
+             THEN                                                       03530000
+               DO;                                                      03540000
+                                     /* STORE NEW PREVIOUS RECORD    */ 03550000
+                 RCB180S_OLD          = RCB180S_MERGE, BY NAME;         03560000
+                 RCB180SI_OLD         = RCB180SI_MERGE, BY NAME;        03570000
+                                     /* INSERT NEW RECORD            */ 03580000
+                 RCB180S_OUT          = RCB180S_OLD, BY NAME;           03590000
+                 RCB180SI_OUT         = RCB180SI_OLD, BY NAME;          03600000
+                 CALL RCBFARN_INSERT;                                   03610000
+                                     /* CLOSE CEDS RECORD            */ 03620000
+                 RCB180S_OUT          = RCB180S_FETCH, BY NAME;         03630000
+                 RCB180SI_OUT         = RCB180SI_FETCH, BY NAME;        03640000
+                 RCB180S_OUT.END_DATE = WRK_PREV_DATE;                  03650000
+                 CALL RCBFARN_UPDATE;                                   03660000
+                                     /* HANDLE FUTURE PERIOD         */ 03670000
+                 RCB180S_MERGE        = RCB180S_FETCH, BY NAME;         03680000
+                 RCB180SI_MERGE       = RCB180SI_FETCH, BY NAME;        03690000
+                                     /* CHECK IF CHANGE ALLOWED      */ 03700000
+                 CALL RCBFARN_CHANGE_ALLOWED;                           03710000
+                 IF SWITCH_CHANGE_ALLOWED                               03720000
+                 THEN                                                   03730000
+                   DO;                                                  03740000
+                                     /* INSERT CEDS RECORD FUTURE    */ 03750000
+                     RCB180S_OUT      = RCB180S_MERGE, BY NAME;         03760000
+                     RCB180SI_OUT     = RCB180SI_MERGE, BY NAME;        03770000
+                     RCB180S_OUT.EFFECTIVE_DATE  = WRK_NEXT_DATE;       03780000
+                     CALL RCBFARN_INSERT;                               03790000
+                   END;                                                 03800000
+                                     /* ELSE DELETE FUTURE INFO      */ 03810000
+               END;                                                     03820000
+           END;                                                         03830000
+       END;                                                             03840000
+                                     /* SET REMAINING PERIOD         */ 03850000
+     RCB180S_IN.EFFECTIVE_DATE = '9999-99-99';                          03860000
+   END;                                                                 03870000
+                                     /* SITUATION - 4                */ 03880000
+ WHEN (RCB180S_FETCH.EFFECTIVE_DATE >= RCB180S_IN.EFFECTIVE_DATE &      03890000
+       RCB180S_FETCH.END_DATE       >= RCB180S_IN.EFFECTIVE_DATE &      03900000
+       RCB180S_FETCH.END_DATE       <= RCB180S_IN.END_DATE)             03910000
+   DO;                                                                  03920000
+                                     /* INSERT NEW PERIOD            */ 03930000
+     IF RCB180S_FETCH.EFFECTIVE_DATE > RCB180S_IN.EFFECTIVE_DATE        03940000
+     THEN                                                               03950000
+       DO;                                                              03960000
+         CALL RCBFARN_NO_CEDS;                                          03970000
+                                     /* SET REMAINING PERIOD         */ 03980000
+         RCB180S_IN.EFFECTIVE_DATE = RCB180S_FETCH.EFFECTIVE_DATE;      03990000
+       END;                                                             04000000
+                                     /* HANDLE EXISTING PERIOD       */ 04010000
+     CALL RCBFARN_MERGE;                                                04020000
+                                     /* CHECK IF MERGE ALLOWED       */ 04030000
+     CALL RCBFARN_MERGE_ALLOWED;                                        04040000
+     IF SWITCH_MERGE_ALLOWED                                            04050000
+     THEN                                                               04060000
+       DO;                                                              04070000
+         CALL RCBFARN_COMPARE;                                          04080000
+         IF ¬SWITCH_CHANGE                                              04090000
+         THEN                                                           04100000
+           DO;                                                          04110000
+                                     /* UPDATE OLD PREVIOUS RECORD   */ 04120000
+             RCB180S_OLD.END_DATE = RCB180S_FETCH.END_DATE;             04130000
+             RCB180S_OUT          = RCB180S_OLD, BY NAME;               04140000
+             RCB180SI_OUT         = RCB180SI_OLD, BY NAME;              04150000
+             CALL RCBFARN_UPDATE;                                       04160000
+                                     /* DELETE CEDS RECORD           */ 04170000
+             RCB180S_OUT          = RCB180S_FETCH, BY NAME;             04180000
+             RCB180SI_OUT         = RCB180SI_FETCH, BY NAME;            04190000
+             CALL RCBFARN_DELETE;                                       04200000
+           END;                                                         04210000
+         ELSE                                                           04220000
+           DO;                                                          04230000
+             CALL RCBFARN_CHANGE_ALLOWED;                               04240000
+             IF SWITCH_CHANGE_ALLOWED                                   04250000
+             THEN                                                       04260000
+               DO;                                                      04270000
+                                     /* STORE NEW PREVIOUS RECORD    */ 04280000
+                 RCB180S_OLD          = RCB180S_MERGE, BY NAME;         04290000
+                 RCB180SI_OLD         = RCB180SI_MERGE, BY NAME;        04300000
+                 RCB180S_OLD.EFFECTIVE_DATE                             04310000
+                                      = RCB180S_FETCH.EFFECTIVE_DATE;   04320000
+                 RCB180S_OLD.END_DATE = RCB180S_FETCH.END_DATE;         04330000
+                                     /* INSERT NEW PREVIOUS RECORD   */ 04340000
+                                     /* BY UPDATING CEDS RECORD      */ 04350000
+                 RCB180S_OUT          = RCB180S_OLD, BY NAME;           04360000
+                 RCB180SI_OUT         = RCB180SI_OLD, BY NAME;          04370000
+                 CALL RCBFARN_UPDATE;                                   04380000
+               END;                                                     04390000
+             ELSE                                                       04400000
+               DO;                                                      04410000
+                                     /* STORE NEW PREVIOUS RECORD    */ 04420000
+                 RCB180S_OLD          = RCB180S_FETCH, BY NAME;         04430000
+                 RCB180SI_OLD         = RCB180SI_FETCH, BY NAME;        04440000
+               END;                                                     04450000
+           END;                                                         04460000
+       END;                                                             04470000
+     ELSE                                                               04480000
+       DO;                                                              04490000
+                                     /* STORE NEW PREVIOUS RECORD    */ 04500000
+         RCB180S_OLD               = RCB180S_FETCH, BY NAME;            04510000
+         RCB180SI_OLD              = RCB180SI_FETCH, BY NAME;           04520000
+       END;                                                             04530000
+                                     /* SET REMAINING PERIOD         */ 04540000
+     IF RCB180S_FETCH.END_DATE     = '9999-12-31'                       04550000
+     THEN                                                               04560000
+       DO;                                                              04570000
+         RCB180S_IN.EFFECTIVE_DATE = '9999-99-99';                      04580000
+       END;                                                             04590000
+     ELSE                                                               04600000
+       DO;                                                              04610000
+         CALL RCBFARN_TRANS_DATE (RCB180S_FETCH.END_DATE, +1,           04620000
+                                 RCB180S_IN.EFFECTIVE_DATE);            04630000
+       END;                                                             04640000
+   END;                                                                 04650000
+                                     /* SITUATION - 5                */ 04660000
+ WHEN (RCB180S_FETCH.EFFECTIVE_DATE >= RCB180S_IN.EFFECTIVE_DATE &      04670000
+       RCB180S_FETCH.EFFECTIVE_DATE <= RCB180S_IN.END_DATE       &      04680000
+       RCB180S_FETCH.END_DATE       >  RCB180S_IN.END_DATE)             04690000
+   DO;                                                                  04700000
+                                     /* INSERT NEW PERIOD            */ 04710000
+     IF RCB180S_FETCH.EFFECTIVE_DATE > RCB180S_IN.EFFECTIVE_DATE        04720000
+     THEN                                                               04730000
+       DO;                                                              04740000
+         CALL RCBFARN_NO_CEDS;                                          04750000
+                                     /* SET REMAINING PERIOD         */ 04760000
+         RCB180S_IN.EFFECTIVE_DATE = RCB180S_FETCH.EFFECTIVE_DATE;      04770000
+       END;                                                             04780000
+                                     /* HANDLE EXISTING PERIOD       */ 04790000
+     CALL RCBFARN_MERGE;                                                04800000
+                                     /* CHECK IF MERGE ALLOWED       */ 04810000
+     CALL RCBFARN_MERGE_ALLOWED;                                        04820000
+     IF SWITCH_MERGE_ALLOWED                                            04830000
+     THEN                                                               04840000
+       DO;                                                              04850000
+         CALL RCBFARN_COMPARE;                                          04860000
+         IF ¬SWITCH_CHANGE                                              04870000
+         THEN                                                           04880000
+           DO;                                                          04890000
+                                     /* UPDATE OLD PREVIOUS RECORD   */ 04900000
+             RCB180S_OLD.END_DATE = RCB180S_IN.END_DATE;                04910000
+             RCB180S_OUT          = RCB180S_OLD, BY NAME;               04920000
+             RCB180SI_OUT         = RCB180SI_OLD, BY NAME;              04930000
+             CALL RCBFARN_UPDATE;                                       04940000
+                                     /* DELETE CEDS RECORD           */ 04950000
+             RCB180S_OUT          = RCB180S_FETCH, BY NAME;             04960000
+             RCB180SI_OUT         = RCB180SI_FETCH, BY NAME;            04970000
+             CALL RCBFARN_DELETE;                                       04980000
+           END;                                                         04990000
+         ELSE                                                           05000000
+           DO;                                                          05010000
+             CALL RCBFARN_CHANGE_ALLOWED;                               05020000
+             IF SWITCH_CHANGE_ALLOWED                                   05030000
+             THEN                                                       05040000
+               DO;                                                      05050000
+                                     /* STORE NEW PREVIOUS RECORD    */ 05060000
+                 RCB180S_OLD          = RCB180S_MERGE, BY NAME;         05070000
+                 RCB180SI_OLD = RCB180SI_MERGE, BY NAME;                05080000
+                                     /* INSERT NEW PREVIOUS RECORD   */ 05090000
+                                     /* BY UPDATING CEDS RECORD      */ 05100000
+                 RCB180S_OUT  = RCB180S_OLD, BY NAME;                   05110000
+                 RCB180SI_OUT = RCB180SI_OLD, BY NAME;                  05120000
+                 CALL RCBFARN_UPDATE;                                   05130000
+               END;                                                     05140000
+             ELSE                                                       05150000
+               DO;                                                      05160000
+                                     /* STORE NEW PREVIOUS RECORD    */ 05170000
+                 RCB180S_OLD  = RCB180S_FETCH, BY NAME;                 05180000
+                 RCB180SI_OLD = RCB180SI_FETCH, BY NAME;                05190000
+               END;                                                     05200000
+           END;                                                         05210000
+       END;                                                             05220000
+     ELSE                                                               05230000
+       DO;                                                              05240000
+                                     /* STORE NEW PREVIOUS RECORD    */ 05250000
+         RCB180S_OLD          = RCB180S_FETCH, BY NAME;                 05260000
+         RCB180SI_OLD         = RCB180SI_FETCH, BY NAME;                05270000
+       END;                                                             05280000
+                                     /* HANDLE FUTURE PERIOD         */ 05290000
+     RCB180S_MERGE  = RCB180S_FETCH, BY NAME;                           05300000
+     RCB180SI_MERGE = RCB180SI_FETCH, BY NAME;                          05310000
+     CALL RCBFARN_COMPARE;                                              05320000
+     IF ¬SWITCH_CHANGE                                                  05330000
+     THEN                                                               05340000
+       DO;                                                              05350000
+                                     /* UPDATE OLD PREVIOUS RECORD   */ 05360000
+         RCB180S_OLD.END_DATE           = RCB180S_FETCH.END_DATE;       05370000
+         RCB180S_OUT                    = RCB180S_OLD, BY NAME;         05380000
+         RCB180SI_OUT                   = RCB180SI_OLD, BY NAME;        05390000
+         CALL RCBFARN_UPDATE;                                           05400000
+       END;                                                             05410000
+     ELSE                                                               05420000
+       DO;                                                              05430000
+         CALL RCBFARN_CHANGE_ALLOWED;                                   05440000
+         IF SWITCH_CHANGE_ALLOWED                                       05450000
+         THEN                                                           05460000
+           DO;                                                          05470000
+                                     /* INSERT CEDS RECORD FUTURE    */ 05480000
+             RCB180S_OUT                = RCB180S_MERGE, BY NAME;       05490000
+             RCB180SI_OUT               = RCB180SI_MERGE, BY NAME;      05500000
+             RCB180S_OUT.EFFECTIVE_DATE = WRK_NEXT_DATE;                05510000
+             CALL RCBFARN_INSERT;                                       05520000
+           END;                                                         05530000
+                                     /* ELSE DELETE FUTURE INFO      */ 05540000
+       END;                                                             05550000
+                                     /* SET REMAINING PERIOD         */ 05560000
+     RCB180S_IN.EFFECTIVE_DATE = '9999-99-99';                          05570000
+   END;                                                                 05580000
+                                     /* SITUATION - 6                */ 05590000
+ WHEN (RCB180S_FETCH.EFFECTIVE_DATE >  RCB180S_IN.END_DATE)             05600000
+   DO;                                                                  05610000
+                                     /* INSERT NEW PERIOD            */ 05620000
+     IF RCB180S_FETCH.EFFECTIVE_DATE > RCB180S_IN.EFFECTIVE_DATE        05630000
+     THEN                                                               05640000
+       DO;                                                              05650000
+         CALL RCBFARN_NO_CEDS;                                          05660000
+                                     /* SET REMAINING PERIOD         */ 05670000
+         RCB180S_IN.EFFECTIVE_DATE = RCB180S_FETCH.EFFECTIVE_DATE;      05680000
+       END;                                                             05690000
+                                     /* HANDLE EXISTING PERIOD       */ 05700000
+     RCB180S_MERGE  = RCB180S_FETCH, BY NAME;                           05710000
+     RCB180SI_MERGE = RCB180SI_FETCH, BY NAME;                          05720000
+     CALL RCBFARN_COMPARE;                                              05730000
+     IF ¬SWITCH_CHANGE                                                  05740000
+     THEN                                                               05750000
+       DO;                                                              05760000
+                                     /* UPDATE PREVIOUS RECORD       */ 05770000
+         RCB180S_OLD.END_DATE = RCB180S_FETCH.END_DATE;                 05780000
+         RCB180S_OUT          = RCB180S_OLD, BY NAME;                   05790000
+         RCB180SI_OUT         = RCB180SI_OLD, BY NAME;                  05800000
+         CALL RCBFARN_UPDATE;                                           05810000
+                                     /* DELETE CEDS RECORD           */ 05820000
+         RCB180S_OUT          = RCB180S_FETCH, BY NAME;                 05830000
+         RCB180SI_OUT         = RCB180SI_FETCH, BY NAME;                05840000
+         CALL RCBFARN_DELETE;                                           05850000
+       END;                                                             05860000
+     ELSE                                                               05870000
+       DO;                                                              05880000
+         CALL RCBFARN_CHANGE_ALLOWED;                                   05890000
+         IF ¬SWITCH_CHANGE_ALLOWED                                      05900000
+         THEN                                                           05910000
+           DO;                                                          05920000
+                                     /* DELETE CEDS RECORD           */ 05930000
+             RCB180S_OUT  = RCB180S_FETCH, BY NAME;                     05940000
+             RCB180SI_OUT = RCB180SI_FETCH, BY NAME;                    05950000
+             CALL RCBFARN_DELETE;                                       05960000
+           END;                                                         05970000
+       END;                                                             05980000
+                                     /* SET REMAINING PERIOD         */ 05990000
+     RCB180S_IN.EFFECTIVE_DATE = '9999-99-99';                          06000000
+   END;                                                                 06010000
+ OTHERWISE;                                                             06020000
+ END;                                                                   06030000
+ END RCBFARN_PROCESS_FETCH;                                             06040000
+1/********************************************************************/ 06050000
+ /*                                                                  */ 06060000
+ /* MODULE NAME      : PROCESS_RECORD                                */ 06070000
+ /*                                                                  */ 06080000
+ /* DESCRIPTION      : PROCESS INPUT RECORD                          */ 06090000
+ /*                                                                  */ 06100000
+ /********************************************************************/ 06110000
+0RCBFARN_PROCESS_RECORD: PROC;                                          06120000
+0IF RCB180S_IN.EFFECTIVE_DATE <= RCB180S_IN.END_DATE                    06130000
+ THEN                                                                   06140000
+   DO;                                                                  06150000
+                                     /* BLANK OUT NOT OWNED FIELDS   */ 06160000
+     RCB180S_MERGE  = RCB180S_IN, BY NAME;                              06170000
+     RCB180SI_MERGE = RCB180SI_IN, BY NAME;                             06180000
+     CALL RCBFARN_COMPLETE;                                             06190000
+     CALL RCBFARN_COMPARE;                                              06200000
+     IF ¬SWITCH_CHANGE                                                  06210000
+     THEN                                                               06220000
+       DO;                                                              06230000
+                                     /* UPDATE OLD PREVIOUS RECORD   */ 06240000
+         RCB180S_OLD.END_DATE = RCB180S_IN.END_DATE;                    06250000
+         RCB180S_OUT          = RCB180S_OLD, BY NAME;                   06260000
+         RCB180SI_OUT         = RCB180SI_OLD, BY NAME;                  06270000
+         CALL RCBFARN_UPDATE;                                           06280000
+       END;                                                             06290000
+     ELSE                                                               06300000
+       DO;                                                              06310000
+         CALL RCBFARN_CHANGE_ALLOWED;                                   06320000
+         IF SWITCH_CHANGE_ALLOWED                                       06330000
+         THEN                                                           06340000
+           DO;                                                          06350000
+                                     /* INSERT NEW PREVIOUS RECORD   */ 06360000
+             RCB180S_OUT          = RCB180S_MERGE, BY NAME;             06370000
+             RCB180SI_OUT         = RCB180SI_MERGE, BY NAME;            06380000
+             CALL RCBFARN_INSERT;                                       06390000
+           END;                                                         06400000
+       END;                                                             06410000
+   END;                                                                 06420000
+ END RCBFARN_PROCESS_RECORD;                                            06430000
+1/********************************************************************/ 06440000
+ /*                                                                  */ 06450000
+ /* MODULE NAME      : NO_CEDS                                       */ 06460000
+ /*                                                                  */ 06470000
+ /* DESCRIPTION      : PROCESS INPUT RECORD FOR PERIOD WHERE NO      */ 06480000
+ /*                    CEDS INFORMATION EXISTS                       */ 06490000
+ /*                                                                  */ 06500000
+ /********************************************************************/ 06510000
+0RCBFARN_NO_CEDS: PROC;                                                 06520000
+0RCB180S_MERGE  = RCB180S_IN, BY NAME;                                  06530000
+ RCB180SI_MERGE = RCB180SI_IN, BY NAME;                                 06540000
+ CALL RCBFARN_COMPLETE;                                                 06550000
+0CALL RCBFARN_COMPARE;                                                  06560000
+ IF ¬SWITCH_CHANGE                                                      06570000
+ THEN                                                                   06580000
+   DO;                                                                  06590000
+                                     /* UPDATE OLD PREVIOUS RECORD   */ 06600000
+     CALL RCBFARN_TRANS_DATE (RCB180S_FETCH.EFFECTIVE_DATE, -1,         06610000
+                              RCB180S_OLD.END_DATE);                    06620000
+     RCB180S_OUT  = RCB180S_OLD, BY NAME;                               06630000
+     RCB180SI_OUT = RCB180SI_OLD, BY NAME;                              06640000
+     CALL RCBFARN_UPDATE;                                               06650000
+   END;                                                                 06660000
+ ELSE                                                                   06670000
+   DO;                                                                  06680000
+                                     /* CHECK IF CHANGE ALLOWED      */ 06690000
+     CALL RCBFARN_CHANGE_ALLOWED;                                       06700000
+     IF SWITCH_CHANGE_ALLOWED                                           06710000
+     THEN                                                               06720000
+       DO;                                                              06730000
+                                     /* STORE NEW PREVIOUS RECORD    */ 06740000
+         RCB180S_OLD  = RCB180S_MERGE, BY NAME;                         06750000
+         RCB180SI_OLD = RCB180SI_MERGE, BY NAME;                        06760000
+         CALL RCBFARN_TRANS_DATE (RCB180S_FETCH.EFFECTIVE_DATE, -1,     06770000
+                                  RCB180S_OLD.END_DATE);                06780000
+                                     /* INSERT NEW PREVIOUS RECORD   */ 06790000
+         RCB180S_OUT  = RCB180S_OLD, BY NAME;                           06800000
+         RCB180SI_OUT = RCB180SI_OLD, BY NAME;                          06810000
+         CALL RCBFARN_INSERT;                                           06820000
+       END;                                                             06830000
+     ELSE                                                               06840000
+       DO;                                                              06850000
+                                     /* STORE NEW PREVIOUS RECORD    */ 06860000
+         RCB180S_OLD              = '';                                 06870000
+         RCB180SI_OLD.INDNULL (*) = -1;                                 06880000
+       END;                                                             06890000
+   END;                                                                 06900000
+0END RCBFARN_NO_CEDS;                                                   06910000
+1/********************************************************************/ 06920000
+ /*                                                                  */ 06930000
+ /* MODULE NAME      : COMPARE                                       */ 06940000
+ /*                                                                  */ 06950000
+ /* DESCRIPTION      : COMPARE ALL FIELDS OF THE MERGED AND OLD      */ 06960000
+ /*                    RECORD, EXCEPT FOR THE DATES                  */ 06970000
+ /*                                                                  */ 06980000
+ /********************************************************************/ 06990000
+0RCBFARN_COMPARE: PROC;                                                 07000000
+0SWITCH_CHANGE = FALSE;                                                 07010000
+                                     /* COMPARE FIELDS               */ 07020000
+ IF RCB180SI_OLD.INDNULL(2)        ¬= RCB180SI_MERGE.INDNULL(2)         07030000
+ THEN                                                                   07040000
+   DO;                                                                  07050000
+     SWITCH_CHANGE = TRUE;                                              07060000
+   END;                                                                 07070000
+ ELSE                                                                   07080000
+   DO;                                                                  07090000
+     IF RCB180SI_OLD.INDNULL(2)     = 0 &                               07100000
+        RCB180SI_MERGE.INDNULL(2)   = 0 &                               07110000
+        RCB180S_OLD.OU_CODE        ¬= RCB180S_MERGE.OU_CODE             07120000
+     THEN                                                               07130000
+       DO;                                                              07140000
+         SWITCH_CHANGE = TRUE;                                          07150000
+       END;                                                             07160000
+   END;                                                                 07170000
+ END RCBFARN_COMPARE;                                                   07180000
+1/********************************************************************/ 07190000
+ /*                                                                  */ 07200000
+ /* MODULE NAME      : MERGE_ALLOWED                                 */ 07210000
+ /*                                                                  */ 07220000
+ /* DESCRIPTION      : CHECK IF THE PROPOSED MERGE IS ALLOWED FROM   */ 07230000
+ /*                    INPUT AND FETCHED RECORD. IF NOT ALLOWED      */ 07240000
+ /*                    SKIP PERIOD                                   */ 07250000
+ /*                                                                  */ 07260000
+ /********************************************************************/ 07270000
+0RCBFARN_MERGE_ALLOWED: PROC;                                           07280000
+0SWITCH_MERGE_ALLOWED = TRUE;                                           07290000
+                                     /* CHECK MERGE PROPOSED         */ 07300000
+ END RCBFARN_MERGE_ALLOWED;                                             07310000
+1/********************************************************************/ 07320000
+ /*                                                                  */ 07330000
+ /* MODULE NAME      : CHANGE_ALLOWED                                */ 07340000
+ /*                                                                  */ 07350000
+ /* DESCRIPTION      : CHECK IF THE PROPOSED CHANGE IS ALLOWED FROM  */ 07360000
+ /*                    OLD TO MERGED RECORD. IF NOT ALLOWED SKIP     */ 07370000
+ /*                    PERIOD                                        */ 07380000
+ /*                                                                  */ 07390000
+ /* NOTE             : IF A RECORD HAS BEEN REJECTED, IT WILL        */ 07400000
+ /*                    ALWAYS BE UNEQUAL TO THE PREVIOUS AND         */ 07410000
+ /* PRECEDING RECORD, BEFORE AND AFTER CHANGE                        */ 07420000
+ /*                                                                  */ 07430000
+ /* DISTINGUISH THE FOLLOWING SITUATIONS: - OLD  = '', MERGE ¬= ''   */ 07440000
+ /*                                       - OLD ¬= '', MERGE  = ''   */ 07450000
+ /*                                       - OLD ¬= '', MERGE ¬= ''   */ 07460000
+ /*                                                                  */ 07470000
+ /********************************************************************/ 07480000
+0RCBFARN_CHANGE_ALLOWED: PROC;                                          07490000
+0SWITCH_CHANGE_ALLOWED = TRUE;                                          07500000
+                                     /* CHECK CHANGE PROPOSED        */ 07510000
+ END RCBFARN_CHANGE_ALLOWED;                                            07520000
+1/********************************************************************/ 07530000
+ /*                                                                  */ 07540000
+ /* MODULE NAME      : MERGE                                         */ 07550000
+ /*                                                                  */ 07560000
+ /* DESCRIPTION      : MERGE INPUT RECORD AND CEDS RECORD INTO       */ 07570000
+ /*                    MERGE RECORD                                  */ 07580000
+ /*                                                                  */ 07590000
+ /********************************************************************/ 07600000
+0RCBFARN_MERGE: PROC;                                                   07610000
+                                     /* FIRST COPY INPUT RECORD      */ 07620000
+0RCB180S_MERGE  = RCB180S_IN, BY NAME;                                  07630000
+ RCB180SI_MERGE = RCB180SI_IN, BY NAME;                                 07640000
+                                     /* MERGE FETCHED INTO RECORD    */ 07650000
+ IF RCB180SI_IN.INDNULL(2)          = 99                                07660000
+ THEN                                                                   07670000
+   DO;                                                                  07680000
+     RCB180S_MERGE.OU_CODE          = RCB180S_FETCH.OU_CODE;            07690000
+     RCB180SI_MERGE.INDNULL(2)      = RCB180SI_FETCH.INDNULL(2);        07700000
+   END;                                                                 07710000
+ END RCBFARN_MERGE;                                                     07720000
+1/********************************************************************/ 07730000
+ /*                                                                  */ 07740000
+ /* MODULE NAME      : COMPLETE                                      */ 07750000
+ /*                                                                  */ 07760000
+ /* DESCRIPTION      : COMPLETE MERGE RECORD IF NO CEDS DATA         */ 07770000
+ /*                    AVAILABLE                                     */ 07780000
+ /*                                                                  */ 07790000
+ /********************************************************************/ 07800000
+0RCBFARN_COMPLETE: PROC;                                                07810000
+                                     /* COMPLETE OLD RECORD          */ 07820000
+ END RCBFARN_COMPLETE;                                                  07830000
+1/********************************************************************/ 07840000
+ /*                                                                  */ 07850000
+ /* MODULE NAME      : INSERT                                        */ 07860000
+ /*                                                                  */ 07870000
+ /* DESCRIPTION      : INSERT ROW INTO RCBV0180_OU_SW USING          */ 07880000
+ /*                    RCBF18M                                       */ 07890000
+ /*                                                                  */ 07900000
+ /********************************************************************/ 07910000
+0RCBFARN_INSERT: PROC;                                                  07920000
+                                     /* INSERT INTO TABLE            */ 07930000
+ CALL RCBF18N (PTR_RCB180S_OUT,                                         07940000
+               PTR_RCB180SI_OUT,                                        07950000
+               PTR_RET_AREA_BB,                                         07960000
+               PTR_INT_AREA);                                           07970000
+ SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 07980000
+ WHEN (0);                                                              07990000
+ OTHERWISE                                                              08000000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 08010000
+     GO TO RCBFARN_EXIT;                                                08020000
+   END;                                                                 08030000
+ END;                                                                   08040000
+ END RCBFARN_INSERT;                                                    08050000
+1/********************************************************************/ 08060000
+ /*                                                                  */ 08070000
+ /* MODULE NAME      : UPDATE                                        */ 08080000
+ /*                                                                  */ 08090000
+ /* DESCRIPTION      : UPDATE ROW OF RCBV0180_OU_SW USING            */ 08100000
+ /*                    RCBG18M                                       */ 08110000
+ /*                                                                  */ 08120000
+ /********************************************************************/ 08130000
+0RCBFARN_UPDATE: PROC;                                                  08140000
+                                     /* UPDATE OF TABLE              */ 08150000
+ CALL RCBG18N (PTR_RCB180S_OUT,                                         08160000
+               PTR_RCB180SI_OUT,                                        08170000
+               PTR_RET_AREA_BB,                                         08180000
+               PTR_INT_AREA);                                           08190000
+ SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 08200000
+ WHEN (0);                                                              08210000
+ OTHERWISE                                                              08220000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 08230000
+     GO TO RCBFARN_EXIT;                                                08240000
+   END;                                                                 08250000
+ END;                                                                   08260000
+ END RCBFARN_UPDATE;                                                    08270000
+1/********************************************************************/ 08280000
+ /*                                                                  */ 08290000
+ /* MODULE NAME      : DELETE                                        */ 08300000
+ /*                                                                  */ 08310000
+ /* DESCRIPTION      : CLOSE ROW FROM RCBV0180_OU_SW USING           */ 08320000
+ /*                    RCBH18M                                       */ 08330000
+ /*                                                                  */ 08340000
+ /********************************************************************/ 08350000
+0RCBFARN_DELETE: PROC;                                                  08360000
+                                     /* DELETE OF TABLE ROW          */ 08370000
+ CALL RCBH18N (PTR_RCB180S_OUT,                                         08380000
+               PTR_RCB180SI_OUT,                                        08390000
+               PTR_RET_AREA_BB,                                         08400000
+               PTR_INT_AREA);                                           08410000
+ SELECT (PARM_RET_AREA_BB.RETURN_CODE);                                 08420000
+ WHEN (0,4);                                                            08430000
+ OTHERWISE                                                              08440000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 08450000
+     GO TO RCBFARN_EXIT;                                                08460000
+   END;                                                                 08470000
+ END;                                                                   08480000
+ END RCBFARN_DELETE;                                                    08490000
+1/********************************************************************/ 08500000
+ /*                                                                  */ 08510000
+ /* MODULE NAME      : RCBFARN_OPEN_CURS_TABLE                       */ 08520000
+ /*                                                                  */ 08530000
+ /* DESCRIPTION      : OPEN CURSOR TABLE                             */ 08540000
+ /*                                                                  */ 08550000
+ /********************************************************************/ 08560000
+0RCBFARN_OPEN_CURS_TABLE: PROC;                                         08570000
+0EXEC SQL                                                               08580000
+   OPEN CURS_TABLE                                                      08590000
+   ;                                                                    08600000
+ SELECT (SQLCA.SQLCODE);                                                08610000
+ WHEN (0)                                                               08620000
+   DO;                                                                  08630000
+     SWITCH_CURSOR_OPEN   = TRUE;                                       08640000
+     SWITCH_END_OF_CURSOR = FALSE;                                      08650000
+   END;                                                                 08660000
+ OTHERWISE                                                              08670000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 08680000
+     WRK_SQLCA                    = SQLCA;                              08690000
+     PARM_RET_AREA_BB.RETURN_CODE = 20;                                 08700000
+     GO TO RCBFARN_EXIT;                                                08710000
+   END;                                                                 08720000
+ END;                                                                   08730000
+ END RCBFARN_OPEN_CURS_TABLE;                                           08740000
+1/********************************************************************/ 08750000
+ /*                                                                  */ 08760000
+ /* MODULE NAME      : RCBFARN_FETCH_CURS_TABLE                      */ 08770000
+ /*                                                                  */ 08780000
+ /* DESCRIPTION      : FETCH CURSOR FOR TABLE                        */ 08790000
+ /*                                                                  */ 08800000
+ /********************************************************************/ 08810000
+0RCBFARN_FETCH_CURS_TABLE: PROC;                                        08820000
+                                     /* INIT STRUCTURES              */ 08830000
+ RCB180S_FETCH  = '';                                                   08840000
+ RCB180SI_FETCH = '';                                                   08850000
+                                     /* FETCH CURSOR                 */ 08860000
+ EXEC SQL                                                               08870000
+   FETCH CURS_TABLE                                                     08880000
+   INTO :RCB180S_FETCH  :RCB180SI_FETCH.INDNULL                         08890000
+   ;                                                                    08900000
+ SELECT (SQLCA.SQLCODE);                                                08910000
+ WHEN (0);                                                              08920000
+ WHEN (100)                                                             08930000
+   DO;                                                                  08940000
+     SWITCH_END_OF_CURSOR = TRUE;                                       08950000
+   END;                                                                 08960000
+ OTHERWISE                                                              08970000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 08980000
+     WRK_SQLCA                    = SQLCA;                              08990000
+     PARM_RET_AREA_BB.RETURN_CODE = 20;                                 09000000
+     GO TO RCBFARN_EXIT;                                                09010000
+   END;                                                                 09020000
+ END;                                                                   09030000
+ END RCBFARN_FETCH_CURS_TABLE;                                          09040000
+1/********************************************************************/ 09050000
+ /*                                                                  */ 09060000
+ /* MODULE NAME      : RCBFARN_FETCH_CURS_TABLE_1                    */ 09070000
+ /*                                                                  */ 09080000
+ /* DESCRIPTION      : FETCH CURSOR FOR TABLE SKIPPING THOSE RECORDS */ 09090000
+ /*                    WHICH HAVE BEEN INSERTED DURING THE INTEGRATE */ 09100000
+ /*                    SUPERIOR PROCESS                              */ 09110000
+ /*                                                                  */ 09120000
+ /********************************************************************/ 09130000
+0RCBFARN_FETCH_CURS_TABLE_1: PROC;                                      09140000
+ CALL RCBFARN_FETCH_CURS_TABLE;                                         09150000
+ DO WHILE (¬SWITCH_END_OF_CURSOR  &                                     09160000
+           RCB180S_FETCH.END_DATE <                                     09170000
+           RCB180S_IN.EFFECTIVE_DATE);                                  09180000
+   CALL RCBFARN_FETCH_CURS_TABLE;                                       09190000
+ END;                                                                   09200000
+ END RCBFARN_FETCH_CURS_TABLE_1;                                        09210000
+1/********************************************************************/ 09220000
+ /*                                                                  */ 09230000
+ /* MODULE NAME      : RCBFARN_CLOSE_CURS_TABLE                      */ 09240000
+ /*                                                                  */ 09250000
+ /* DESCRIPTION      : CLOSE CURSOR TABLE                            */ 09260000
+ /*                                                                  */ 09270000
+ /********************************************************************/ 09280000
+0RCBFARN_CLOSE_CURS_TABLE: PROC;                                        09290000
+0EXEC SQL                                                               09300000
+   CLOSE CURS_TABLE                                                     09310000
+   ;                                                                    09320000
+ SELECT (SQLCA.SQLCODE);                                                09330000
+ WHEN (0)                                                               09340000
+   DO;                                                                  09350000
+     SWITCH_CURSOR_OPEN = FALSE;                                        09360000
+   END;                                                                 09370000
+ OTHERWISE                                                              09380000
+   DO;                               /* STOP PROCESSING IMMEDIATELY  */ 09390000
+     WRK_SQLCA                    = SQLCA;                              09400000
+     PARM_RET_AREA_BB.RETURN_CODE = 20;                                 09410000
+     GO TO RCBFARN_EXIT;                                                09420000
+   END;                                                                 09430000
+ END;                                                                   09440000
+ END RCBFARN_CLOSE_CURS_TABLE;                                          09450000
+1/********************************************************************/ 09460000
+ /*                                                                  */ 09470000
+ /* MODULE NAME      : RCBFARN_END_COMMON                            */ 09480000
+ /*                                                                  */ 09490000
+ /* DESCRIPTION      :                                               */ 09500000
+ /*                                                                  */ 09510000
+ /********************************************************************/ 09520000
+0RCBFARN_END_COMMON: PROC;                                              09530000
+                                     /* END PROCESSING               */ 09540000
+                                     /* RESET LEVEL                  */ 09550000
+0PARM_INT_AREA.ID_MOD_LEVEL = WRK_LEVEL - 1;                            09560000
+ END RCBFARN_END_COMMON;                                                09570000
+1/********************************************************************/ 09580000
+ /*                                                                  */ 09590000
+ /* MODULE NAME      : RCBFARN_TRANS_DATE                            */ 09600000
+ /*                                                                  */ 09610000
+ /* DESCRIPTION      : CHANGE DATE BY NUMBER OF DAYS                 */ 09620000
+ /*                                                                  */ 09630000
+ /********************************************************************/ 09640000
+0RCBFARN_TRANS_DATE:  PROC (DATE_IN,                                    09650000
+                            NUMBER,                                     09660000
+                            DATE_OUT);                                  09670000
+ DCL DATE_IN  CHAR (10);                                                09680000
+ DCL DATE_OUT CHAR (10);                                                09690000
+ DCL NUMBER   FIXED BIN (31);                                           09700000
+ PARM_DATE_CALC                = '';                                    09710000
+ PARM_DATE_CALC.WD_IN_FORMAT   = 'ISO';                                 09720000
+ PARM_DATE_CALC.WD_OUT_FORMAT  = 'ISO';                                 09730000
+ PARM_DATE_CALC.WD_IN_DATE     = DATE_IN;                               09740000
+ PARM_DATE_CALC.WD_FUNCTION    = 'C';                                   09750000
+ PARM_DATE_CALC.WD_PERIOD      = NUMBER;                                09760000
+ PARM_DATE_CALC.WD_PERIOD_TYPE = 'D';                                   09770000
+ CALL RCB004N (PTR_DATE_CALC);                                          09780000
+ SELECT (PARM_DATE_CALC.WD_STATUS);                                     09790000
+ WHEN ('')                                                              09800000
+   DO;                                                                  09810000
+     DATE_OUT = SUBSTR(PARM_DATE_CALC.WD_OUT_DATE,1,10);                09820000
+   END;                                                                 09830000
+ OTHERWISE                                                              09840000
+   DO;                                                                  09850000
+     PARM_RET_AREA_BB.RETURN_CODE = 20;                                 09860000
+     GO TO RCBFARN_EXIT;                                                09870000
+   END;                                                                 09880000
+ END;                                                                   09890000
+0END RCBFARN_TRANS_DATE;                                                09900000
+1/*******************************************************************/  09910000
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */  09920000
+ /*******************************************************************/  09930000
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */  09940000
+  $DAIMOD (RCBFARN);                     /* MODULE TO BE COMPILED   */  09950000
+0/*******************************************************************/  09960000
+ /* END OF ABR BLOCK '                                              */  09970000
+ /*******************************************************************/  09980000
+0 END RCBFARN;                                                          09990000

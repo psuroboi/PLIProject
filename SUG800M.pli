@@ -1,0 +1,1008 @@
+     /*** SUG800M ERSTELLEN CUSTOMER RECON INPUT FILES AUS DER SCHWEIZ*/00019111
+0SUG800M:PROC OPTIONS(MAIN);                                            00020000
+0              @HEJ#7T: ENTRY;     DCL @SCHFIRST BIT(1)                 00030000
+               STATIC INIT('1'B); IF @SCHFIRST THEN DO;                 00040000
+               @SCHFIRST='0'B;        ON  UNDEFINEDFILE                 00050000
+               (SYSPRINT) GOTO @END; PUT FILE(SYSPRINT)                 00060000
+               EDIT    ('SUG800M  VERSION 1999.06.30' ,                 00070000
+               ' 09H50.30      MIT DEM VERSIONS-ENTRY',                 00080000
+               ' @HEJ#7T',' ')     (SKIP,A,A,A,SKIP,A);                 00090000
+               @END: ON UNDEFINEDFILE(SYSPRINT) SYSTEM;                 00100000
+               END;     /* ENDE DER VERSIONS-GRUPPE  */                 00110000
+ DCL KLASS CHAR (30) INIT ('IBM INTERNAL USE ONLY');                    00120000
+ /*       I  B  M      I N T E R N A L   U S E   O N L Y              */00130000
+ /*             COPYRIGHT  IBM  DEUTSCHLAND  GMBH   1999              */00140000
+     /***                                                             */00150000
+     /***                                                             */00160000
+     /*** CALLED BY:   NONE                                           */00170000
+     /***                                                             */00180000
+     /*** ARGUMENTS:   NONE                                           */00190000
+     /***                                                             */00200000
+     /*** EXTERNAL MODULES : - RCB0E1M   COMMON ERROR ROUTINE         */00210000
+     /***                                                             */00220000
+     /*** CALLS:       RCBF50M : INSERT RCB024-PARAMETER (HASH TOT.)  */00230000
+     /***              RCBG50M : UPDATE RCB024-PARAMETER              */00240000
+     /***              RCB0E1M : AUSGABE FEHLERNACHRICHT              */00250000
+     /***              RCB020M : RETRIEVE RUNDATE PARAMETER RCB001    */00260000
+     /***              RCB018M : ERMITTELN HASH TOTALS (KONTROLL-     */00270000
+     /***                        SUMMEN) JE AUSGABEFILE.              */00280000
+     /***              DP60343 : STANDARD-ABBRUCH                     */00290000
+     /***                        (REMOVED 24/07/00 - HM)              */00300000
+     /*** INPUT:       CECRF   : MOBAS CUSTOMER RECORD (MCRCR)        */00310000
+     /***              SUG800F : NORMAL-MODE :'CRNORMAL'              */00320000
+     /***              SUG800F : INITIAL LOAD:'CRINIT'                */00330000
+     /***                                                             */00340000
+     /*** OUTPUT:      RCBBAA0 : CUSTOMER FILE                        */00350000
+     /***              RCBBAA1 : ADDRESS FILE                         */00360000
+     /***              RCBBAA2 : ADDRESS LINE FILE                    */00370000
+     /***              RCBBAA4 : MODIFIABLE INFORMATION CUSTOMER FILE */00380000
+     /***              RCB0M10 : MESSAGE FILE                         */00390000
+     /***              PROTOK  : LAUFPROTOKOLL                        */00400000
+     /***                                                             */00410000
+     /*** INCLUDES:    CECRF   : ROOT/ADDRESS SEGMENT                 */00420000
+     /***              RCBBAASH: HEADER RECORD RECON FILES            */00430000
+     /***              RCBBAAST: TRAILER RECORD RECON FILES           */00440000
+     /***              RCBBAAS1: ALLGEMEINER DATENTEIL RECON FILES    */00450000
+     /***              RCB010S : CUSTOMER FILE                        */00460000
+     /***              RCB150S : ADDRESS FILE                         */00470000
+     /***              RCB280S : ADDRESS LINE FILE                    */00480000
+     /***              RCB350S : MODIFIABLE INFO CUSTOMER FILE        */00490000
+     /***              RCB500S : PARAMETER TABLE                      */00500000
+     /***              RCB500SI: NULL INDICATORS PARAMETER TABLE      */00510000
+     /***              RCBP24S : PARAMETER RCB024 (HASH TOTALS)       */00520000
+     /***              RCBZ01S : INTERF. AREA (PARAM. F. COMMON MOD.) */00530000
+     /***              RCBZ02S : RETURN AREA FROM BUILDING BLOCK      */00540000
+     /***              RCBZ28S : RUNDATE AREA F. RCB001 PARAMETER     */00550000
+     /***                                                             */00560000
+     /***                                                             */00570000
+     /***                                                             */00580000
+     /*** PROGRAMMER:  H. HORTIG                                      */00590000
+     /*** DATE:        26.05.99                                       */00600000
+     /***                                                             */00610000
+     /*** AMENDED:     24.07.00                                       */00620000
+     /*** BY:          H MEDHURST                                     */00630000
+     /*** REASON:      COMMON ERROR ROUTINE NOW USED                  */00640000
+     /***                                                             */00650000
+     /***                                                             */00660000
+     /***              - ES WERDEN DIE FOLGENDEN ADRESSEN UEBERNOMMEN */00670000
+     /***                                   ADRESSART        ADRESS   */00680000
+     /*** FIRMENANSCHRIFT    (RTYP=I30 ) -> INSTALLING       00001    */00690000
+     /***                    (RTYP=I50 ) -> INSTALLING       00001    */00700000
+     /***                    (RTYP=S4A ) -> INSTALLING       00001    */00710000
+     /*** RECHNUNGSANSCHRIFT (RTYP=B00 ) -> BILLING          00002    */00720000
+     /*** HW-LIEFERANSCHRIFT (RTYP=D00 ) -> SHIPPING (HW)    00004    */00730000
+     /*** SW-LIEFERANSCHRIFT (RTYP=D0K ) -> SHIPPING (SW)    00005    */00740000
+     /***                IST EINE ADRESSE NICHT VORHANDEN, WIRD       */00750000
+     /***                DIE FIRMENANSCHRIFT ALS ERSATZ BENUTZT       */00760000
+     /***                D.H. DAS ENTSPRECHENDE ADDRESS_MASK-BIT      */00770000
+     /***                ZUSAETZLICH GESETZT.                         */00780000
+     /***    ADDRESS-MASK-BIT 1 = MAILING       (WIRD NICHT GENUTZT)  */00790000
+     /***                     2 = BILLING                             */00800000
+     /***                     3 = INSTALLING                          */00810000
+     /***                     4 = SHIPPING (HW)                       */00820000
+     /***                     5 = SHIPPING (SW)                       */00830000
+     /***                     6 = LITERATUR     (WIRD NICHT GENUTZT)  */00840000
+     /***                     7-16              (WIRD NICHT GENUTZT)  */00850000
+     /***                                                             */00860000
+     /***   FUNKTIONSBESCHREIBUNG:                                    */00870000
+     /***                                                             */00880000
+     /***    DAS PROGRAMM ERSTELLT AUS DEM MOBAS  CUSTOMER RECORD     */00890000
+     /***    CUSTOMER RECONCILIATION INPUT FILES FUER CEDS.           */00900000
+     /***                                                             */00910000
+     /***    BEI ALLEN KUNDEN WERDEN SAETZE MIT FOLGENDEN             */00920000
+     /***    SATZARTEN VERARBEITET:                                   */00930000
+     /***    - I30/I50/S4A INSTALLATIONSANSCHRIFT                     */00940000
+     /***    - B00         RECHNUNGSANSCHRIFT                         */00950000
+     /***    - D00         HW-LIEFERANSCHRIFT                         */00960000
+     /***    - D0K         SW-LIEFERANSCHRIFT                         */00970000
+     /***    ALLE ANDEREN SATZARTEN WERDEN UEBERLESEN.                */00980000
+     /***                                                             */00990000
+     /***    PRO KUNDE WERDEN 1 CUSTOMER, BIS ZU X ADDRESS UND JE BIS */01000000
+     /***    X ADDRESS LINE UND 1 MODIFIABLE INFO RECORD ERSTELLT.    */01010000
+     /***    IM INITIAL-LOAD-MODUS WIRD IN EFFECTIVEDATE DAS          */01020000
+     /***    ANLEGEDATUM (DANL) UEBERNOMMEN.                          */01030000
+     /***    ZUKUENFTIGE DATUMSANGABEN WERDEN DURCH DAS RUNDATE ER-   */01040000
+     /***    SETZT.                                                   */01050000
+     /***    IM NORMAL-MODUS WIRD IN EFFECTIVEDATE DAS CREATION DATE  */01060000
+     /***    (DDBSCRE) UEBERNOMMEN. DAS LAST_CHANGE_DATE WIRD VON     */01070000
+     /***    VON (DDBSLUP)                                            */01080000
+     /***    ZUKUENFTIGE DATUMSANGABEN WERDEN DURCH DAS RUNDATE ER-   */01090000
+     /***    SETZT.                                                   */01100000
+     /***                                                             */01110000
+     /***    DIE ADDRESS LINES MIT LINE_NUMBER '01' - MAX. '06' ENT-  */01120000
+     /***    HALTEN DIE ANSCHRIFT, WOBEI NUR FUER GEFUELLTE MOBAS     */01130000
+     /***    ADRESSZEILEN EIN ADDRESS LINE RECORD ERSTELLT WIRD.      */01140000
+     /***                                                             */01150000
+     /***    FUER JEDE AUSGABEFILE WERDEN KONTROLLSUMMEN (HASH        */01160000
+     /***    TOTALS) ERRECHNET, MIT DENEN PARAMETER RCB024 AUF        */01170000
+     /***    DER PARAMETER TABLE GEPFLEGT WIRD. (UPDATE)              */01180000
+     /***                                                             */01190000
+     /***                                                             */01200000
+     /***    ABBRUCH-FAELLE:                                          */01210000
+     /***       - MOBAS CR ENTHAELT KEINE DATEN                       */01220000
+     /***       - MOBAS CR FALSCH SORTIERT                            */01230000
+     /***                                                             */01240000
+     /***                                                             */01250000
+     /*** VERARBEITUNGSSCHRITTE:                                      */01260000
+     /***                                                             */01270000
+     /***    P R O G R A M M V O R S P A N N                          */01280000
+     /***                                                             */01290000
+     /***      FILES OEFFNEN                                          */01300000
+     /***      ZAEHLVARIABLEN INITIALISIEREN                          */01310000
+     /***                                                             */01320000
+     /***                                                             */01330000
+     /***    H A U P T V E R A R B E I T U N G                        */01340000
+     /***                                                DETAILIERUNG */01350000
+     /***                                                   1) 2) 3)  */01360000
+     /***                                                  |  |  |  | */01370000
+     /*** - RETRIEVE RUNDATE PARAMETER RCB001     (RCB020M)|  | X|  | */01380000
+     /*** - LESEN MOBAS CR                                 |  |  |  | */01390000
+     /*** - EOF ?                                          |  |  |  | */01400000
+     /***   JA: - ABBRUCH                                  |  |  |  | */01410000
+     /*** - FORMATIEREN/AUSGEBEN HEADER       (FORMATIEREN)| X|  |  | */01420000
+     /***   U. FORMATIEREN ALLG. DATENTEIL                 |  |  |  | */01430000
+     /*** - SOLANGE NICHT EOF MOBAS CR                     |  |  |  | */01440000
+     /***     ZAEHLEN KUNDEN GELESEN                       |  |  |  | */01450000
+     /***   - ERSTELLEN/AUSGEBEN CUSTOMER                  |  |  |  | */01460000
+     /***     SATZ, ERMITTELN HASH TOTALS F.               |  |  |  | */01470000
+     /***     FILE RCBBAA0          (RCB018M)              |  |  |  | */01480000
+     /***   - ERSTELLEN/AUSGEBEN MODIF. INFO               |  |  |  | */01490000
+     /***     SATZ, ERMITTELN HASH TOTALS F.               |  |  |  | */01500000
+     /***     FILE RCBBAA4          (RCB018M)              |  |  |  | */01510000
+     /***   DO WHILE SORTKEY_ALT = SORTKEY_NEU             |  |  |  | */01520000
+     /***   - SELECT (TOA)                                 |  |  |  | */01530000
+     /***     - WENN 'I30','I50','S4A'                     |  |  |  | */01540000
+     /***             FIRMENANSCHRIFT                      |  |  |  | */01550000
+     /***             IN ZADR_FIRM_STRUK SPEICHERN         |  |  |  | */01560000
+     /***           - INITIALISIEREN ADDRESS_MASK FIRMENAN-|  |  |  | */01570000
+     /***             ANSCHRIFT                            |  |  |  | */01580000
+     /***             '0111100000000000'                   |  |  |  | */01590000
+     /***               ||||                               |  |  |  | */01600000
+     /***               |||+- SW-LIEFERNANCHRIFT           |  |  |  | */01610000
+     /***               ||+-- HW-LIEFERANSCHRIFT           |  |  |  | */01620000
+     /***               |+--- FIRMENANSCHRIFT              |  |  |  | */01630000
+     /***               +---- RECHNUNGSANSCHRIFT           |  |  |  | */01640000
+     /***           - NACHLESEN MOBAS  CR                  |  |  |  | */01650000
+     /***     - WENN 'B00'  (RECHNUNGSANSCHRIFT)           |  |  |  | */01660000
+     /***       JA: - ERSTELLEN/AUSGEBEN ADDRESS LINE      |  |  |  | */01670000
+     /***             SAETZE AUF FILE RCBBAA2 (ADDR_SAETZE)| X|  |  | */01680000
+     /***             ERSTELLEN/AUSGEBEN ADDRESS SATZ      |  |  |  | */01690000
+     /***             AUF FILE RCBBAA1         (ADDR_SAETZE) X|  |  | */01700000
+     /***           - MODIFIZEREN ADDRESS_MASK FIRMENANSCHR.  |  |  | */01710000
+     /***             BIT 2 AUF '0' SETZEN, DA RECHNUNGSAN-|  |  |  | */01720000
+     /***             SCHRIFT SEPARAT VORHANDEN.           |  |  |  | */01730000
+     /***           - NACHLESEN MOBAS  CR                  |  |  |  | */01740000
+     /***     - WENN 'D00'  (HW-LIEFERANSCHRIFT)           |  |  |  | */01750000
+     /***       JA: - ERSTELLEN/AUSGEBEN ADDRESS LINE      |  |  |  | */01760000
+     /***             SAETZE AUF FILE RCBBAA2   (ADDR_SAETZE)X|  |  | */01770000
+     /***             ERSTELLEN/AUSGEBEN ADDRESS SATZ      |  |  |  | */01780000
+     /***             AUF FILE RCBBAA1          (ADDR_SAETZE)X|  |  | */01790000
+     /***           - MODIFIZEREN ADDRESS_MASK FIRMENANSCHR.  |  |  | */01800000
+     /***             BIT 3 AUF '0' SETZEN, DA HW-LIEFERAN-|  |  |  | */01810000
+     /***             SCHRIFT SEPARAT VORHANDEN.           |  |  |  | */01820000
+     /***           - NACHLESEN MOBAS  CR                  |  |  |  | */01830000
+     /***     - WENN 'D0K'  (SW-LIEFERANSCHRIFT)           |  |  |  | */01840000
+     /***       JA: - ERSTELLEN/AUSGEBEN ADDRESS LINE      |  |  |  | */01850000
+     /***             SAETZE AUF FILE RCBBAA2 (ADDR_SAETZE)| X|  |  | */01860000
+     /***             ERSTELLEN/AUSGEBEN ADDRESS SATZ      |  |  |  | */01870000
+     /***             AUF FILE RCBBAA1        (ADDR_SAETZE)| X|  |  | */01880000
+     /***           - MODIFIZEREN ADDRESS_MASK FIRMENANSCHR.  |  |  | */01890000
+     /***             BIT 4 AUF '0' SETZEN, DA SW-LIEFERAN-|  |  |  | */01900000
+     /***             SCHRIFT SEPARAT VORHANDEN.           |  |  |  | */01910000
+     /***           - NACHLESEN MOBAS  CR                  |  |  |  | */01920000
+     /***     - SONST NACHLESEN MOBAS  CR                  |  |  |  | */01930000
+     /***   - END SELECT                                   |  |  |  | */01940000
+     /*** - LETZTEN KUNDEN ABSCHLIESSEN, FALLS VORHANDEN   |  |  |  | */01950000
+     /***   JA: - ERSTELLEN/AUSGEBEN ADDR.LINE SAETZE AUS  |  |  |  | */01960000
+     /***         FIRMENANSCHR. AUF RCBBAA2   (ADDR_SAETZE)| X|  |  | */01970000
+     /***         ERSTELLEN/AUSGEBEN ADDRESS SATZ          |  |  |  | */01980000
+     /***         AUF FILE RCBBAA1            (ADDR_SAETZE)| X|  |  | */01990000
+     /*** - FORMATIEREN/AUSGEBEN TRAILER   (FORMAT_TRAILER)| X|  |  | */02000000
+     /*** - SPEICHERN HASH TOTALS AUF    (SAVE_HASH_TOTALS)| X|  |  | */02010000
+     /***   PARAMETER TABLE                                |  |  |  | */02020000
+     /*** - LAUFPROTOKOLL AUSGEBEN                         |  |  |  | */02030000
+     /***                                                  |  |  |  | */02040000
+     /***                                                             */02050000
+     /***   S C H L U S S - V E R A R B E I T U N G                   */02060000
+     /***                                                             */02070000
+     /***                                                             */02080000
+     /*** LEGENDE:                                                    */02090000
+     /*** 1) INTERNES UNTERMODUL, IST TIEFER STRUKTURIERT             */02100000
+     /*** 2) EXTERNES MODUL                                           */02110000
+     /*** 3) FUNKTION IST EXTERNES MODUL, D.H. DIE FUNKTION IST EINE  */02120000
+     /***    ALLG. ROUTINE. HIER GGF. BESCHREIBUNG, WIE ALLGEMEINE    */02130000
+     /***    FUNKTION AUFZURUFEN IST.                                 */02140000
+     /***                                                             */02150000
+     /***                                                             */02160000
+     /*****************************************************************/02170000
+     /***  AENDERUNGEN:                                               */02180000
+     /***  CREDIT_LIMIT_CODE ZUWEISEN VON CCUSCRC ANSTATT CCUSCLC     */02190000
+     /***  MODINFO.DATA.CREDIT_LIMIT_CODE = IN_STRUK.CCUSCRC          */02200000
+     /***                                         H.HORTIG  30.06.1999*/02210000
+     /*****************************************************************/02220000
+1/*-------------------------------------------------------------------*/02230000
+0 DEFAULT RANGE (*) STATIC;                                             02240000
+-/*-------------------------------------------------------------------*/02250000
+ /*                                                                   */02260000
+ /*         V E R E I N B A R U N G E N                               */02270000
+ /*                                                                   */02280000
+ /*-------------------------------------------------------------------*/02290000
+-/*-------------------------------------------------------------------*/02300000
+ /***   PLIXOPTION   -   N U R   FUER   M A I N   PROGRAMME         ***/02310000
+ /*-------------------------------------------------------------------*/02320000
+  DCL PLIXOPT CHAR(100) VARYING STATIC EXTERNAL                         02330000
+      INIT ('HEAP(200K,100K,ANYWHERE,FREE),ISA(200K)');                 02340000
+-/*-------------------------------------------------------------------*/02350000
+ /***   BIT                                                         ***/02360000
+ /*-------------------------------------------------------------------*/02370000
+   DCL VOR_HANDEN   BIT(1) INIT('0'B);/* KUNDENANSCHRIFT VORHANDEN    */02380000
+   DCL INITIAL_LOAD BIT(1) INIT('0'B);/* INITIAL LOAD, JA/NEIN        */02390000
+   DCL EOF_CECRF    BIT(1) INIT('0'B);                                  02400000
+                                                                        02410000
+ /*-------------------------------------------------------------------*/02420000
+ /***   ENTRIES                                                     ***/02430000
+ /*-------------------------------------------------------------------*/02440000
+ /*DCL DP60343 ENTRY;                           REMOVED 24/07/00 - HM */02450000
+   DCL RCB018M EXT ENTRY;                    /* ERRECHNEN HASH TOTALS */02460000
+   DCL RCBF50M EXT ENTRY;        /* INSERT PARAM. RCB024 (HASH TOTALS)*/02470000
+   DCL RCBG50M EXT ENTRY;        /* UPDATE PARAM. RCB024 (HASH TOTALS)*/02480000
+   DCL RCB0E1M EXT ENTRY;                  /* AUSGABE FEHLERNACHRICHT */02490000
+   DCL RCB020M EXT ENTRY;                  /* RETRIEVE PARAM. RCB001  */02500000
+                                                                        02510000
+1/*-------------------------------------------------------------------*/02520000
+ /***   BUILTIN / FUNKTIONEN                                        ***/02530000
+ /*-------------------------------------------------------------------*/02540000
+   DCL ADDR   BUILTIN;                                                  02550000
+   DCL CSTG   BUILTIN;                                                  02560000
+   DCL NULL   BUILTIN;                                                  02570000
+   DCL STRING BUILTIN;                                                  02580000
+   DCL SUBSTR BUILTIN;                                                  02590000
+   DCL TIME   BUILTIN;                                                  02600000
+                                                                        02610000
+  %INCLUDE DIX2000P;                                                    02620000
+                                                                        02630000
+0/*-------------------------------------------------------------------*/02640000
+ /***   POINTER                                                     ***/02650000
+ /*-------------------------------------------------------------------*/02660000
+   DCL  ADR_PTR          POINTER;     /* POINTER AUF ADRESSE          */02670000
+   DCL  RCBV500_PTR      POINTER;     /* PTR AUF PARAMETER TABLE      */02680000
+   DCL  RCBV500_I_PTR    POINTER;     /* PTR NULL-IND. PARAMETER TAB. */02690000
+   DCL  PTR_INT_AREA     POINTER;     /* POINTER AUF INTERFACE AREA   */02700000
+   DCL  PTR_RETURN_AREA  POINTER;     /* POINTER AUF RETURN AREA      */02710000
+   DCL  PTR_RUNDATE_AREA POINTER;     /* POINTER AUF RETURN AREA      */02720000
+-/*-------------------------------------------------------------------*/02730000
+ /***   FILES                                                       ***/02740000
+ /*-------------------------------------------------------------------*/02750000
+0/*-------INPUT-------------------------------------------------------*/02760000
+   DCL CECRF      FILE RECORD SEQL INPUT;                               02770000
+   DCL SUG800F    FILE RECORD SEQL INPUT;                               02780000
+0/*-------OUTPUT------------------------------------------------------*/02790000
+   DCL RCBBAA0    FILE RECORD SEQL OUTPUT;                              02800000
+   DCL RCBBAA1    FILE RECORD SEQL OUTPUT;                              02810000
+   DCL RCBBAA2    FILE RECORD SEQL OUTPUT;                              02820000
+   DCL RCBBAA4    FILE RECORD SEQL OUTPUT;                              02830000
+   DCL RCB0M10    FILE RECORD SEQL OUTPUT;                              02840000
+   DCL PROTOK     FILE RECORD SEQL OUTPUT;                              02850000
+   DCL SYSPRINT   FILE EXTERNAL PRINT;                                  02860000
+                                                                        02870000
+1/*-------------------------------------------------------------------*/02880000
+ /***   ARBEITS - VARIABLE                                          ***/02890000
+ /*-------------------------------------------------------------------*/02900000
+   DCL I            BIN FIXED(15);                                      02910000
+   DCL LAUFDAT      CHAR(10) INIT(' ');      /* LAUFDATUM JJJJ-MM-TT  */02920000
+                                                                        02930000
+   DCL 1 ZA_TAB(8),               /* AIM 391 */    /* ZAEHLERTABELLE */ 02940000
+          2 ANZ      FIXED DEC(9,0) INIT((6)0),                         02950000
+          2 TEXT     CHAR (40);                                         02960000
+                                                                        02970000
+   DCL 1 HASH_TOTAL,                        /* KONTROLLSUMMEN JE FILE */02980000
+         3 RCBBAA0   FIXED DEC(15,0) INIT(0),                           02990000
+         3 RCBBAA1   FIXED DEC(15,0) INIT(0),                           03000000
+         3 RCBBAA2   FIXED DEC(15,0) INIT(0),                           03010000
+         3 RCBBAA4   FIXED DEC(15,0) INIT(0);                           03020000
+   DCL HASH_FIELD    CHAR(4);          /* INPUT F. RECHNEN HASH TOTAL */03030000
+1/*-------------------------------------------------------------------*/03040000
+ /***   INCLUDES                                                    ***/03050000
+ /*-------------------------------------------------------------------*/03060000
+   DCL SORTKEY_ALT CHAR(08) INIT ('');                                  03070000
+   DCL SORTKEY_NEU CHAR(08) BASED(ADDR(IN_STRUK.CUNOUSE));              03080000
+   DCL 1 IN_STRUK,                          /* EINGABESTRUKTUR F}R    */03090000
+          %INCLUDE CECRF;;                  /* BELIEBIGEN MOBAS SATZ  */03100000
+   DCL 1 SUG800F_IN,                        /* EINGABESTRUKTUR F}R    */03110000
+          2 MODUS CHAR(10),                 /* STEUERFILE SUG800F     */03120000
+          2 REST  CHAR(70);                                             03130000
+                                                                        03140000
+   DCL 1 FIRM_ARRAY BASED(ADDR(FIRM_STRUK)),                            03150000
+         3 ADDRESS_MASK_BIT(16) CHAR(1);                                03160000
+   DCL 1 FIRM_STRUK,                                                    03170000
+         3 ADDRESS_MASK         CHAR(16),                               03180000
+         3 EFFECTIVE_DATE       CHAR(10);                               03190000
+                                                                        03200000
+   DCL 1 ADR_STRUK BASED(ADDR(IN_STRUK)),                               03210000
+        %INCLUDE CECRF;;                                                03220000
+   DCL 1 ZADR_FIRM_STRUK,              /* ZUR ZWISCHENSPEICHERUNG DER */03230000
+        %INCLUDE CECRF;;               /* FIRMENANSCHRIFT             */03240000
+                                                                        03250000
+ /*---- STRUKTUREN AUSGABEFILES --------------------------------------*/03260000
+                                                                        03270000
+   DCL 1 DATAREC,                                /* ALLGEM. DATENTEIL */03280000
+         % INCLUDE RCBBAAS1;;                    /* AUSGABEFILES      */03290000
+                                                                        03300000
+   DCL CUSTOMER_REC         CHAR(132);           /* CUSTOMER FILE     */03310000
+   DCL ADDRESS_REC          CHAR(108); /*AIM391*//* ADDRESS FILE      */03320000
+   DCL ADRLINE_REC          CHAR(88);            /* ADDRESS LINE FILE */03330000
+   DCL MODINFO_REC          CHAR(112);           /* MODIF. INFO HW    */03340000
+                                                                        03350000
+   DCL 1 HEADER,                                                        03360000
+         % INCLUDE RCBBAASH;;                                           03370000
+   DCL 1 HEAD_CUST        BASED(ADDR(CUSTOMER_REC)),                    03380000
+         % INCLUDE RCBBAASH;;                                           03390000
+   DCL 1 HEAD_ADDR        BASED(ADDR(ADDRESS_REC)),                     03400000
+         % INCLUDE RCBBAASH;;                                           03410000
+   DCL 1 HEAD_ADRLINE     BASED(ADDR(ADRLINE_REC)),                     03420000
+         % INCLUDE RCBBAASH;;                                           03430000
+   DCL 1 HEAD_MODINFO     BASED(ADDR(MODINFO_REC)),                     03440000
+         % INCLUDE RCBBAASH;;                                           03450000
+                                                                        03460000
+   DCL 1 TRAILER,                                                       03470000
+         % INCLUDE RCBBAAST;;                                           03480000
+   DCL 1 TRAIL_CUST       BASED(ADDR(CUSTOMER_REC)),                    03490000
+         % INCLUDE RCBBAAST;;                                           03500000
+   DCL 1 TRAIL_ADDR       BASED(ADDR(ADDRESS_REC)),                     03510000
+         % INCLUDE RCBBAAST;;                                           03520000
+   DCL 1 TRAIL_ADRLINE    BASED(ADDR(ADRLINE_REC)),                     03530000
+         % INCLUDE RCBBAAST;;                                           03540000
+   DCL 1 TRAIL_MODINFO    BASED(ADDR(MODINFO_REC)),                     03550000
+         % INCLUDE RCBBAAST;;                                           03560000
+                                                                        03570000
+   DCL  1 CUSTOMER_NULL_T010 BASED(ADDR(CUSTOMER.NULLIND)),             03580000
+            % INCLUDE SUG010IN;;        /* NULLINDICATOR ALS STRUKTUR */03590000
+   DCL 1 CUSTOMER         BASED(ADDR(CUSTOMER_REC)),                    03600000
+           % INCLUDE RCBBAAS1;,                                         03610000
+         3 DATA,                                                        03620000
+           % INCLUDE RCB010S;,                                          03630000
+         3 NULLIND,                                                     03640000
+           % INCLUDE RCB010SI;;                                         03650000
+   DCL  1 ADDRESS_NULL_T150 BASED(ADDR(ADDRESS.NULLIND)),               03660000
+            % INCLUDE SUG150IN;;        /* NULLINDICATOR ALS STRUKTUR */03670000
+   DCL 1 ADDRESS          BASED(ADDR(ADDRESS_REC)),                     03680000
+           % INCLUDE RCBBAAS1;,                                         03690000
+         3 DATA,                                                        03700000
+           % INCLUDE RCB150S;,                                          03710000
+         3 NULLIND,                                                     03720000
+           % INCLUDE RCB150SI;;                                         03730000
+   DCL  1 ADRLINE_NULL_T280 BASED(ADDR(ADRLINE.NULLIND)),               03740000
+            % INCLUDE SUG280IN;;        /* NULLINDICATOR ALS STRUKTUR */03750000
+   DCL 1 ADRLINE          BASED(ADDR(ADRLINE_REC)),                     03760000
+           % INCLUDE RCBBAAS1;,                                         03770000
+         3 DATA,                                                        03780000
+           % INCLUDE RCB280S;,                                          03790000
+         3 NULLIND,                                                     03800000
+           % INCLUDE RCB280SI;;                                         03810000
+   DCL  1 MODINFO_NULL_T350 BASED(ADDR(MODINFO.NULLIND)),               03820000
+            % INCLUDE SUG350IN;;        /* NULLINDICATOR ALS STRUKTUR */03830000
+   DCL 1 MODINFO          BASED(ADDR(MODINFO_REC)),                     03840000
+           % INCLUDE RCBBAAS1;,                                         03850000
+         3 DATA,                                                        03860000
+           % INCLUDE RCB350S;,                                          03870000
+         3 NULLIND,                                                     03880000
+           % INCLUDE RCB350SI;;                                         03890000
+                                                                        03900000
+   DCL  1 INT_AREA,                     /* INTERFACE AREA, ENTHAELT   */03910000
+          % INCLUDE RCBZ01S;;           /* PARAM.F. COMMON SUB-MODULES*/03920000
+   DCL  1 RETURN_AREA,                  /* RETURN AREA FROM BUILDING  */03930000
+          % INCLUDE RCBZ02S;;           /* BLOCK                      */03940000
+   DCL  1 RUNDATE_AREA,                 /* RUNDATE AREA F. RCB020M -  */03950000
+          % INCLUDE RCBZ28S;;           /* RETRIEVE RCB001 PARAMETER  */03960000
+                                                                        03970000
+ /*---- DB2 TABLE STRUKTUREN -----------------------------------------*/03980000
+   DCL  1 TB_RCBV500,                            /* PARAMETER TABLE   */03990000
+          % INCLUDE RCB500S;;                                           04000000
+   DCL  1 TB_RCBV500_I,                          /* NULL INDICATORS   */04010000
+          % INCLUDE RCB500SI;;                   /* PARAMETER TABLE   */04020000
+                                                                        04030000
+ /*---- KONTROLL PARAMETER -------------------------------------------*/04040000
+   DCL  1 RCB024_PARM  BASED(RCBV500_PTR),  /* PARAM. RCB024 F. KONTR.*/04050000
+          % INCLUDE RCBP24S;;               /* HASH TOTALS / TIMESTAMP*/04060000
+                                                                        04070000
+1/*-------------------------------------------------------------------*/04080000
+ /***      DRUCK-ZEILEN                                             ***/04090000
+ /*-------------------------------------------------------------------*/04100000
+   DCL PROTO_Z_ANZAHL_CHAR  CHAR(10) BASED(ADDR(PROTO_Z.ANZAHL));       04110000
+   DCL 1 PROTO_Z,                                                       04120000
+         2 ASA           CHAR(1)   INIT (' '),                          04130000
+         2 TEXT          CHAR(45),                                      04140000
+         2 ANZAHL        PIC'(9)Z9',                                    04150000
+         2 REST          CHAR(77)  INIT (' ');                          04160000
+1/*-------------------------------------------------------------------*/04170000
+ /***      D A T U M                                                ***/04180000
+ /*-------------------------------------------------------------------*/04190000
+-DCL MASCHDAT     CHAR(17);       /* MASCHINENDATUM YYYYMMDDHHMMSSTTT */04200000
+ DCL DATUMAUF     CHAR(10);              /* MASCHINENDATUM YYYY-MM-TT */04210000
+ DCL DATETIME BUILTIN;                                                  04220000
+ MASCHDAT = DATETIME;                                                   04230000
+ DATUMAUF = SUBSTR(MASCHDAT,1,4) || '-' ||                              04240000
+            SUBSTR(MASCHDAT,5,2) || '-' ||                              04250000
+            SUBSTR(MASCHDAT,7,2);                                       04260000
+1/********************************************************************/ 04270000
+ /* EXTERNAL PARAMETER INTERFACES                                    */ 04280000
+ /********************************************************************/ 04290000
+ DCL 1 PARM_INT_AREA          BASED (PTR_INT_AREA),                     04300000
+      %INCLUDE (RCBZ01S);;                                              04310000
+1/*-------------------------------------------------------------------*/04320000
+ /***    ON ERROR                                                   ***/04330000
+ /*-------------------------------------------------------------------*/04340000
+ %INCLUDE (RCB0E0M);                                                    04350000
+  END;                                                                  04360000
+ /********************************************************************/ 04370000
+ /*                                                                  */ 04380000
+ /* IN CASE AN UNEXPECTED ERROR OCCURS FILL THE FOLLOWING VARIABLES  */ 04390000
+ /* AND CALL THE ERROR ROUTINE:                                      */ 04400000
+ /*                                                                  */ 04410000
+ /*                                                                  */ 04420000
+ /* FIELD              IN CASE OF: DB2 ERROR --  -- OTHER ERROR --   */ 04430000
+ /*                                                                  */ 04440000
+ /* PARM_INT_AREA.PTR_ERROR         ADDR (SQLCA)     NULL            */ 04450000
+ /* PARM_INT_AREA.ERR_TYPE         'DB2'            'OTHER'          */ 04460000
+ /* PARM_INT_AREA.CALL_ID          '#NNN'           '#NNN'           */ 04470000
+ /* CALL RCB0E1M (PTR_INT_AREA)                                      */ 04480000
+ /*                                                                  */ 04490000
+ /* NOTE: NNN CAN BE A NUMBER FROM 001 TO 999                        */ 04500000
+ /*                                                                  */ 04510000
+ /********************************************************************/ 04520000
+ /*      ON ERROR BEGIN;                        REMOVED 24/07/00 - HM */04530000
+ /*         CLOSE FILE (SYSPRINT);                                    */04540000
+ /*         CALL DP60343 ('0300');                                    */04550000
+ /*      END;                                                         */04560000
+-/*-------------------------------------------------------------------*/04570000
+ /***    ON ENDFILE                                                 ***/04580000
+ /*-------------------------------------------------------------------*/04590000
+   ON ENDFILE (CECRF)   EOF_CECRF = '1'B;                               04600000
+   ON ENDFILE (SUG800F);                                                04610000
+                                                                        04620000
+                                                                        04630000
+-/*-------------------------------------------------------------------*/04640000
+ /***    O P E N    FILES                                           ***/04650000
+ /*-------------------------------------------------------------------*/04660000
+   OPEN FILE (CECRF);                                                   04670000
+   OPEN FILE (SUG800F);                                                 04680000
+   OPEN FILE (RCBBAA0);                                                 04690000
+   OPEN FILE (RCBBAA1);                                                 04700000
+   OPEN FILE (RCBBAA2);                                                 04710000
+   OPEN FILE (RCBBAA4);                                                 04720000
+   OPEN FILE (RCB0M10);                                                 04730000
+                                                                        04740000
+1/*-------------------------------------------------------------------*/04750000
+ /*                                                                   */04760000
+ /*      P R O G R A M M    -    S T A R T                            */04770000
+ /*                                                                   */04780000
+ /*-------------------------------------------------------------------*/04790000
+   SUG800F_IN='';                                                       04800000
+   READ FILE (SUG800F) INTO (SUG800F_IN);                               04810000
+   IF SUG800F_IN.MODUS = 'CRINIT'                                       04820000
+      THEN INITIAL_LOAD='1'B;                                           04830000
+   ZA_TAB   = '';                               /* ZAEHLER INITIALIS. */04840000
+                                                                        04850000
+   PTR_INT_AREA     = ADDR(INT_AREA);           /* POINTER ADRESSIEREN*/04860000
+   PTR_RETURN_AREA  = ADDR(RETURN_AREA);                                04870000
+   PTR_RUNDATE_AREA = ADDR(RUNDATE_AREA);                               04880000
+   RCBV500_PTR      = ADDR(TB_RCBV500);                                 04890000
+   RCBV500_I_PTR    = ADDR(TB_RCBV500_I);                               04900000
+                                                                        04910000
+   INT_AREA.ID_MOD_LEVEL    = 1;                /* INIT INTERFACE AREA*/04920000
+   INT_AREA.ID_MOD_PATH(1)  = 'SUG800M ';                               04930000
+   INT_AREA.MSG_AREA        = '';                                       04940000
+   INT_AREA.ERR_AREA        = '';                                       04950000
+   INT_AREA.MSG_REQUEST     = 'O';                                      04960000
+   INT_AREA.MSG_TARGET      = 'F';                                      04970000
+   INT_AREA.ID_SOURCE_APPL  = 'SUG';                                    04980000
+   INT_AREA.ID_SOURCE_PROG  = 'SUG800P ';                               04990000
+   INT_AREA.SYSTEM_TYPE     = 'B';                                      05000000
+   INT_AREA.PTR_PCB_IO      = NULL;                                     05010000
+   INT_AREA.PTR_PCB_ALT     = NULL;                                     05020000
+                                                                        05030000
+   INT_AREA.SYSTEM_DATE = DATUMAUF;         /*SPEICHERN MASCHINENDATUM*/05040000
+                                                                        05050000
+   /*-----------------------------------------------------------------*/05060000
+   /***    LESEN RUNDATE PARAMETER RCB001 / SPEICHERN IN INT_AREA   ***/05070000
+   /*-----------------------------------------------------------------*/05080000
+   RUNDATE_AREA.PROC_ID     = 'SY  ';                                   05090000
+   RUNDATE_AREA.CTRYNO      = '848';                                    05100000
+   RUNDATE_AREA.PGR_TYPE    = 'A01';                                    05110000
+                                                                        05120000
+   CALL RCB020M (PTR_RUNDATE_AREA,                                      05130000
+                 PTR_INT_AREA);                                         05140000
+                                                                        05150000
+   IF RUNDATE_AREA.RUN_DATE = ''              /*RCB001 NICHT VORHANDEN*/05160000
+      THEN                                    /*-> RUNDATE=SYSTEMDATUM*/05170000
+       DO;                                                              05180000
+         PUT SKIP EDIT ('RUNDATE RCB001 NICHT GEFUNDEN')(A);            05190000
+         INT_AREA.RUN_DATE = INT_AREA.SYSTEM_DATE;                      05200000
+      END;                                                              05210000
+      ELSE INT_AREA.RUN_DATE = RUNDATE_AREA.RUN_DATE;                   05220000
+                                                                        05230000
+   CALL READ_CECRF;                                                     05240000
+   IF EOF_CECRF                                                         05250000
+      THEN DO;                                                          05260000
+         PUT SKIP EDIT                                                  05270000
+         ('MOBAS CR ENTHAELT KEINE DATEN- FILE CECRF')(A);              05280000
+         SIGNAL ERROR;                                                  05290000
+      END;                                                              05300000
+                                                                        05310000
+   CALL FORMATIEREN;                         /*AUSGEBEN HEADER, FORMA-*/05320000
+                                             /*TIEREN ALLG. DATENTEIL */05330000
+                                                                        05340000
+   DO WHILE (EOF_CECRF = '0'B);                                         05350000
+                                                                        05360000
+      ZA_TAB(1).ANZ = ZA_TAB(1).ANZ + 1;            /* KUNDEN GELESEN */05370000
+                                                                        05380000
+                                     /* NEUEN KUNDEN BEARBEITEN       */05390000
+      /*---------------------------------------------------*/           05400000
+      /***  ERSTELLEN CUSTOMER SATZ                       **/           05410000
+      /*---------------------------------------------------*/           05420000
+      CUSTOMER                        = '';                             05430000
+      CUSTOMER.INDNULL(*)             = 0;                              05440000
+      CUSTOMER                        = DATAREC, BY NAME;               05450000
+      CUSTOMER.DATA.COUNTRY_NUMBER    = IN_STRUK.CTY;                   05460000
+      CUSTOMER.DATA.CUSTOMER_NUMBER   = IN_STRUK.CUNOUSE;               05470000
+      CUSTOMER.DATA.CUSTOMER_NAME     = IN_STRUK.CUNAME;                05480000
+      CUSTOMER.DATA.CUSTOMER_LOCATION = IN_STRUK.CULOC;                 05490000
+      CUSTOMER.DATA.ENTERPRISE_NUMBER = SUBSTR(IN_STRUK.CLIENT,2,8);    05500000
+      CUSTOMER.DATA.TYPE_OF_CUSTOMER  = IN_STRUK.CCUSTOC;               05510000
+      CUSTOMER.DATA.CRIT_CUST_DATA_CDE = IN_STRUK.CCUSTA;               05520000
+      CUSTOMER.DATA.EFFECTIVE_DATE    = IN_STRUK.DDBSCRE;               05530000
+      CUSTOMER.DATA.LAST_CHANGE_DATE  = IN_STRUK.DDBSLUP;               05540000
+      CUSTOMER.DATA.END_DATE          = IN_STRUK.END_DATE;              05550000
+                                                                        05560000
+                                       /* NULLWERTE SETZEN */           05570000
+      IF CUSTOMER.DATA.ENTERPRISE_NUMBER = ''                           05580000
+         THEN CUSTOMER_NULL_T010.ENTERPRISE_NUMBER = -1;                05590000
+      IF CUSTOMER.DATA.TYPE_OF_CUSTOMER   = ''                          05600000
+         THEN CUSTOMER_NULL_T010.TYPE_OF_CUSTOMER   = -1;               05610000
+      IF CUSTOMER.DATA.CRIT_CUST_DATA_CDE = ''                          05620000
+         THEN CUSTOMER_NULL_T010.CRIT_CUST_DATA_CDE = -1;               05630000
+                                                                        05640000
+      WRITE FILE (RCBBAA0) FROM (CUSTOMER);                             05650000
+      ZA_TAB(4).ANZ = ZA_TAB(4).ANZ + 1;     /*CUST. SAETZE*/           05660000
+                                                                        05670000
+            /*-- ERRECHNEN HASH TOTALS FUER FILE RCBBAA0 --*/           05680000
+      HASH_FIELD = SUBSTR(CUSTOMER.DATA.CUSTOMER_NUMBER,3,4);           05690000
+      CALL RCB018M (HASH_FIELD,                                         05700000
+                    HASH_TOTAL.RCBBAA0,                                 05710000
+                    PTR_INT_AREA);                                      05720000
+                                                                        05730000
+                                                                        05740000
+      /*---------------------------------------------------*/           05750000
+      /***  ERSTELLEN MODIFIABLE INFO CUSTOMER SATZ       **/           05760000
+      /*---------------------------------------------------*/           05770000
+      MODINFO                      = '';                                05780000
+      MODINFO.INDNULL(*)           = 0;                                 05790000
+      MODINFO                      = DATAREC, BY NAME;                  05800000
+      MODINFO.DATA.COUNTRY_NUMBER  = IN_STRUK.CTY;                      05810000
+      MODINFO.DATA.CUSTOMER_NUMBER = IN_STRUK.CUNOUSE;                  05820000
+      MODINFO.DATA.EMBARGO_CODE    = IN_STRUK.EMBACD;                   05830000
+      MODINFO.DATA.CREDIT_LIMIT_CODE = IN_STRUK.CCUSCRC;                05840000
+      MODINFO.DATA.EFFECTIVE_DATE  =                                    05850000
+                    CUSTOMER.DATA.EFFECTIVE_DATE;                       05860000
+      MODINFO.DATA.LAST_CHANGE_DATE  =                                  05870000
+                    CUSTOMER.DATA.LAST_CHANGE_DATE;                     05880000
+      MODINFO.DATA.END_DATE  =                                          05890000
+                    CUSTOMER.DATA.END_DATE;                             05900000
+      MODINFO.DATA.CASH_ON_DELIVERY = IN_STRUK.C_O_D;                   05910000
+      MODINFO.DATA.CU_ENGINEERING_OU = IN_STRUK.CE_OU;                  05920000
+      MODINFO.DATA.MKT_INSTALLING_OU = IN_STRUK.MKT_OU;                 05930000
+                                                                        05940000
+      /*---------------------------------------------------*/           05950000
+      /***  REQ. 429                                       */           05960000
+      /***  SETZEN WAEHRUNGS-KENNZEICHENS  "CURRENCY"-CODE */           05970000
+      /*---------------------------------------------------*/           05980000
+                                                                        05990000
+      MODINFO.DATA.CURRENCY = IN_STRUK.CURR;                            06000000
+                                                                        06010000
+      /*---------------------------------------------------*/           06020000
+      /***  NULLWERTE SETZEN                             ***/           06030000
+      /*---------------------------------------------------*/           06040000
+                                                                        06050000
+      IF MODINFO.DATA.EMBARGO_CODE = ''                                 06060000
+         THEN MODINFO_NULL_T350.EMBARGO_CODE  = -1;                     06070000
+      IF MODINFO.DATA.CREDIT_LIMIT_CODE = ''                            06080000
+         THEN MODINFO_NULL_T350.CREDIT_LIMIT_CODE = -1;                 06090000
+      IF MODINFO.DATA.CASH_ON_DELIVERY  = ''                            06100000
+         THEN MODINFO_NULL_T350.CASH_ON_DELIVERY  = -1;                 06110000
+      IF MODINFO.DATA.CU_ENGINEERING_OU = ''                            06120000
+         THEN MODINFO_NULL_T350.CU_ENGINEERING_OU = -1;                 06130000
+      IF MODINFO.DATA.MKT_INSTALLING_OU = ''                            06140000
+         THEN MODINFO_NULL_T350.MKT_INSTALLING_OU = -1;                 06150000
+      IF MODINFO.DATA.CURRENCY = ''                                     06160000
+         THEN MODINFO_NULL_T350.CURRENCY  = -1;                         06170000
+                                                                        06180000
+      /*---------------------------------------------------*/           06190000
+                                                                        06200000
+                                                                        06210000
+      WRITE FILE (RCBBAA4) FROM (MODINFO);                              06220000
+      ZA_TAB(7).ANZ = ZA_TAB(7).ANZ + 1;   /*MOD.INF.SAETZE*/           06230000
+      IF MODINFO.DATA.EMBARGO_CODE = 'Y'                                06240000
+      THEN ZA_TAB(8).ANZ = ZA_TAB(8).ANZ + 1;/*EMBARGO SATZ*/           06250000
+                                                                        06260000
+            /*-- ERRECHNEN HASH TOTALS FUER FILE RCBBAA4 --*/           06270000
+      HASH_FIELD = SUBSTR(MODINFO.DATA.CUSTOMER_NUMBER,3,4);            06280000
+      CALL RCB018M (HASH_FIELD,                                         06290000
+                    HASH_TOTAL.RCBBAA4,                                 06300000
+                    PTR_INT_AREA);                                      06310000
+                                                                        06320000
+      SORTKEY_ALT = SORTKEY_NEU;                                        06330000
+      DO WHILE (SORTKEY_NEU = SORTKEY_ALT);                             06340000
+                                                                        06350000
+        SELECT (IN_STRUK.TOA);                                          06360000
+                                                                        06370000
+        /*------------------------------------------------------------*/06380000
+        /***    FIRMENANSCHRIFT-SATZ                                ***/06390000
+        /*------------------------------------------------------------*/06400000
+          WHEN ('I30','I50','S4A') DO;       /* FIRMENADRESSE      */   06410000
+             VOR_HANDEN = '1'B;                                         06420000
+             ZADR_FIRM_STRUK = ADR_STRUK;    /* ZWISCHENSPEICHERN  */   06430000
+             FIRM_STRUK.ADDRESS_MASK = '0000000000000000';              06440000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(3) = '1';  /*INSTALLATION */   06450000
+                                  /* KENNZEICHNUNG FIRMENANSCHRIFT */   06460000
+                                  /* ZUSAETZLICH ALS               */   06470000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(2) = '1'; /* RECHNUNG*/        06480000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(4) = '1'; /* LIEFER (HW)*/     06490000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(5) = '1'; /* LIEFER (SW)*/     06500000
+                                /* WIRD GGFS. AUF '0' GESETZT    */     06510000
+             FIRM_STRUK.EFFECTIVE_DATE =                                06520000
+                                 CUSTOMER.DATA.EFFECTIVE_DATE;          06530000
+             CALL READ_CECRF;                                           06540000
+          END;                                                          06550000
+                                                                        06560000
+        /*------------------------------------------------------------*/06570000
+        /***    RECHNUNGSANSCHRIFT-SATZ                             ***/06580000
+        /*------------------------------------------------------------*/06590000
+          WHEN ('B00') DO;                           /* RECHN.ANSCHR. */06600000
+                                                     /* VORHANDEN     */06610000
+                 /* KENNZEICHNUNG FIRMENANSCHRIFT IST NICHT RECHNUNGS-*/06620000
+                 /* ANSCHRIFT                                         */06630000
+             ADR_PTR = ADDR(ADR_STRUK);              /* -> ADDR.LINES */06640000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(2) = '0';            /*AIM391*/06650000
+           /* ADDRESS_NUMBER: '00002', ADDRESS_MASK '0100000000000000'*/06660000
+             CALL ADDR_SAETZE('00002','0100000000000000',               06670000
+                               CUSTOMER.DATA.EFFECTIVE_DATE);           06680000
+             CALL READ_CECRF;                                           06690000
+          END;                                                          06700000
+                                                                        06710000
+          WHEN ('D00') DO;                           /* LIEFER (HW)   */06720000
+                                                   /* VORHANDEN     */  06730000
+                 /* KENNZEICHNUNG FIRMENANSCHRIFT IST NICHT LIEFER-   */06740000
+                 /* ANSCHRIFT HW                                      */06750000
+             ADR_PTR = ADDR(ADR_STRUK);              /* -> ADDR.LINES */06760000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(4) = '0';                      06770000
+           /* ADDRESS_NUMBER: '00004', ADDRESS_MASK '0001000000000000'*/06780000
+             CALL ADDR_SAETZE('00004','0001000000000000',               06790000
+                               CUSTOMER.DATA.EFFECTIVE_DATE);           06800000
+             CALL READ_CECRF;                                           06810000
+          END;                                                          06820000
+                                                                        06830000
+          WHEN ('D0K') DO;                           /* LIEFER (HW)   */06840000
+                                                     /* VORHANDEN     */06850000
+                 /* KENNZEICHNUNG FIRMENANSCHRIFT IST NICHT LIEFER-   */06860000
+                 /* ANSCHRIFT SW                                      */06870000
+             ADR_PTR = ADDR(ADR_STRUK);              /* -> ADDR.LINES */06880000
+             FIRM_ARRAY.ADDRESS_MASK_BIT(5) = '0';                      06890000
+           /* ADDRESS_NUMBER: '00005', ADDRESS_MASK '0000100000000000'*/06900000
+             CALL ADDR_SAETZE('00005','0000100000000000',               06910000
+                               CUSTOMER.DATA.EFFECTIVE_DATE);           06920000
+             CALL READ_CECRF;                                           06930000
+          END;                                                          06940000
+                                                                        06950000
+          OTHER CALL READ_CECRF;                                        06960000
+                                                                        06970000
+        END;                                          /* END SELECT */  06980000
+      END;                              /* DO WHILE SO_NEU = SO_ALT   */06990000
+      IF VOR_HANDEN                                                     07000000
+      THEN DO;                                                          07010000
+           VOR_HANDEN = '0'B;                                           07020000
+           ADR_PTR = ADDR(ZADR_FIRM_STRUK);                             07030000
+           CALL ADDR_SAETZE('00001',                                    07040000
+                             FIRM_STRUK.ADDRESS_MASK,                   07050000
+                             CUSTOMER.DATA.EFFECTIVE_DATE);             07060000
+      END;                                                              07070000
+                                                                        07080000
+   END;                                   /* END DO WHILE ¬E0F_CECRF  */07090000
+                                                                        07100000
+   CALL FORMAT_TRAILER;      /* FORMATIEREN/AUSGEBEN */                 07110000
+                             /* TRAILER PRO FILE     */                 07120000
+                                                                        07130000
+   CALL SAVE_HASH_TOTALS;    /*SPEICHERN HASH TOTALS*/                  07140000
+                                /*AUF PARAM. RCB024    */               07150000
+                                                                        07160000
+-/*-------------------------------------------------------------------*/07170000
+ /***    LAUFPROTOKOLL AUSGEBEN                                     ***/07180000
+ /*-------------------------------------------------------------------*/07190000
+                                                                        07200000
+   ZA_TAB(1).TEXT = 'EINGABE ANZAHL KUNDEN AUF MOBAS CR     :';         07210000
+   ZA_TAB(2).TEXT = '        - ANZAHL EMBARGO-KUNDEN        :';         07220000
+   ZA_TAB(3).TEXT = '        - ANZAHL NICHT VERARBEITET     :';         07230000
+   ZA_TAB(4).TEXT = 'AUSGABE FUER T010 CUSTOMER FILE        :';         07240000
+   ZA_TAB(5).TEXT = '        FUER T150 ADDRESS FILE         :';         07250000
+   ZA_TAB(6).TEXT = '        FUER T280 ADDRESSLINE FILE     :';         07260000
+   ZA_TAB(7).TEXT = '        FUER T350 MODIFIABLE INFO FILE :';         07270000
+   ZA_TAB(8).TEXT = '        - ANZAHL EMBARGO-KUNDEN        :';         07280000
+                                                                        07290000
+   PROTO_Z_ANZAHL_CHAR = '';                                            07300000
+   IF INITIAL_LOAD                                                      07310000
+      THEN PROTO_Z.TEXT   = 'INITIAL LOAD MODUS';                       07320000
+      ELSE PROTO_Z.TEXT   = 'NORMAL MODUS';                             07330000
+   WRITE FILE (PROTOK) FROM (PROTO_Z);                                  07340000
+   DO I = 1 TO 8;                                                       07350000
+      PROTO_Z.ANZAHL = ZA_TAB(I).ANZ;                                   07360000
+      PROTO_Z.TEXT   = ZA_TAB(I).TEXT;                                  07370000
+      WRITE FILE (PROTOK) FROM (PROTO_Z);                               07380000
+   END;                                                                 07390000
+                                                                        07400000
+1/*-------------------------------------------------------------------*/07410000
+ /***    C L O S E   FILES                                          ***/07420000
+ /*-------------------------------------------------------------------*/07430000
+   CLOSE FILE (CECRF);                                                  07440000
+   CLOSE FILE (SUG800F);                                                07450000
+   CLOSE FILE (RCBBAA0);                                                07460000
+   CLOSE FILE (RCBBAA1);                                                07470000
+   CLOSE FILE (RCBBAA2);                                                07480000
+   CLOSE FILE (RCBBAA4);                                                07490000
+   CLOSE FILE (RCB0M10);                                                07500000
+                                                                        07510000
+1/*-------------------------------------------------------------------*/07520000
+ /***    I N T E R N E   P R O Z E D U R E N                        ***/07530000
+ /*-------------------------------------------------------------------*/07540000
+1/*-------------------------------------------------------------------*/07550000
+ /***    FORMATIEREN/AUSGEBEN HEADER FUER ALLE FILES                ***/07560000
+ /***    FORMATIEREN ALLGEMEINEN DATENTEIL FUER ALLE FILES          ***/07570000
+ /*-------------------------------------------------------------------*/07580000
+ FORMATIEREN: PROC;                                                     07590000
+                                                                        07600000
+   HEADER = '';                                 /* FORMATIEREN HEADER */07610000
+   HEADER.REC_TYPE         = '01';                                      07620000
+   HEADER.SOURCE_INDICATOR = 'S';                                       07630000
+   HEADER.TIMESTAMP = INT_AREA.SYSTEM_DATE || '.' || TIME;              07640000
+                                                                        07650000
+   CUSTOMER_REC = '';                                                   07660000
+   HEAD_CUST = HEADER, BY NAME;                    /* SCHREIBEN FILES */07670000
+   HEAD_CUST.FILE_ID = 'RCBBAA0';                                       07680000
+   WRITE FILE (RCBBAA0) FROM (CUSTOMER_REC);                            07690000
+                                                                        07700000
+   ADDRESS_REC = '';                                                    07710000
+   HEAD_ADDR = HEADER, BY NAME;                                         07720000
+   HEAD_ADDR.FILE_ID = 'RCBBAA1';                                       07730000
+   WRITE FILE (RCBBAA1) FROM (ADDRESS_REC);                             07740000
+                                                                        07750000
+   ADRLINE_REC = '';                                                    07760000
+   HEAD_ADRLINE = HEADER, BY NAME;                                      07770000
+   HEAD_ADRLINE.FILE_ID = 'RCBBAA2';                                    07780000
+   WRITE FILE (RCBBAA2) FROM (ADRLINE_REC);                             07790000
+                                                                        07800000
+   MODINFO_REC = '';                                                    07810000
+   HEAD_MODINFO = HEADER, BY NAME;                                      07820000
+   HEAD_MODINFO.FILE_ID = 'RCBBAA4';                                    07830000
+   WRITE FILE (RCBBAA4) FROM (MODINFO_REC);                             07840000
+                                                                        07850000
+   DATAREC.REC_TYPE = '02';            /* FORMATIEREN ALLG. DATENTEIL */07860000
+   DATAREC.CTRYNO   = '848';                                            07870000
+   DATAREC.PGR_TYPE = 'A01';                                            07880000
+   DATAREC.RUN_DATE = INT_AREA.RUN_DATE;                                07890000
+                                                                        07900000
+ END FORMATIEREN;                                                       07910000
+                                                                        07920000
+-/*-------------------------------------------------------------------*/07930000
+ /***    FORMATIEREN/AUSGEBEN TRAILER FUER ALLE FILES               ***/07940000
+ /*-------------------------------------------------------------------*/07950000
+ FORMAT_TRAILER: PROC;                                                  07960000
+                                                                        07970000
+   CUSTOMER_REC = '';                                                   07980000
+   TRAIL_CUST.REC_TYPE = '99';                                          07990000
+   TRAIL_CUST.CNT_RECS = ZA_TAB(4).ANZ;                                 08000000
+   WRITE FILE (RCBBAA0) FROM (CUSTOMER_REC);                            08010000
+                                                                        08020000
+   ADDRESS_REC = '';                                                    08030000
+   TRAIL_ADDR.REC_TYPE = '99';                                          08040000
+   TRAIL_ADDR.CNT_RECS = ZA_TAB(5).ANZ;                                 08050000
+   WRITE FILE (RCBBAA1) FROM (ADDRESS_REC);                             08060000
+                                                                        08070000
+   ADRLINE_REC = '';                                                    08080000
+   TRAIL_ADRLINE.REC_TYPE = '99';                                       08090000
+   TRAIL_ADRLINE.CNT_RECS = ZA_TAB(6).ANZ;                              08100000
+   WRITE FILE (RCBBAA2) FROM (ADRLINE_REC);                             08110000
+                                                                        08120000
+   MODINFO_REC = '';                                                    08130000
+   TRAIL_MODINFO.REC_TYPE = '99';                                       08140000
+   TRAIL_MODINFO.CNT_RECS = ZA_TAB(7).ANZ;                              08150000
+   WRITE FILE (RCBBAA4) FROM (MODINFO_REC);                             08160000
+                                                                        08170000
+ END FORMAT_TRAILER;                                                    08180000
+                                                                        08190000
+ /*-------------------------------------------------------------------*/08200000
+ /***  FUER JEDE ADRESSZEILE EINES MOBASSATZES WIRD EIN ADDRESS     ***/08210000
+ /***  LINE SATZ (LINE_NUMBER '01'-'06') AUFBEREITET UND AUSGEGEBEN.***/08220000
+ /***  LEERE ADRESSZEILEN VON MOBAS WERDEN NICHT AUSGEGEBEN.        ***/08230000
+ /***  ZUSAETLICH WIRD EIN ADRESS SATZ AUFBEREITET UND AUSGEGEBEN   ***/08240000
+ /*-------------------------------------------------------------------*/08250000
+ ADDR_SAETZE: PROC(ADDR_NUMBER,ADDR_MASK,ADDR_EFFDATE);       /*AIM391*/08260000
+ DCL ADDR_NUMBER  CHAR(5);                                    /*AIM391*/08270000
+ DCL ADDR_MASK    CHAR(16);                                   /*AIM391*/08280000
+ DCL ADDR_EFFDATE CHAR(10);                                   /*AIM391*/08290000
+                                                                        08300000
+   DCL 1 ADDR_B    BASED(ADR_PTR),                  /* STRUKTUR FUER  */08310000
+       %INCLUDE CECRF;;                             /* ADRESS-SEGMENT */08320000
+                                                                        08330000
+   DCL ADDR_B_ZEILE(6) CHAR(30) BASED (ADDR(ADDR_B.AZ1));               08340000
+   DCL ZEILENNR PIC '99';                                               08350000
+                                                                        08360000
+   ADRLINE                      = '';                                   08370000
+   ADRLINE.INDNULL(*)           = 0;                                    08380000
+   ADRLINE                      = DATAREC, BY NAME;                     08390000
+   ADRLINE.DATA.COUNTRY_NUMBER  = '848';                                08400000
+   ADRLINE.DATA.CUSTOMER_NUMBER = ADDR_B.CUNOUSE;                       08410000
+   ADRLINE.DATA.ADDRESS_NUMBER  = ADDR_NUMBER;                          08420000
+                                                                        08430000
+   ZEILENNR = 0;                                                        08440000
+   DO I = 1 TO 6;                                                       08450000
+      ZEILENNR = ZEILENNR + 1;                                          08460000
+      IF ADDR_B_ZEILE(I) ¬= ''                                          08470000
+         THEN DO;                                                       08480000
+            ADRLINE.DATA.LINE_NUMBER = ZEILENNR;       /*LINE_NO 01-06*/08490000
+                                                                        08500000
+            IF ADRLINE.DATA.LINE_NUMBER = '05'                          08510000
+               THEN ADRLINE.DATA.TEXT =                                 08520000
+                  ADDR_B.AZ5.PLZ ||                                     08530000
+                  SUBSTR(ADDR_B.AZ5.ORT,1,                              08540000
+                    CSTG(ADRLINE.DATA.TEXT) - CSTG(ADDR_B.AZ5.PLZ)  -1);08550000
+               ELSE ADRLINE.DATA.TEXT = ADDR_B_ZEILE(I);                08560000
+                                                                        08570000
+            WRITE FILE (RCBBAA2) FROM (ADRLINE);                        08580000
+            ZA_TAB(6).ANZ = ZA_TAB(6).ANZ + 1;        /*ADRLINE SAETZE*/08590000
+                                                                        08600000
+                       /*-- ERRECHNEN HASH TOTALS FUER FILE RCBBAA2 --*/08610000
+            HASH_FIELD = SUBSTR(ADRLINE.DATA.CUSTOMER_NUMBER,3,4);      08620000
+            CALL RCB018M (HASH_FIELD,                                   08630000
+                          HASH_TOTAL.RCBBAA2,                           08640000
+                          PTR_INT_AREA);                                08650000
+         END;                                                           08660000
+   END;                                                                 08670000
+                                                                        08680000
+   /*-----------------------------------------------------------------*/08690000
+   /***  ERSTELLEN ADDRESS SATZ                                      **/08700000
+   /*-----------------------------------------------------------------*/08710000
+   ADDRESS                      = '';                                   08720000
+   ADDRESS.INDNULL(*)                        = 0;                       08730000
+   ADDRESS                                   = DATAREC, BY NAME;        08740000
+   ADDRESS.DATA.COUNTRY_NUMBER       = '848';                           08750000
+   ADDRESS.DATA.CUSTOMER_NUMBER      = ADDR_B.CUNOUSE;        /*AIM391*/08760000
+   ADDRESS.DATA.ADDRESS_NUMBER       = ADDR_NUMBER;           /*AIM391*/08770000
+   ADDRESS.DATA.ADDRESS_GROUP        = 'P';                             08780000
+   ADDRESS.DATA.ADDRESS_MASK         = ADDR_MASK;             /*AIM391*/08790000
+   ADDRESS.DATA.ZIP_CODE             = ADDR_B.RLCXBA;         /*AIM391*/08800000
+   /* CHANGED TO PICK UP POSTAL CODE FROM CRF FILE */                   08810000
+   /* C-0027-0501                                  */                   08820000
+   /* ADDRESS.DATA.ZIP_CODE = ADDR_B.AZ5.PLZ   OLD LINE */              08830000
+   ADDRESS.DATA.EFFECTIVE_DATE       = ADDR_EFFDATE;          /*AIM391*/08840000
+                                                                        08850000
+   WRITE FILE (RCBBAA1) FROM (ADDRESS);                                 08860000
+   ZA_TAB(5).ANZ = ZA_TAB(5).ANZ + 1;                  /*ADDR. SAETZE*/ 08870000
+                                                                        08880000
+         /*-- ERRECHNEN HASH TOTALS FUER FILE RCBBAA1 --*/              08890000
+   HASH_FIELD = SUBSTR(ADDRESS.DATA.CUSTOMER_NUMBER,3,4);               08900000
+   CALL RCB018M (HASH_FIELD,                                            08910000
+                 HASH_TOTAL.RCBBAA1,                                    08920000
+                 PTR_INT_AREA);                                         08930000
+                                                                        08940000
+ END ADDR_SAETZE;                                                       08950000
+                                                                        08960000
+-/*-------------------------------------------------------------------*/08970000
+ /***    LESEN NAECHSTEN MOBAS  CR SATZ                             ***/08980000
+ /***    WENN NICHT FILE_ENDE                                       ***/08990000
+ /***    SATZART-PRUEFUNG UND SORTPRUEFUNG DURCHFUEHREN             ***/09000000
+ /*-------------------------------------------------------------------*/09010000
+ READ_CECRF       : PROC;                            /* NEU MIT AIM391*/09020000
+   IN_STRUK  = '';                                                      09030000
+   READ FILE (CECRF) INTO (IN_STRUK);                                   09040000
+   IF ¬EOF_CECRF                                                        09050000
+      THEN DO;                                                          09060000
+         IF SORTKEY_NEU <  SORTKEY_ALT                                  09070000
+            THEN DO;                                                    09080000
+               PUT SKIP EDIT                                            09090000
+               ('SORTFEHLER AUF MOBAS CR - FILE CECRF')(A);             09100000
+               PUT SKIP EDIT                                            09110000
+               (' SORTKEY      KDNR')(A);                               09120000
+               PUT SKIP EDIT                                            09130000
+               (' ------------ ---------------')(A);                    09140000
+               PUT SKIP EDIT                                            09150000
+               (' SORTKEY_NEU: ' || SORTKEY_NEU)(A);                    09160000
+               PUT SKIP EDIT                                            09170000
+               (' SORTKEY_ALT: ' || SORTKEY_ALT)(A);                    09180000
+               SIGNAL ERROR;                                            09190000
+            END;                                                        09200000
+      END;                                                              09210000
+ END READ_CECRF;                                                        09220000
+-/*-------------------------------------------------------------------*/09230000
+ /***    SPEICHERN HASH TOTALS PARAM. RCB024 AUF PARAMETER TABLE    ***/09240000
+ /*-------------------------------------------------------------------*/09250000
+ SAVE_HASH_TOTALS : PROC;                                               09260000
+                                                                        09270000
+   TB_RCBV500                  = '';           /* INIT TABLESTRUCTURE */09280000
+   TB_RCBV500_I                = '';                                    09290000
+   RCB024_PARM.NUMBER          = 'RCB024';                              09300000
+   RCB024_PARM.PROC_ID         = 'US01';                                09310000
+   RCB024_PARM.CTRYNO          = '848';                                 09320000
+   RCB024_PARM.SEQ_NUMBER      = '01';                                  09330000
+   RCB024_PARM.TIME_STAMP      = HEADER.TIMESTAMP;                      09340000
+   RCB024_PARM.LENGTH_PARM     = CSTG (RCB024_PARM.TIME_STAMP) +        09350000
+                                 CSTG (RCB024_PARM.HASH_TOTAL);         09360000
+                                                                        09370000
+   RCB024_PARM.FILE_NAME  = 'RCBBAA0';                                  09380000
+   RCB024_PARM.HASH_TOTAL = HASH_TOTAL.RCBBAA0;                         09390000
+   CALL UPD_RCB024;                                                     09400000
+                                                                        09410000
+   RCB024_PARM.FILE_NAME  = 'RCBBAA1';                                  09420000
+   RCB024_PARM.HASH_TOTAL = HASH_TOTAL.RCBBAA1;                         09430000
+   CALL UPD_RCB024;                                                     09440000
+                                                                        09450000
+   RCB024_PARM.FILE_NAME  = 'RCBBAA2';                                  09460000
+   RCB024_PARM.HASH_TOTAL = HASH_TOTAL.RCBBAA2;                         09470000
+   CALL UPD_RCB024;                                                     09480000
+                                                                        09490000
+   RCB024_PARM.FILE_NAME  = 'RCBBAA4';                                  09500000
+   RCB024_PARM.HASH_TOTAL = HASH_TOTAL.RCBBAA4;                         09510000
+   CALL UPD_RCB024;                                                     09520000
+                                                                        09530000
+ END SAVE_HASH_TOTALS;                                                  09540000
+                                                                        09550000
+-/*-------------------------------------------------------------------*/09560000
+ /***    UPDATE PARAMETER RCB024 MIT HASH TOTALS                    ***/09570000
+ /*-------------------------------------------------------------------*/09580000
+ UPD_RCB024 : PROC;                                                     09590000
+                                    /* UPDATE PARAMETER RCB024    */    09600000
+   CALL RCBG50M (ADDR(TB_RCBV500),                                      09610000
+                 ADDR(TB_RCBV500_I),                                    09620000
+                 PTR_RETURN_AREA,                                       09630000
+                 PTR_INT_AREA);                                         09640000
+                                                                        09650000
+   SELECT(RETURN_AREA.RETURN_CODE);                                     09660000
+                                                                        09670000
+      WHEN (0);                                                         09680000
+      WHEN (4)                         /* WHEN NOT FOUND THEN INSERT  */09690000
+        DO;                                                             09700000
+          CALL RCBF50M (ADDR(TB_RCBV500),                               09710000
+                        ADDR(TB_RCBV500_I),                             09720000
+                        PTR_RETURN_AREA,                                09730000
+                        PTR_INT_AREA);                                  09740000
+          SELECT(RETURN_AREA.RETURN_CODE);                              09750000
+             WHEN (0);                                                  09760000
+             OTHERWISE                                                  09770000
+               DO;                                                      09780000
+                 CALL RCB024_ERROR  (ADDR (RETURN_AREA.RETURN_SQL),     09790000
+                                     'DB2',                             09800000
+                                     '#001');                           09810000
+               END;                                                     09820000
+          END;                                                          09830000
+      END;                                             /* END RETCD=4 */09840000
+      OTHERWISE                                                         09850000
+        DO;                                                             09860000
+          CALL RCB024_ERROR  (ADDR (RETURN_AREA.RETURN_SQL),            09870000
+                              'DB2',                                    09880000
+                              '#002');                                  09890000
+      END;                                                              09900000
+   END;                                                                 09910000
+ END UPD_RCB024;                                                        09920000
+                                                                        09930000
+-/*-------------------------------------------------------------------*/09940000
+ /***    AUSGABE FEHLERNACHRICHT MIT COMMON ERROR ROUTINE           ***/09950000
+ /*-------------------------------------------------------------------*/09960000
+ RCB024_ERROR: PROC     (PTR_ERROR,                                     09970000
+                         ERR_TYPE,                                      09980000
+                         CALL_ID);                                      09990000
+ DCL PTR_ERROR    PTR;                                                  10000000
+ DCL ERR_TYPE     CHAR(8);                                              10010000
+ DCL CALL_ID      CHAR(4);                                              10020000
+0INT_AREA.PTR_ERROR      = PTR_ERROR;                                   10030000
+ INT_AREA.ERR_TYPE       = ERR_TYPE;                                    10040000
+ INT_AREA.CALL_ID        = CALL_ID;                                     10050000
+0CALL RCB0E1M (PTR_INT_AREA);                                           10060000
+0END RCB024_ERROR;                                                      10070000
+-END SUG800M;                                                           10080000

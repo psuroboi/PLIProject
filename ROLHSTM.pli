@@ -1,0 +1,1375 @@
+ /********************************************************************/ 00010076
+ /* PROGRAM          : ROLHSTM                                       */ 00020076
+ /*                                                                  */ 00030076
+ /* LANGUAGE         : PLI                                           */ 00040076
+ /*                                                                  */ 00050076
+ /* TYPE             : BATCH                                         */ 00060076
+ /*                                                                  */ 00070076
+ /* DESCRIPTION      : BUILT TO CHECK THE HASH TOTAL FOR ANY FILE    */ 00080076
+ /*                    CREATED BY A CEDS                             */ 00090076
+ /*                                                                  */ 00100076
+ /*                                                                  */ 00110076
+ /*                                                                  */ 00120076
+ /* INPUT            : PROCESS NAME  (NAME OF THE DOWN STRAM PROCESS)*/ 00130076
+ /*                    INFIL   (INPUT DATA SET FOR WHICH HASH TOTAL  */ 00140076
+ /*                              HAS TO BE CALCULATED)               */ 00150076
+ /*                                                                  */ 00160076
+ /* OUTPUT           : HTFIL  (FILE CONTAINING THE HASH TOTAL VALUE) */ 00170076
+ /*                                                                  */ 00180076
+ /*                                                                  */ 00190076
+ /* EXTERNAL MODULES : NONE                                          */ 00200076
+ /*                                                                  */ 00210076
+ /* MESSAGES         :                                               */ 00220076
+ /*                                                                  */ 00230076
+ /* DEPENDENCIES     : NONE                                          */ 00240076
+ /*                                                                  */ 00250076
+ /* FREQUENCY        : USER DEPENDENT                                */ 00260076
+ /*                                                                  */ 00270076
+ /* MAINTENANCE LOG  :                                               */ 00280076
+ /* ---------------                                                  */ 00290076
+ /*                                                                  */ 00300076
+ /*  DATE     | WORK-ITEMNO. | DESCRIPTION                           */ 00310076
+ /*           |              |                                       */ 00320076
+ /* 2011-08-25| ----         | CEDS INITIAL DEVELOPMENT  TO CALCULATE*/ 00330076
+ /*           | ----         | HASH TOTAL FOR CEDS DOWNSTREAMS       */ 00340076
+ /* 2016-11-01| PCEDSP-0647  | (L) ADDITIONAL ONE TIME RUN JB FOR    */ 00341084
+ /*           |              | TRANSFORMING A FULL IN A DELTA FOR    */ 00342084
+ /*           |              | INITIAL DATA LOAD ON TETRIS           */ 00343084
+ /* --------------------------------------------------------------   */ 00350076
+ /********************************************************************/ 00360076
+ ROLHSTM:PROC (PARM)OPTIONS(MAIN) REORDER;                              00370076
+    DCL (ADDR,                                                          00380076
+         DATETIME,                                                      00390076
+         UNSPEC,                                                        00400076
+         TIME,                                                          00410076
+         SUBSTR) BUILTIN;                                               00420076
+ DCL INFIL FILE RECORD INPUT;                                           00430076
+ DCL SYSPRINT FILE EXTERNAL PRINT;                                      00440076
+                                                                        00450076
+ DCL REC_INFIL         CHAR (1400) VARYING INIT('');                    00460076
+ DCL WRK_HASH_DEC      FIXED DEC(15,0) INIT(0);                         00470076
+ DCL HASH_TOTAL        FIXED DEC(15,0) INIT(0);                         00480076
+ DCL HASH_TOTAL_PIC    PIC '(15)9'     INIT(0);                         00490076
+ DCL INFIL_COUNT       FIXED DEC(15,0) INIT(0);                         00500076
+ DCL HASH_FIELD        CHAR(4) INIT('');                                00510076
+ DCL HASH_FILE_NAME    CHAR(7) INIT('');                                00520076
+ DCL CSET              CHAR(2) INIT('');                                00530076
+ DCL COUNTRY_NUMBER    CHAR(3) INIT('');                                00540076
+ DCL COUNTRY_NAME      CHAR(30) VARYING INIT('');                       00550076
+                                                                        00560076
+ DCL PARM CHAR(20) VARYING;                                             00570076
+ DCL 1 WRK_PARM BASED(ADDR(PARM)),                                      00580076
+       3 LENGTH FIXED BIN (15),                                         00590076
+       3 LVL2    CHAR(4),                                               00600076
+       3 PROC_ID CHAR (4),                                              00610076
+       3 FILE_NAME CHAR (8);                                            00620076
+                                                                        00630076
+ DCL EOF_INFIL     BIT(1) INIT('0'B);                                   00640076
+ DCL VALID_PROCESS BIT(1) INIT('1'B);                                   00650076
+ DCL VALID_FILE    BIT(1) INIT('1'B);                                   00660076
+                                                                        00670076
+ ON ENDFILE(INFIL)                                                      00680076
+ BEGIN;                                                                 00690076
+       EOF_INFIL = '1'B;                                                00700076
+ END;                                                                   00710076
+ WRK_HASH_DEC     = 0;                                                  00720076
+ HASH_TOTAL       = 0;                                                  00730076
+ HASH_TOTAL_PIC   = 0;                                                  00740076
+ HASH_FILE_NAME   = '';                                                 00750076
+                                                                        00760076
+ SELECT (WRK_PARM.PROC_ID);                                             00770076
+   WHEN ('DB02')                                                        00780076
+   DO;                                                                  00790076
+      IF WRK_PARM.FILE_NAME = 'RCBDBCF0' |                              00800076
+         WRK_PARM.FILE_NAME = 'RCBDBDF2' |                              00810076
+         WRK_PARM.FILE_NAME = 'RCBDBDF3'                                00820076
+      THEN DO;                                                          00830076
+        CALL READ_INFIL;                                                00840076
+        DO WHILE(¬EOF_INFIL);                                           00850076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               00860076
+           IF SUBSTR(REC_INFIL,1,20) ¬= '' &                            00870076
+              SUBSTR(REC_INFIL,1,20) ¬= '99999999999999999999'          00880076
+           THEN DO;                                                     00890076
+              HASH_FIELD = SUBSTR(REC_INFIL,10,4);                      00900076
+              CALL ROLHSTM_CALC_HT;                                     00910076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   00920076
+           END;                                                         00930076
+           CALL READ_INFIL;                                             00940076
+        END;                                                            00950076
+      END;                                                              00960076
+      ELSE                                                              00970076
+      DO;                                                               00980076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION  :'   00990076
+         || WRK_PARM.PROC_ID ||'/'||WRK_PARM.FILE_NAME);                01000076
+         VALID_FILE = '0'B;                                             01010076
+      END;                                                              01020076
+      IF WRK_PARM.FILE_NAME = 'RCBDBCF0'  |                             01030076
+         WRK_PARM.FILE_NAME = 'RCBDBDF3'                                01040076
+            THEN HASH_FILE_NAME = 'RCBDBC1' ;                           01050076
+      IF WRK_PARM.FILE_NAME = 'RCBDBDF2'                                01060076
+            THEN HASH_FILE_NAME = 'RCBDBD2';                            01070076
+   END;                                                                 01080076
+   WHEN ('DC02')                                                        01090076
+   DO;                                                                  01100076
+      IF WRK_PARM.FILE_NAME = 'RCBDCBF0' |                              01110076
+         WRK_PARM.FILE_NAME = 'RCBDCBF1' |                              01120076
+         WRK_PARM.FILE_NAME = 'RCBDCCF1' |                              01130076
+         WRK_PARM.FILE_NAME = 'RCBDCCF2' |                              01140076
+         WRK_PARM.FILE_NAME = 'RCBDCCF3' |                              01150076
+         WRK_PARM.FILE_NAME = 'RCBDCCS3' |                              01160076
+         WRK_PARM.FILE_NAME = 'RCBDCDS1' |                              01170076
+         WRK_PARM.FILE_NAME = 'RCBDCDF1'                                01180076
+      THEN DO;                                                          01190076
+        CALL READ_INFIL;                                                01200076
+        DO WHILE(¬EOF_INFIL);                                           01210076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               01220076
+           IF SUBSTR(REC_INFIL,1,20) ¬= '' &                            01230076
+              SUBSTR(REC_INFIL,1,20) ¬= '99999999999999999999'          01240076
+           THEN DO;                                                     01250076
+              HASH_FIELD = SUBSTR(REC_INFIL,3,4);                       01260076
+              CALL ROLHSTM_CALC_HT;                                     01270076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   01280076
+           END;                                                         01290076
+           CALL READ_INFIL;                                             01300076
+        END;                                                            01310076
+      END;                                                              01320076
+      ELSE                                                              01330076
+      DO;                                                               01340076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    01350076
+         VALID_FILE = '0'B;                                             01360076
+      END;                                                              01370076
+      IF WRK_PARM.FILE_NAME = 'RCBDCBF0' |                              01380076
+         WRK_PARM.FILE_NAME = 'RCBDCCF1'                                01390076
+          THEN HASH_FILE_NAME = 'RCBDCB1';                              01400076
+      IF WRK_PARM.FILE_NAME = 'RCBDCBF1' |                              01410076
+         WRK_PARM.FILE_NAME = 'RCBDCCF2'                                01420076
+          THEN HASH_FILE_NAME = 'RCBDCB2';                              01430076
+      IF WRK_PARM.FILE_NAME = 'RCBDCCF3' |                              01440076
+         WRK_PARM.FILE_NAME = 'RCBDCCS3'                                01450076
+          THEN HASH_FILE_NAME = 'RCBDCC%';                              01460076
+      IF WRK_PARM.FILE_NAME = 'RCBDCDS1' |                              01470076
+         WRK_PARM.FILE_NAME = 'RCBDCDF1'                                01480076
+          THEN HASH_FILE_NAME = 'RCBDCD1';                              01490076
+   END;                                                                 01500076
+   WHEN ('DP01')                                                        01510076
+   DO;                                                                  01520076
+      IF WRK_PARM.FILE_NAME = 'RCBDPBF0' |                              01530076
+         WRK_PARM.FILE_NAME = 'RCBDPCF1' |                              01540076
+         WRK_PARM.FILE_NAME = 'RCBDPCF2'                                01550076
+      THEN DO;                                                          01560076
+        CALL READ_INFIL;                                                01570076
+        DO WHILE(¬EOF_INFIL);                                           01580076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               01590076
+           IF SUBSTR(REC_INFIL,1,20) ¬= '' &                            01600076
+              SUBSTR(REC_INFIL,1,20) ¬= '99999999999999999999'          01610076
+           THEN DO;                                                     01620076
+              HASH_FIELD = SUBSTR(REC_INFIL,22,4);                      01630076
+              CALL ROLHSTM_CALC_HT;                                     01640076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   01650076
+           END;                                                         01660076
+           CALL READ_INFIL;                                             01670076
+        END;                                                            01680076
+      END;                                                              01690076
+      ELSE                                                              01700076
+      DO;                                                               01710076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    01720076
+         VALID_FILE = '0'B;                                             01730076
+      END;                                                              01740076
+      IF WRK_PARM.FILE_NAME = 'RCBDPBF0' |                              01750076
+         WRK_PARM.FILE_NAME = 'RCBDPCF1'                                01760076
+         THEN HASH_FILE_NAME = 'RCBDPB1';                               01770076
+                                                                        01780076
+      IF WRK_PARM.FILE_NAME = 'RCBDPCF2'                                01790076
+         THEN HASH_FILE_NAME = 'RCBDPC2';                               01800076
+   END;                                                                 01810076
+   WHEN ('DP03')                                                        01820076
+   DO;                                                                  01830076
+      IF WRK_PARM.FILE_NAME = 'RCBDPHF2'                                01840076
+      THEN DO;                                                          01850076
+        CALL READ_INFIL;                                                01860076
+        DO WHILE(¬EOF_INFIL);                                           01870076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               01880076
+           IF SUBSTR(REC_INFIL,1,20) ¬= '' &                            01890076
+              SUBSTR(REC_INFIL,1,20) ¬= '99999999999999999999'          01900076
+           THEN DO;                                                     01910076
+              HASH_FIELD = SUBSTR(REC_INFIL,26,4);                      01920076
+              CALL ROLHSTM_CALC_HT;                                     01930076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   01940076
+           END;                                                         01950076
+           CALL READ_INFIL;                                             01960076
+        END;                                                            01970076
+      END;                                                              01980076
+      ELSE                                                              01990076
+      DO;                                                               02000076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    02010076
+         VALID_FILE = '0'B;                                             02020076
+      END;                                                              02030076
+      IF WRK_PARM.FILE_NAME = 'RCBDPHF2'                                02040076
+         THEN HASH_FILE_NAME = 'RCBDPH2';                               02050076
+   END;                                                                 02060076
+   WHEN ('DR01')                                                        02070076
+   DO;                                                                  02080076
+      IF WRK_PARM.FILE_NAME = 'RCBDRAF0'                                02090076
+      THEN DO;                                                          02100076
+        CALL READ_INFIL;                                                02110076
+        DO WHILE(¬EOF_INFIL);                                           02120076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               02130076
+           IF SUBSTR(REC_INFIL,1,4) = 'M364'                            02140076
+           THEN DO;                                                     02150076
+              HASH_FIELD = SUBSTR(REC_INFIL,10,4);                      02160076
+              CALL ROLHSTM_CALC_HT;                                     02170076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   02180076
+           END;                                                         02190076
+           CALL READ_INFIL;                                             02200076
+        END;                                                            02210076
+      END;                                                              02220076
+   END;                                                                 02230076
+   WHEN ('DR02')                                                        02240076
+   DO;                                                                  02250076
+      IF WRK_PARM.FILE_NAME = 'RCBDRBF0'                                02260076
+      THEN DO;                                                          02270076
+        CALL READ_INFIL;                                                02280076
+        DO WHILE(¬EOF_INFIL);                                           02290076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               02300076
+           IF SUBSTR(REC_INFIL,1,4) = 'M365'                            02310076
+           THEN DO;                                                     02320076
+              HASH_FIELD = SUBSTR(REC_INFIL,6,4);                       02330076
+              CALL ROLHSTM_CALC_HT;                                     02340076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   02350076
+           END;                                                         02360076
+           CALL READ_INFIL;                                             02370076
+        END;                                                            02380076
+      END;                                                              02390076
+   END;                                                                 02400076
+   WHEN ('DR03')                                                        02410076
+   DO;                                                                  02420076
+      IF WRK_PARM.FILE_NAME = 'RCBDRCF0'                                02430076
+      THEN DO;                                                          02440076
+        CALL READ_INFIL;                                                02450076
+        DO WHILE(¬EOF_INFIL);                                           02460076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               02470076
+           IF SUBSTR(REC_INFIL,1,4) = 'M366'                            02480076
+           THEN DO;                                                     02490076
+              HASH_FIELD = SUBSTR(REC_INFIL,6,4);                       02500076
+              CALL ROLHSTM_CALC_HT;                                     02510076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   02520076
+           END;                                                         02530076
+           CALL READ_INFIL;                                             02540076
+        END;                                                            02550076
+      END;                                                              02560076
+   END;                                                                 02570076
+   WHEN ('DR04')                                                        02580076
+   DO;                                                                  02590076
+      IF WRK_PARM.FILE_NAME = 'RCBDRDF0'                                02600076
+      THEN DO;                                                          02610076
+        CALL READ_INFIL;                                                02620076
+        DO WHILE(¬EOF_INFIL);                                           02630076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               02640076
+           IF SUBSTR(REC_INFIL,1,4) = 'M36B'                            02650076
+           THEN DO;                                                     02660076
+              HASH_FIELD = SUBSTR(REC_INFIL,6,4);                       02670076
+              CALL ROLHSTM_CALC_HT;                                     02680076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   02690076
+           END;                                                         02700076
+           CALL READ_INFIL;                                             02710076
+        END;                                                            02720076
+      END;                                                              02730076
+   END;                                                                 02740076
+   WHEN ('DR05')                                                        02750076
+   DO;                                                                  02760076
+      IF WRK_PARM.FILE_NAME = 'RCBDRFS2'|                               02770076
+         WRK_PARM.FILE_NAME = 'RCBDRFF2'|                               02780076
+         WRK_PARM.FILE_NAME = 'RCBDRGF2'|                               02790076
+         WRK_PARM.FILE_NAME = 'RCBDRGFA'                                02800076
+      THEN DO;                                                          02810076
+        CALL READ_INFIL;                                                02820076
+        DO WHILE(¬EOF_INFIL);                                           02830076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               02840076
+           IF SUBSTR(REC_INFIL,1,4) = 'M363'                            02850076
+           THEN DO;                                                     02860076
+              HASH_FIELD = SUBSTR(REC_INFIL,8,4);                       02870076
+              CALL ROLHSTM_CALC_HT;                                     02880076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   02890076
+           END;                                                         02900076
+           CALL READ_INFIL;                                             02910076
+        END;                                                            02920076
+      END;                                                              02930076
+      ELSE                                                              02940076
+      DO;                                                               02950076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    02960076
+         VALID_FILE = '0'B;                                             02970076
+      END;                                                              02980076
+      IF WRK_PARM.FILE_NAME = 'RCBDRFS2'|                               02990076
+         WRK_PARM.FILE_NAME = 'RCBDRFF2'|                               03000076
+         WRK_PARM.FILE_NAME = 'RCBDRGFA'                                03010076
+         THEN HASH_FILE_NAME = 'RCBDRF1';                               03020076
+      IF WRK_PARM.FILE_NAME = 'RCBDRGF2'                                03030076
+         THEN HASH_FILE_NAME = 'RCBDRG2';                               03040076
+   END;                                                                 03050076
+   WHEN ('DR06')                                                        03060076
+   DO;                                                                  03070076
+      IF WRK_PARM.FILE_NAME = 'RCBDRIF2' |                              03080076
+         WRK_PARM.FILE_NAME = 'RCBDRIF3' |                              03090076
+         WRK_PARM.FILE_NAME = 'RCBDRJF2'                                03100085
+      THEN DO;                                                          03110076
+        CALL READ_INFIL;                                                03120076
+        DO WHILE(¬EOF_INFIL);                                           03130076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               03140076
+           IF SUBSTR(REC_INFIL,1,4) = 'M362'                            03150076
+           THEN DO;                                                     03160076
+              HASH_FIELD = SUBSTR(REC_INFIL,14,4);                      03170076
+              CALL ROLHSTM_CALC_HT;                                     03180076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   03190076
+           END;                                                         03200076
+           CALL READ_INFIL;                                             03210076
+        END;                                                            03220076
+      END;                                                              03230076
+      ELSE                                                              03240076
+      IF WRK_PARM.FILE_NAME = 'RCBDRJFA'                                03241085
+      THEN DO;                                                          03242085
+        CALL READ_INFIL;                                                03243085
+        DO WHILE(¬EOF_INFIL);                                           03244085
+           INFIL_COUNT = INFIL_COUNT +1 ;                               03245085
+           IF SUBSTR(REC_INFIL,1,4) = 'M362'                            03246085
+           THEN DO;                                                     03247085
+              HASH_FIELD = SUBSTR(REC_INFIL,12,4);                      03248085
+              CALL ROLHSTM_CALC_HT;                                     03249085
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   03249185
+           END;                                                         03249285
+           CALL READ_INFIL;                                             03249385
+        END;                                                            03249485
+      END;                                                              03249585
+      ELSE                                                              03249685
+      DO;                                                               03250076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    03260076
+         VALID_FILE = '0'B;                                             03270076
+      END;                                                              03280076
+      IF WRK_PARM.FILE_NAME = 'RCBDRIF2' |                              03290076
+         WRK_PARM.FILE_NAME = 'RCBDRIF3'                                03300076
+         THEN HASH_FILE_NAME = 'RCBDRI1';                               03310076
+      IF WRK_PARM.FILE_NAME = 'RCBDRJF2'                                03320085
+         THEN HASH_FILE_NAME = 'RCBDRJ2';                               03330076
+      IF WRK_PARM.FILE_NAME = 'RCBDRJFA'                                03331085
+         THEN HASH_FILE_NAME = 'RCBDRI1';                               03332085
+   END;                                                                 03340076
+   WHEN ('DR07')                                                        03590076
+   DO;                                                                  03600076
+      IF WRK_PARM.FILE_NAME = 'RCBDRLF0' |                              03610076
+         WRK_PARM.FILE_NAME = 'RCBDRMF2' |                              03620076
+         WRK_PARM.FILE_NAME = 'RCBDRMFA' |                              03630076
+         WRK_PARM.FILE_NAME = 'RCBDRMSA'                                03640076
+      THEN DO;                                                          03650076
+        CALL READ_INFIL;                                                03660076
+        DO WHILE(¬EOF_INFIL);                                           03670076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               03680076
+           IF SUBSTR(REC_INFIL,1,4) = 'M36A'                            03690076
+           THEN DO;                                                     03700076
+              HASH_FIELD = SUBSTR(REC_INFIL,36,4);                      03710076
+              CALL ROLHSTM_CALC_HT;                                     03720076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   03730076
+           END;                                                         03740076
+           CALL READ_INFIL;                                             03750076
+        END;                                                            03760076
+      END;                                                              03770076
+      ELSE                                                              03780076
+      DO;                                                               03790076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    03800076
+         VALID_FILE = '0'B;                                             03810076
+      END;                                                              03820076
+      IF WRK_PARM.FILE_NAME = 'RCBDRLF0' |                              03830076
+         WRK_PARM.FILE_NAME = 'RCBDRMFA' |                              03840076
+         WRK_PARM.FILE_NAME = 'RCBDRMSA'                                03850076
+         THEN HASH_FILE_NAME = 'RCBDRL1';                               03860076
+      IF WRK_PARM.FILE_NAME = 'RCBDRMF2'                                03870076
+         THEN HASH_FILE_NAME = 'RCBDRM2';                               03880076
+   END;                                                                 03890076
+   WHEN ('DS01')                                                        03900076
+   DO;                                                                  03910076
+      IF WRK_PARM.FILE_NAME = 'RCBDSBF0' |                              03920076
+         WRK_PARM.FILE_NAME = 'RCBDSBS1' |                              03930076
+         WRK_PARM.FILE_NAME = 'RCBDSCF2'                                03940076
+      THEN DO;                                                          03950076
+        CALL READ_INFIL;                                                03960076
+        DO WHILE(¬EOF_INFIL);                                           03970076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               03980076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       03990076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        04000076
+           THEN DO;                                                     04010076
+              HASH_FIELD = SUBSTR(REC_INFIL,86,4);                      04020076
+              CALL ROLHSTM_CALC_HT;                                     04030076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   04040076
+           END;                                                         04050076
+           CALL READ_INFIL;                                             04060076
+        END;                                                            04070076
+      END;                                                              04080076
+      ELSE                                                              04090076
+      DO;                                                               04100076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    04110076
+         VALID_FILE = '0'B;                                             04120076
+      END;                                                              04130076
+      IF WRK_PARM.FILE_NAME = 'RCBDSBF0' |                              04140076
+         WRK_PARM.FILE_NAME = 'RCBDSBS1'                                04150076
+         THEN HASH_FILE_NAME = 'RCBDSB1';                               04160076
+      IF WRK_PARM.FILE_NAME = 'RCBDSCF2'                                04170076
+         THEN HASH_FILE_NAME = 'RCBDSC2';                               04180076
+   END;                                                                 04190076
+   WHEN ('DS02')                                                        04200076
+   DO;                                                                  04210076
+      IF WRK_PARM.FILE_NAME = 'RCBDSEF0' |                              04220076
+         WRK_PARM.FILE_NAME = 'RCBDSFF2'                                04230076
+      THEN DO;                                                          04240076
+        CALL READ_INFIL;                                                04250076
+        DO WHILE(¬EOF_INFIL);                                           04260076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               04270076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       04280076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        04290076
+           THEN DO;                                                     04300076
+              HASH_FIELD = SUBSTR(REC_INFIL,7,4);                       04310076
+              CALL ROLHSTM_CALC_HT;                                     04320076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   04330076
+           END;                                                         04340076
+           CALL READ_INFIL;                                             04350076
+        END;                                                            04360076
+      END;                                                              04370076
+      ELSE                                                              04380076
+      DO;                                                               04390076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    04400076
+         VALID_FILE = '0'B;                                             04410076
+      END;                                                              04420076
+      IF WRK_PARM.FILE_NAME = 'RCBDSEF0'                                04430076
+         THEN HASH_FILE_NAME = 'RCBDSE1';                               04440076
+      IF WRK_PARM.FILE_NAME = 'RCBDSFF2'                                04450076
+         THEN HASH_FILE_NAME = 'RCBDSF2';                               04460076
+   END;                                                                 04470076
+   WHEN ('DT01')                                                        04480076
+   DO;                                                                  04490076
+      IF WRK_PARM.FILE_NAME = 'RCBDTBF0' |                              04500076
+         WRK_PARM.FILE_NAME = 'RCBDTCF2'                                04510076
+      THEN DO;                                                          04520076
+        CALL READ_INFIL;                                                04530076
+        DO WHILE(¬EOF_INFIL);                                           04540076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               04550076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       04560076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        04570076
+           THEN DO;                                                     04580076
+              HASH_FIELD = SUBSTR(REC_INFIL,12,4);                      04590076
+              CALL ROLHSTM_CALC_HT;                                     04600076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   04610076
+           END;                                                         04620076
+           CALL READ_INFIL;                                             04630076
+        END;                                                            04640076
+      END;                                                              04650076
+      ELSE                                                              04660076
+      DO;                                                               04670076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    04680076
+         VALID_FILE = '0'B;                                             04690076
+      END;                                                              04700076
+      IF WRK_PARM.FILE_NAME = 'RCBDTBF0'                                04710076
+         THEN HASH_FILE_NAME = 'RCBDTB1';                               04720076
+      IF WRK_PARM.FILE_NAME = 'RCBDTCF2'                                04730076
+         THEN HASH_FILE_NAME = 'RCBDTC2';                               04740076
+   END;                                                                 04750076
+   WHEN ('DT03')                                                        04760076
+   DO;                                                                  04770076
+      IF WRK_PARM.FILE_NAME = 'RCBDTFF0' |                              04780076
+         WRK_PARM.FILE_NAME = 'RCBDTGF2'                                04790076
+      THEN DO;                                                          04800076
+        CALL READ_INFIL;                                                04810076
+        DO WHILE(¬EOF_INFIL);                                           04820076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               04830076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       04840076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        04850076
+           THEN DO;                                                     04860076
+              HASH_FIELD = SUBSTR(REC_INFIL,15,4);                      04870076
+              CALL ROLHSTM_CALC_HT;                                     04880076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   04890076
+           END;                                                         04900076
+           CALL READ_INFIL;                                             04910076
+        END;                                                            04920076
+      END;                                                              04930076
+      ELSE                                                              04940076
+      DO;                                                               04950076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    04960076
+         VALID_FILE = '0'B;                                             04970076
+      END;                                                              04980076
+      IF WRK_PARM.FILE_NAME = 'RCBDTFF0'                                04990076
+          THEN HASH_FILE_NAME = 'RCBDTF1';                              05000076
+      IF WRK_PARM.FILE_NAME = 'RCBDTGF2'                                05010076
+          THEN HASH_FILE_NAME = 'RCBDTG2';                              05020076
+   END;                                                                 05030076
+   WHEN ('DT07')                                                        05040076
+   DO;                                                                  05050076
+      IF WRK_PARM.FILE_NAME = 'RCBDTOF2'                                05060076
+      THEN DO;                                                          05070076
+        CALL READ_INFIL;                                                05080076
+        DO WHILE(¬EOF_INFIL);                                           05090076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               05100076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       05110076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        05120076
+           THEN DO;                                                     05130076
+              HASH_FIELD = SUBSTR(REC_INFIL,5,4);                       05140079
+              CALL ROLHSTM_CALC_HT;                                     05150076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   05160076
+           END;                                                         05170076
+           CALL READ_INFIL;                                             05180076
+        END;                                                            05190076
+      END;                                                              05200076
+      ELSE                                                              05210076
+      DO;                                                               05220076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    05230076
+         VALID_FILE = '0'B;                                             05240076
+      END;                                                              05250076
+      IF WRK_PARM.FILE_NAME = 'RCBDTOF2'                                05260076
+         THEN HASH_FILE_NAME = 'RCBDTO2';                               05270076
+   END;                                                                 05280076
+   WHEN ('DT08')                                                        05290076
+   DO;                                                                  05300076
+      IF WRK_PARM.FILE_NAME = 'RCBDTRF2'                                05310076
+      THEN DO;                                                          05320076
+        CALL READ_INFIL;                                                05330076
+        DO WHILE(¬EOF_INFIL);                                           05340076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               05350076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       05360076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        05370076
+           THEN DO;                                                     05380076
+              HASH_FIELD = SUBSTR(REC_INFIL,12,4);                      05390076
+              CALL ROLHSTM_CALC_HT;                                     05400076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   05410076
+           END;                                                         05420076
+           CALL READ_INFIL;                                             05430076
+        END;                                                            05440076
+      END;                                                              05450076
+      ELSE                                                              05460076
+      DO;                                                               05470076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    05480076
+         VALID_FILE = '0'B;                                             05490076
+      END;                                                              05500076
+      IF WRK_PARM.FILE_NAME = 'RCBDTRF2'                                05510076
+         THEN HASH_FILE_NAME = 'RCBDTR2';                               05520076
+   END;                                                                 05530076
+   WHEN ('DT04')                                                        05540076
+   DO;                                                                  05550076
+      IF WRK_PARM.FILE_NAME = 'RCBDTIF0' |                              05560076
+         WRK_PARM.FILE_NAME = 'RCBDTJF2'                                05570076
+      THEN DO;                                                          05580076
+        CALL READ_INFIL;                                                05590076
+        DO WHILE(¬EOF_INFIL);                                           05600076
+           INFIL_COUNT = INFIL_COUNT +1 ;                               05610076
+           IF SUBSTR(REC_INFIL,1,20) ¬= LOW(20) &                       05620076
+              SUBSTR(REC_INFIL,1,20) ¬= HIGH(20)                        05630076
+           THEN DO;                                                     05640076
+              HASH_FIELD = SUBSTR(REC_INFIL,5,4);                       05650076
+              CALL ROLHSTM_CALC_HT;                                     05660076
+              HASH_TOTAL = HASH_TOTAL + WRK_HASH_DEC;                   05670076
+           END;                                                         05680076
+           CALL READ_INFIL;                                             05690076
+        END;                                                            05700076
+      END;                                                              05710076
+      ELSE                                                              05720076
+      DO;                                                               05730076
+         PUT SKIP LIST('INVALID PROCESS AND FILE NAME COMBINATION');    05740076
+         VALID_FILE = '0'B;                                             05750076
+      END;                                                              05760076
+      IF WRK_PARM.FILE_NAME = 'RCBDTIF0'                                05770076
+         THEN HASH_FILE_NAME = 'RCBDTI1';                               05780076
+      IF WRK_PARM.FILE_NAME = 'RCBDTJF2'                                05790076
+         THEN HASH_FILE_NAME = 'RCBDTJ2';                               05800076
+   END;                                                                 05810076
+   OTHERWISE                                                            05820076
+   DO;                                                                  05830076
+    VALID_PROCESS = '0'B;                                               05840076
+    PUT SKIP LIST('THE PROCESS NAME '||''''||WRK_PARM.PROC_ID||         05850076
+                  ''''|| ' SELECTED IS INVALID');                       05860076
+   END;                                                                 05870076
+ END;                                                                   05880076
+ CALL SET_CSET;                                                         05890076
+ ROLHSTM_CALC_HT: PROC;                                                 05900076
+ WRK_HASH_DEC =    (5 * UNSPEC (SUBSTR (HASH_FIELD,1,1 ))) +            05910076
+                   (3 * UNSPEC (SUBSTR (HASH_FIELD,2,1 ))) +            05920076
+                   (2 * UNSPEC (SUBSTR (HASH_FIELD,3,1 ))) +            05930076
+                        UNSPEC (SUBSTR (HASH_FIELD,4,1 ))  ;            05940076
+ END ROLHSTM_CALC_HT;                                                   05950076
+ READ_INFIL: PROC;                                                      05960076
+   READ FILE (INFIL) INTO (REC_INFIL);                                  05970076
+ END READ_INFIL;                                                        05980076
+                                                                        05990076
+ SET_CSET: PROC;                                                        06000076
+                                                                        06010076
+ IF WRK_PARM.LVL2 = 'ROCA'                                              06020076
+     THEN DO ;                                                          06030076
+         CSET = 'CA' ;                                                  06040076
+         COUNTRY_NUMBER = '';                                           06050076
+         COUNTRY_NAME = 'ALL CENTRAL INCLUDING GERMANY';                06060076
+     END;                                                               06070076
+ IF WRK_PARM.LVL2 = 'ROCC'                                              06080076
+     THEN DO ;                                                          06090076
+         CSET = 'CC' ;                                                  06100076
+         COUNTRY_NUMBER = '';                                           06110076
+         COUNTRY_NAME   = 'ALL CENTRAL EXCEPT GERMANY';                 06120076
+     END;                                                               06130076
+ IF WRK_PARM.LVL2 = 'ROGA'                                              06131078
+     THEN DO ;                                                          06132078
+         CSET = 'GA' ;                                                  06133078
+         COUNTRY_NUMBER = '';                                           06134078
+         COUNTRY_NAME   = 'ALL GMEA (CEEMEA 16)      ';                 06135078
+     END;                                                               06136078
+ IF WRK_PARM.LVL2 = 'R853'                                              06137081
+     THEN DO ;                                                          06138081
+         CSET = 'G1' ;                                                  06139081
+         COUNTRY_NUMBER = '853';                                        06139181
+         COUNTRY_NAME   = 'SWAZILAND';                                  06139281
+     END;                                                               06139381
+ IF WRK_PARM.LVL2 = 'R860'                                              06139481
+     THEN DO ;                                                          06139581
+         CSET = 'G2' ;                                                  06139681
+         COUNTRY_NUMBER = '860';                                        06139781
+         COUNTRY_NAME   = 'NAMIBIA';                                    06139881
+     END;                                                               06139981
+ IF WRK_PARM.LVL2 = 'R854'                                              06140081
+     THEN DO ;                                                          06140181
+         CSET = 'G7' ;                                                  06140281
+         COUNTRY_NUMBER = '854';                                        06140381
+         COUNTRY_NAME   = 'MAURITIUS ISLANDS         ';                 06140481
+     END;                                                               06140581
+ IF WRK_PARM.LVL2 = 'R610'                                              06140681
+     THEN DO ;                                                          06140781
+         CSET = 'GB' ;                                                  06140881
+         COUNTRY_NUMBER = '610';                                        06140981
+         COUNTRY_NAME   = 'ANGOLA';                                     06141081
+     END;                                                               06141181
+ IF WRK_PARM.LVL2 = 'R635'                                              06141281
+     THEN DO ;                                                          06141381
+         CSET = 'GC' ;                                                  06141481
+         COUNTRY_NUMBER = '635';                                        06141581
+         COUNTRY_NAME   = 'SENEGAL';                                    06141681
+     END;                                                               06141781
+ IF WRK_PARM.LVL2 = 'R725'                                              06142481
+     THEN DO ;                                                          06142581
+         CSET = 'GF' ;                                                  06142681
+         COUNTRY_NUMBER = '725';                                        06142781
+         COUNTRY_NAME   = 'GHANA';                                      06142881
+     END;                                                               06142981
+ IF WRK_PARM.LVL2 = 'R729'                                              06143081
+     THEN DO ;                                                          06143181
+         CSET = 'GG' ;                                                  06143281
+         COUNTRY_NUMBER = '729';                                        06143381
+         COUNTRY_NAME   = 'TUNISIA';                                    06143481
+     END;                                                               06143581
+ IF WRK_PARM.LVL2 = 'R764'                                              06143681
+     THEN DO ;                                                          06143781
+         CSET = 'GH' ;                                                  06143881
+         COUNTRY_NUMBER = '764';                                        06143981
+         COUNTRY_NAME   = 'KENYA';                                      06144081
+     END;                                                               06144181
+ IF WRK_PARM.LVL2 = 'R804'                                              06144281
+     THEN DO ;                                                          06144381
+         CSET = 'GI' ;                                                  06144481
+         COUNTRY_NUMBER = '804';                                        06144581
+         COUNTRY_NAME   = 'NIGERIA';                                    06144681
+     END;                                                               06144781
+ IF WRK_PARM.LVL2 = 'R832'                                              06144881
+     THEN DO ;                                                          06144981
+         CSET = 'GL' ;                                                  06145081
+         COUNTRY_NUMBER = '832';                                        06145181
+         COUNTRY_NAME   = 'SAUDI ARABIA';                               06145281
+     END;                                                               06145381
+ IF WRK_PARM.LVL2 = 'R851'                                              06145481
+     THEN DO ;                                                          06145581
+         CSET = 'GM' ;                                                  06145681
+         COUNTRY_NUMBER = '851';                                        06145781
+         COUNTRY_NAME   = 'TANZANIA';                                   06145881
+     END;                                                               06145981
+ IF WRK_PARM.LVL2 = 'R865'                                              06146081
+     THEN DO ;                                                          06146181
+         CSET = 'GN' ;                                                  06146281
+         COUNTRY_NUMBER = '865';                                        06146381
+         COUNTRY_NAME   = 'EGYPT';                                      06146481
+     END;                                                               06146581
+ IF WRK_PARM.LVL2 = 'R229'                                              06146681
+     THEN DO ;                                                          06146781
+         CSET = 'GP' ;                                                  06146881
+         COUNTRY_NUMBER = '229';                                        06146981
+         COUNTRY_NAME   = 'ALGERIA';                                    06147081
+     END;                                                               06147181
+ IF WRK_PARM.LVL2 = 'R602'                                              06147281
+     THEN DO ;                                                          06147381
+         CSET = 'GQ' ;                                                  06147481
+         COUNTRY_NUMBER = '602';                                        06147581
+         COUNTRY_NAME   = 'ESTONIA';                                    06147681
+     END;                                                               06147781
+ IF WRK_PARM.LVL2 = 'R608'                                              06147881
+     THEN DO ;                                                          06147981
+         CSET = 'GR' ;                                                  06148081
+         COUNTRY_NUMBER = '608';                                        06148181
+         COUNTRY_NAME   = 'LATVIA';                                     06148281
+     END;                                                               06148381
+ IF WRK_PARM.LVL2 = 'R614'                                              06148481
+     THEN DO ;                                                          06148581
+         CSET = 'GS' ;                                                  06148681
+         COUNTRY_NUMBER = '614';                                        06148781
+         COUNTRY_NAME   = 'AFGHANISTAN';                                06148881
+     END;                                                               06148981
+ IF WRK_PARM.LVL2 = 'R638'                                              06149081
+     THEN DO ;                                                          06149181
+         CSET = 'GT' ;                                                  06149281
+         COUNTRY_NUMBER = '638';                                        06149381
+         COUNTRY_NAME   = 'LITHUNIA';                                   06149481
+     END;                                                               06149581
+ IF WRK_PARM.LVL2 = 'R711'                                              06149681
+     THEN DO ;                                                          06149781
+         CSET = 'GV' ;                                                  06149881
+         COUNTRY_NUMBER = '711';                                        06149981
+         COUNTRY_NAME   = 'LESOTHO';                                    06150081
+     END;                                                               06150181
+ IF WRK_PARM.LVL2 = 'R752'                                              06150281
+     THEN DO ;                                                          06150381
+         CSET = 'GW' ;                                                  06150481
+         COUNTRY_NUMBER = '752';                                        06150581
+         COUNTRY_NAME   = 'IRAQ';                                       06150681
+     END;                                                               06150781
+ IF WRK_PARM.LVL2 = 'R772'                                              06150881
+     THEN DO ;                                                          06150981
+         CSET = 'GX' ;                                                  06151081
+         COUNTRY_NUMBER = '772';                                        06151181
+         COUNTRY_NAME   = 'LIBYA';                                      06151281
+     END;                                                               06151381
+ IF WRK_PARM.LVL2 = 'R373'                                              06151481
+     THEN DO ;                                                          06151581
+         CSET = 'GY' ;                                                  06151681
+         COUNTRY_NUMBER = '373';                                        06151781
+         COUNTRY_NAME   = 'MAURITIUS ISLANDS ';                         06151881
+     END;                                                               06151981
+ IF WRK_PARM.LVL2 = 'R675'                                              06152081
+     THEN DO ;                                                          06152181
+         CSET = 'GZ' ;                                                  06152281
+         COUNTRY_NUMBER = '675';                                        06152381
+         COUNTRY_NAME   = 'GMEA IBM ';                                  06152481
+     END;                                                               06152581
+ IF WRK_PARM.LVL2 = 'R740'                                              06153281
+     THEN DO ;                                                          06154081
+         CSET = 'CD' ;                                                  06160076
+         COUNTRY_NUMBER = '740';                                        06170076
+         COUNTRY_NAME   = 'HUNGARY';                                    06180076
+     END;                                                               06190076
+ IF WRK_PARM.LVL2 = 'R668'                                              06200076
+     THEN DO ;                                                          06210076
+         CSET = 'CE' ;                                                  06220076
+         COUNTRY_NUMBER = '668';                                        06230076
+         COUNTRY_NAME   = 'CZECH REPUBLIC';                             06240076
+     END;                                                               06250076
+ IF WRK_PARM.LVL2 = 'R821'                                              06260076
+     THEN DO ;                                                          06270076
+         CSET = 'CF' ;                                                  06280076
+         COUNTRY_NUMBER = '821';                                        06290076
+         COUNTRY_NAME   = 'RUSSIA';                                     06300076
+     END;                                                               06310076
+ IF WRK_PARM.LVL2 = 'R724'                                              06320076
+     THEN DO ;                                                          06330076
+         CSET = 'CG' ;                                                  06340076
+         COUNTRY_NUMBER = '724';                                        06350076
+         COUNTRY_NAME   = 'GERMANY';                                    06360076
+     END;                                                               06370076
+ IF WRK_PARM.LVL2 = 'R704'                                              06380076
+     THEN DO ;                                                          06390076
+         CSET = 'CH' ;                                                  06400076
+         COUNTRY_NUMBER = '704';                                        06410076
+         COUNTRY_NAME   = 'CROATIA';                                    06420076
+     END;                                                               06430076
+ IF WRK_PARM.LVL2 = 'R644'                                              06440076
+     THEN DO ;                                                          06450076
+         CSET = 'CI' ;                                                  06460076
+         COUNTRY_NUMBER = '644';                                        06470076
+         COUNTRY_NAME   = 'BULGARIA';                                   06480076
+     END;                                                               06490076
+ IF WRK_PARM.LVL2 = 'R826'                                              06500076
+     THEN DO ;                                                          06510076
+         CSET = 'CJ' ;                                                  06520076
+         COUNTRY_NUMBER = '826';                                        06530076
+         COUNTRY_NAME   = 'ROMANIA';                                    06540076
+     END;                                                               06550076
+ IF WRK_PARM.LVL2 = 'R693'                                              06560076
+     THEN DO ;                                                          06570076
+         CSET = 'CK' ;                                                  06580076
+         COUNTRY_NUMBER = '693';                                        06590076
+         COUNTRY_NAME   = 'SLOVAKIA';                                   06600076
+     END;                                                               06610076
+ IF WRK_PARM.LVL2 = 'R708'                                              06620076
+     THEN DO ;                                                          06630076
+         CSET = 'CL' ;                                                  06640076
+         COUNTRY_NUMBER = '708';                                        06650076
+         COUNTRY_NAME   = 'SLOVENIA';                                   06660076
+     END;                                                               06670076
+ IF WRK_PARM.LVL2 = 'R694'                                              06680076
+     THEN DO ;                                                          06690076
+         CSET = 'CM' ;                                                  06700076
+         COUNTRY_NUMBER = '694';                                        06710076
+         COUNTRY_NAME   = 'KAZAKHSTAN';                                 06720076
+     END;                                                               06730076
+ IF WRK_PARM.LVL2 = 'R699'                                              06740076
+     THEN DO ;                                                          06750076
+         CSET = 'CN' ;                                                  06760076
+         COUNTRY_NUMBER = '699';                                        06770076
+         COUNTRY_NAME   = 'BOSNIA-HERZEGOVINA';                         06780076
+     END;                                                               06790076
+ IF WRK_PARM.LVL2 = 'R618'                                              06800076
+     THEN DO ;                                                          06810076
+         CSET = 'CO' ;                                                  06820076
+         COUNTRY_NUMBER = '618';                                        06830076
+         COUNTRY_NAME   = 'AUSTRIA';                                    06840076
+     END;                                                               06850076
+ IF WRK_PARM.LVL2 = 'R820'                                              06860076
+     THEN DO ;                                                          06870076
+         CSET = 'CP' ;                                                  06880076
+         COUNTRY_NUMBER = '820';                                        06890076
+         COUNTRY_NAME   = 'POLAND';                                     06900076
+     END;                                                               06910076
+ IF WRK_PARM.LVL2 = 'R705'                                              06920076
+     THEN DO ;                                                          06930076
+         CSET = 'CQ' ;                                                  06940076
+         COUNTRY_NUMBER = '705';                                        06950076
+         COUNTRY_NAME   = 'MACEDONIA';                                  06960076
+     END;                                                               06970076
+ IF WRK_PARM.LVL2 = 'R707'                                              06980076
+     THEN DO ;                                                          06990076
+         CSET = 'CR' ;                                                  07000076
+         COUNTRY_NUMBER = '707';                                        07010076
+         COUNTRY_NAME   = 'SERBIA';                                     07020076
+     END;                                                               07030076
+ IF WRK_PARM.LVL2 = 'R848'                                              07040076
+     THEN DO ;                                                          07050076
+         CSET = 'CS' ;                                                  07060076
+         COUNTRY_NUMBER = '848';                                        07070076
+         COUNTRY_NAME   = 'SWITZERLAND';                                07080076
+     END;                                                               07090076
+ IF WRK_PARM.LVL2 = 'R741'                                              07100076
+     THEN DO ;                                                          07110076
+         CSET = 'CT' ;                                                  07120076
+         COUNTRY_NUMBER = '741';                                        07130076
+         COUNTRY_NAME   = 'UZBEKISTAN';                                 07140076
+     END;                                                               07150076
+ IF WRK_PARM.LVL2 = 'R889'                                              07160076
+     THEN DO ;                                                          07170076
+         CSET = 'CU' ;                                                  07180076
+         COUNTRY_NUMBER = '889';                                        07190076
+         COUNTRY_NAME   = 'UKRAINE';                                    07200076
+     END;                                                               07210076
+ IF WRK_PARM.LVL2 = 'R603'                                              07220076
+     THEN DO ;                                                          07230076
+         CSET = 'CV' ;                                                  07240076
+         COUNTRY_NUMBER = '603';                                        07250076
+         COUNTRY_NAME   = 'ALBANIA';                                    07260076
+     END;                                                               07270076
+ IF WRK_PARM.LVL2 = 'R607'                                              07280076
+     THEN DO ;                                                          07290076
+         CSET = 'CW' ;                                                  07300076
+         COUNTRY_NUMBER = '607';                                        07310076
+         COUNTRY_NAME   = 'ARMENIA';                                    07320076
+     END;                                                               07330076
+ IF WRK_PARM.LVL2 = 'R626'                                              07340076
+     THEN DO ;                                                          07350076
+         CSET = 'CX' ;                                                  07360076
+         COUNTRY_NUMBER = '626';                                        07370076
+         COUNTRY_NAME   = 'BELARUS';                                    07380076
+     END;                                                               07390076
+ IF WRK_PARM.LVL2 = 'R651'                                              07400076
+     THEN DO ;                                                          07410076
+         CSET = 'CY' ;                                                  07420076
+         COUNTRY_NUMBER = '651';                                        07430076
+         COUNTRY_NAME   = 'KYRGHISTAN';                                 07440076
+     END;                                                               07450076
+ IF WRK_PARM.LVL2 = 'R695'                                              07460076
+     THEN DO ;                                                          07470076
+         CSET = 'C1' ;                                                  07480076
+         COUNTRY_NUMBER = '695';                                        07490076
+         COUNTRY_NAME   = 'GEORGIA';                                    07500076
+     END;                                                               07510076
+ IF WRK_PARM.LVL2 = 'R787'                                              07520076
+     THEN DO ;                                                          07530076
+         CSET = 'C2' ;                                                  07540076
+         COUNTRY_NUMBER = '787';                                        07550076
+         COUNTRY_NAME   = 'MOLDAVIA';                                   07560076
+     END;                                                               07570076
+ IF WRK_PARM.LVL2 = 'R358'                                              07580076
+     THEN DO ;                                                          07590076
+         CSET = 'C3' ;                                                  07600076
+         COUNTRY_NUMBER = '358';                                        07610076
+         COUNTRY_NAME   = 'AZERBAIJAN';                                 07620076
+     END;                                                               07630076
+ IF WRK_PARM.LVL2 = 'R359'                                              07640076
+     THEN DO ;                                                          07650076
+         CSET = 'C4' ;                                                  07660076
+         COUNTRY_NUMBER = '359';                                        07670076
+         COUNTRY_NAME   = 'TURKMENISTAN';                               07680076
+     END;                                                               07690076
+ IF WRK_PARM.LVL2 = 'R363'                                              07700076
+     THEN DO ;                                                          07710076
+         CSET = 'C5' ;                                                  07720076
+         COUNTRY_NUMBER = '363';                                        07730076
+         COUNTRY_NAME   = 'TAJIKISTAN';                                 07740076
+     END;                                                               07750076
+ IF WRK_PARM.LVL2 = 'RODA'                                              07760076
+     THEN DO ;                                                          07770076
+         CSET = 'DA' ;                                                  07780076
+         COUNTRY_NUMBER = '';                                           07790076
+         COUNTRY_NAME   = 'ALL NORDIC COUNTRIES';                       07800076
+     END;                                                               07810076
+ IF WRK_PARM.LVL2 = 'ROSA'                                              07820076
+     THEN DO ;                                                          07830076
+         CSET = 'SA' ;                                                  07840076
+         COUNTRY_NUMBER = '';                                           07850076
+         COUNTRY_NAME   = 'ALL SOUTH  COUNTRIES';                       07860076
+     END;                                                               07870076
+ IF WRK_PARM.LVL2 = 'R666'                                              07871081
+     THEN DO ;                                                          07872081
+         CSET = 'SB' ;                                                  07873081
+         COUNTRY_NUMBER = '666';                                        07874082
+         COUNTRY_NAME   = 'CYPRUS';                                     07875081
+     END;                                                               07876081
+ IF WRK_PARM.LVL2 = 'R726'                                              07877081
+     THEN DO ;                                                          07878081
+         CSET = 'SC' ;                                                  07879081
+         COUNTRY_NUMBER = '726';                                        07879182
+         COUNTRY_NAME   = 'GREECE';                                     07879281
+     END;                                                               07879381
+ IF WRK_PARM.LVL2 = 'R755'                                              07879481
+     THEN DO ;                                                          07879581
+         CSET = 'SD' ;                                                  07879681
+         COUNTRY_NUMBER = '755';                                        07879782
+         COUNTRY_NAME   = 'ISRAEL';                                     07879881
+     END;                                                               07879981
+ IF WRK_PARM.LVL2 = 'R758'                                              07880081
+     THEN DO ;                                                          07880181
+         CSET = 'SE' ;                                                  07880281
+         COUNTRY_NUMBER = '758';                                        07880382
+         COUNTRY_NAME   = 'ITALY';                                      07880481
+     END;                                                               07880581
+ IF WRK_PARM.LVL2 = 'R822'                                              07880681
+     THEN DO ;                                                          07880781
+         CSET = 'SF' ;                                                  07880881
+         COUNTRY_NUMBER = '822';                                        07880982
+         COUNTRY_NAME   = 'PORTUGAL';                                   07881081
+     END;                                                               07881181
+ IF WRK_PARM.LVL2 = 'R838'                                              07881281
+     THEN DO ;                                                          07881381
+         CSET = 'SG' ;                                                  07881481
+         COUNTRY_NUMBER = '838';                                        07881582
+         COUNTRY_NAME   = 'SPAIN';                                      07881681
+     END;                                                               07881781
+ IF WRK_PARM.LVL2 = 'R862'                                              07881881
+     THEN DO ;                                                          07881981
+         CSET = 'SH' ;                                                  07882081
+         COUNTRY_NUMBER = '862';                                        07882182
+         COUNTRY_NAME   = 'TURKEY';                                     07882281
+     END;                                                               07882381
+ IF WRK_PARM.LVL2 = 'R678'                                              07883081
+     THEN DO ;                                                          07890076
+         CSET = 'DB' ;                                                  07900076
+         COUNTRY_NUMBER = '678';                                        07910076
+         COUNTRY_NAME   = 'DENMARK';                                    07920076
+     END;                                                               07930076
+ IF WRK_PARM.LVL2 = 'R702'                                              07940076
+     THEN DO ;                                                          07950076
+         CSET = 'DC' ;                                                  07960076
+         COUNTRY_NUMBER = '702';                                        07970076
+         COUNTRY_NAME   = 'FINLAND';                                    07980076
+     END;                                                               07990076
+ IF WRK_PARM.LVL2 = 'R806'                                              08000076
+     THEN DO ;                                                          08010076
+         CSET = 'DD' ;                                                  08020076
+         COUNTRY_NUMBER = '806';                                        08030076
+         COUNTRY_NAME   = 'NORWAY';                                     08040076
+     END;                                                               08050076
+ IF WRK_PARM.LVL2 = 'R846'                                              08060076
+     THEN DO ;                                                          08070076
+         CSET = 'DE' ;                                                  08080076
+         COUNTRY_NUMBER = '846';                                        08090076
+         COUNTRY_NAME   = 'SWEDEN';                                     08100076
+     END;                                                               08110076
+ IF WRK_PARM.LVL2 = 'RONA'                                              08120076
+     THEN DO ;                                                          08130076
+         CSET = 'NA' ;                                                  08140076
+         COUNTRY_NUMBER = '';                                           08150076
+         COUNTRY_NAME   = 'ALL NORTH COUNTRIES';                        08160076
+     END;                                                               08170076
+ IF WRK_PARM.LVL2 = 'R754'                                              08180076
+     THEN DO ;                                                          08190076
+         CSET = 'NB' ;                                                  08200076
+         COUNTRY_NUMBER = '754';                                        08210076
+         COUNTRY_NAME   = 'IRELAND';                                    08220076
+     END;                                                               08230076
+ IF WRK_PARM.LVL2 = 'R788'                                              08240076
+     THEN DO ;                                                          08250076
+         CSET = 'NC' ;                                                  08260076
+         COUNTRY_NUMBER = '788';                                        08270076
+         COUNTRY_NAME   = 'NETHERLAND';                                 08280076
+     END;                                                               08290076
+ IF WRK_PARM.LVL2 = 'R864'                                              08300076
+     THEN DO ;                                                          08310076
+         CSET = 'ND' ;                                                  08320076
+         COUNTRY_NUMBER = '864';                                        08330076
+         COUNTRY_NAME   = 'SOUTH AFRICA';                               08340076
+     END;                                                               08350076
+ IF WRK_PARM.LVL2 = 'R866'                                              08360076
+     THEN DO ;                                                          08370076
+         CSET = 'NE' ;                                                  08380076
+         COUNTRY_NUMBER = '866';                                        08390076
+         COUNTRY_NAME   = 'UNITED KINGDOM';                             08400076
+     END;                                                               08410076
+ IF WRK_PARM.LVL2 = 'ROWA'                                              08420076
+     THEN DO ;                                                          08430076
+         CSET = 'WA' ;                                                  08440076
+         COUNTRY_NUMBER = '';                                           08450076
+         COUNTRY_NAME   = 'ALL WEST COUNTRIES';                         08460076
+     END;                                                               08470076
+ IF WRK_PARM.LVL2 = 'R624'                                              08480076
+     THEN DO ;                                                          08490076
+         CSET = 'WB' ;                                                  08500076
+         COUNTRY_NUMBER = '624';                                        08510076
+         COUNTRY_NAME   = 'BELGIUM';                                    08520076
+     END;                                                               08530076
+ IF WRK_PARM.LVL2 = 'ROWC'                                              08540076
+     THEN DO ;                                                          08550076
+         CSET = 'WC' ;                                                  08560076
+         COUNTRY_NUMBER = '';                                           08570076
+         COUNTRY_NAME   = 'ALL MEA COUNTRIES';                          08580076
+     END;                                                               08590076
+ IF WRK_PARM.LVL2 = 'R620'                                              08600076
+     THEN DO ;                                                          08610076
+         CSET = 'WD' ;                                                  08620076
+         COUNTRY_NUMBER = '620';                                        08630076
+         COUNTRY_NAME   = 'BAHRAIN';                                    08640076
+     END;                                                               08650076
+ IF WRK_PARM.LVL2 = 'R677'                                              08660076
+     THEN DO ;                                                          08670076
+         CSET = 'WE' ;                                                  08680076
+         COUNTRY_NUMBER = '677';                                        08690076
+         COUNTRY_NAME   = 'DUBAI';                                      08700076
+     END;                                                               08710076
+ IF WRK_PARM.LVL2 = 'R706'                                              08720076
+     THEN DO ;                                                          08730076
+         CSET = 'WF' ;                                                  08740076
+         COUNTRY_NUMBER = '706';                                        08750076
+         COUNTRY_NAME   = 'FRANCE';                                     08760076
+     END;                                                               08770076
+ IF WRK_PARM.LVL2 = 'R767'                                              08840076
+     THEN DO ;                                                          08850076
+         CSET = 'WG' ;                                                  08860076
+         COUNTRY_NUMBER = '767';                                        08870076
+         COUNTRY_NAME   = 'KUWAIT';                                     08880076
+     END;                                                               08890076
+ IF WRK_PARM.LVL2 = 'R805'                                              08900076
+     THEN DO ;                                                          08910076
+         CSET = 'WH' ;                                                  08920076
+         COUNTRY_NUMBER = '805';                                        08930076
+         COUNTRY_NAME   = 'OMAN';                                       08940076
+     END;                                                               08950076
+ IF WRK_PARM.LVL2 = 'R808'                                              08960076
+     THEN DO ;                                                          08970076
+         CSET = 'WJ' ;                                                  08980076
+         COUNTRY_NUMBER = '808';                                        08990076
+         COUNTRY_NAME   = 'PAKISTAN';                                   09000076
+     END;                                                               09010076
+ IF WRK_PARM.LVL2 = 'R823'                                              09080076
+     THEN DO ;                                                          09090076
+         CSET = 'WK' ;                                                  09100076
+         COUNTRY_NUMBER = '823';                                        09110076
+         COUNTRY_NAME   = 'QATAR';                                      09120076
+     END;                                                               09130076
+ IF WRK_PARM.LVL2 = 'R680'                                              09320076
+     THEN DO ;                                                          09330076
+         CSET = 'WN' ;                                                  09340076
+         COUNTRY_NUMBER = '680';                                        09350076
+         COUNTRY_NAME   = 'ABU DHABI';                                  09360076
+     END;                                                               09370076
+ IF WRK_PARM.LVL2 = 'R642'                                              09380076
+     THEN DO ;                                                          09390076
+         CSET = 'GD'                                                    09400080
+         COUNTRY_NUMBER = '642'                                         09410076
+         COUNTRY_NAME   = 'MOROCCO'                                     09420076
+     END;                                                               09430076
+ IF WRK_PARM.LVL2 = 'RORA'                                              09490181
+     THEN DO ;                                                          09490281
+         CSET = 'RA'                                                    09490381
+         COUNTRY_NUMBER = ''                                            09490481
+         COUNTRY_NAME   = 'ALL CND COUNTRIES'                           09490581
+     END;                                                               09490681
+ IF WRK_PARM.LVL2 = 'R619'                                              09491080
+     THEN DO ;                                                          09492080
+         CSET = 'RB'                                                    09493080
+         COUNTRY_NUMBER = '619'                                         09494080
+         COUNTRY_NAME   = 'BAHAMAS'                                     09495080
+     END;                                                               09496080
+ IF WRK_PARM.LVL2 = 'R621'                                              09497080
+     THEN DO ;                                                          09498080
+         CSET = 'RC'                                                    09499080
+         COUNTRY_NUMBER = '621'                                         09499180
+         COUNTRY_NAME   = 'BARBADOS'                                    09499280
+     END;                                                               09499380
+ IF WRK_PARM.LVL2 = 'R627'                                              09499480
+     THEN DO ;                                                          09499580
+         CSET = 'RD'                                                    09499680
+         COUNTRY_NUMBER = '627'                                         09499780
+         COUNTRY_NAME   = 'BERMUDA'                                     09499880
+     END;                                                               09499980
+ IF WRK_PARM.LVL2 = 'R640'                                              09500080
+     THEN DO ;                                                          09500180
+         CSET = 'RE'                                                    09500280
+         COUNTRY_NUMBER = '640'                                         09500380
+         COUNTRY_NAME   = 'GUYANA'                                      09500480
+     END;                                                               09500580
+ IF WRK_PARM.LVL2 = 'R647'                                              09500680
+     THEN DO ;                                                          09500780
+         CSET = 'RF'                                                    09500880
+         COUNTRY_NUMBER = '647'                                         09500980
+         COUNTRY_NAME   = 'CAYMAN ISLANDS'                              09501080
+     END;                                                               09501180
+ IF WRK_PARM.LVL2 = 'R759'                                              09501280
+     THEN DO ;                                                          09501380
+         CSET = 'RG'                                                    09501480
+         COUNTRY_NUMBER = '759'                                         09501580
+         COUNTRY_NAME   = 'JAMAICA'                                     09501680
+     END;                                                               09501780
+ IF WRK_PARM.LVL2 = 'R791'                                              09501880
+     THEN DO ;                                                          09501980
+         CSET = 'RH'                                                    09502080
+         COUNTRY_NUMBER = '791'                                         09502180
+         COUNTRY_NAME   = 'CURUCAO & ARUBA'                             09502280
+     END;                                                               09502380
+ IF WRK_PARM.LVL2 = 'R839'                                              09502480
+     THEN DO ;                                                          09502580
+         CSET = 'RI'                                                    09502680
+         COUNTRY_NUMBER = '839'                                         09502780
+         COUNTRY_NAME   = 'ST.LUCIA'                                    09502880
+     END;                                                               09502980
+ IF WRK_PARM.LVL2 = 'R843'                                              09503080
+     THEN DO ;                                                          09503180
+         CSET = 'RJ'                                                    09503280
+         COUNTRY_NUMBER = '843'                                         09503380
+         COUNTRY_NAME   = 'SURINAME'                                    09503480
+     END;                                                               09503580
+ IF WRK_PARM.LVL2 = 'R859'                                              09503680
+     THEN DO ;                                                          09503780
+         CSET = 'RK'                                                    09503880
+         COUNTRY_NUMBER = '859'                                         09503980
+         COUNTRY_NAME   = 'TRINIDAD'                                    09504080
+     END;                                                               09504180
+ IF WRK_PARM.LVL2 = 'ROLA'                                              09504281
+     THEN DO ;                                                          09504381
+         CSET = 'LA'                                                    09504481
+         COUNTRY_NUMBER = ''                                            09504581
+         COUNTRY_NAME   = 'ALL LATIN COUNTRIES'                         09504681
+     END;                                                               09504781
+ IF WRK_PARM.LVL2 = 'R529'                                              09504881
+     THEN DO ;                                                          09504981
+         CSET = 'LB'                                                    09505081
+         COUNTRY_NUMBER = '529'                                         09505181
+         COUNTRY_NAME   = 'FALKLAND ISLANDS'                            09505281
+     END;                                                               09505381
+ IF WRK_PARM.LVL2 = 'R613'                                              09505481
+     THEN DO ;                                                          09505581
+         CSET = 'LC'                                                    09505681
+         COUNTRY_NUMBER = '613'                                         09505781
+         COUNTRY_NAME   = 'ARGENTINA'                                   09505881
+     END;                                                               09505981
+ IF WRK_PARM.LVL2 = 'R629'                                              09506081
+     THEN DO ;                                                          09506181
+         CSET = 'LD'                                                    09506281
+         COUNTRY_NUMBER = '629'                                         09506381
+         COUNTRY_NAME   = 'BOLIVIA'                                     09506481
+     END;                                                               09506581
+ IF WRK_PARM.LVL2 = 'R631'                                              09506681
+     THEN DO ;                                                          09506781
+         CSET = 'LE'                                                    09506881
+         COUNTRY_NUMBER = '631'                                         09506981
+         COUNTRY_NAME   = 'BRAZIL'                                      09507081
+     END;                                                               09507181
+ IF WRK_PARM.LVL2 = 'R639'                                              09507281
+     THEN DO ;                                                          09507381
+         CSET = 'LF'                                                    09507481
+         COUNTRY_NUMBER = '639'                                         09507581
+         COUNTRY_NAME   = 'BELIZE'                                      09507681
+     END;                                                               09507781
+ IF WRK_PARM.LVL2 = 'R655'                                              09507881
+     THEN DO ;                                                          09507981
+         CSET = 'LG'                                                    09508081
+         COUNTRY_NUMBER = '655'                                         09508181
+         COUNTRY_NAME   = 'CHILE'                                       09508281
+     END;                                                               09508381
+ IF WRK_PARM.LVL2 = 'R661'                                              09508481
+     THEN DO ;                                                          09508581
+         CSET = 'LH'                                                    09508681
+         COUNTRY_NUMBER = '661'                                         09508781
+         COUNTRY_NAME   = 'COLUMBIA'                                    09508881
+     END;                                                               09508981
+ IF WRK_PARM.LVL2 = 'R683'                                              09509081
+     THEN DO ;                                                          09509181
+         CSET = 'LI'                                                    09509281
+         COUNTRY_NUMBER = '683'                                         09509381
+         COUNTRY_NAME   = 'ECUADOR'                                     09509481
+     END;                                                               09509581
+ IF WRK_PARM.LVL2 = 'R731'                                              09509681
+     THEN DO ;                                                          09509781
+         CSET = 'LK'                                                    09509881
+         COUNTRY_NUMBER = '731'                                         09509981
+         COUNTRY_NAME   = 'GUATEMALA'                                   09510081
+     END;                                                               09510181
+ IF WRK_PARM.LVL2 = 'R733'                                              09510281
+     THEN DO ;                                                          09510381
+         CSET = 'LL'                                                    09510481
+         COUNTRY_NUMBER = '733'                                         09510581
+         COUNTRY_NAME   = 'HAITI'                                       09510681
+     END;                                                               09510781
+ IF WRK_PARM.LVL2 = 'R735'                                              09510881
+     THEN DO ;                                                          09510981
+         CSET = 'LM'                                                    09511081
+         COUNTRY_NUMBER = '735'                                         09511181
+         COUNTRY_NAME   = 'HONDURAS'                                    09511281
+     END;                                                               09511381
+ IF WRK_PARM.LVL2 = 'R781'                                              09511481
+     THEN DO ;                                                          09511581
+         CSET = 'LN'                                                    09511681
+         COUNTRY_NUMBER = '781'                                         09511781
+         COUNTRY_NAME   = 'MEXICO'                                      09511881
+     END;                                                               09511981
+ IF WRK_PARM.LVL2 = 'R799'                                              09512081
+     THEN DO ;                                                          09512181
+         CSET = 'LO'                                                    09512281
+         COUNTRY_NUMBER = '799'                                         09512381
+         COUNTRY_NAME   = 'NICARAGUA'                                   09512481
+     END;                                                               09512581
+ IF WRK_PARM.LVL2 = 'R811'                                              09512681
+     THEN DO ;                                                          09512781
+         CSET = 'LP'                                                    09512881
+         COUNTRY_NUMBER = '811'                                         09512981
+         COUNTRY_NAME   = 'PANAMA'                                      09513081
+     END;                                                               09513181
+ IF WRK_PARM.LVL2 = 'R813'                                              09513281
+     THEN DO ;                                                          09513381
+         CSET = 'LQ'                                                    09513481
+         COUNTRY_NUMBER = '813'                                         09513581
+         COUNTRY_NAME   = 'PARAGUAY'                                    09513681
+     END;                                                               09513781
+ IF WRK_PARM.LVL2 = 'R815'                                              09513881
+     THEN DO ;                                                          09513981
+         CSET = 'LR'                                                    09514081
+         COUNTRY_NUMBER = '815'                                         09514181
+         COUNTRY_NAME   = 'PERU'                                        09514281
+     END;                                                               09514381
+ IF WRK_PARM.LVL2 = 'R829'                                              09514481
+     THEN DO ;                                                          09514581
+         CSET = 'LS'                                                    09514681
+         COUNTRY_NUMBER = '829'                                         09514781
+         COUNTRY_NAME   = 'EL SAVADOR'                                  09514881
+     END;                                                               09514981
+ IF WRK_PARM.LVL2 = 'R869'                                              09515081
+     THEN DO ;                                                          09515181
+         CSET = 'LT'                                                    09515281
+         COUNTRY_NUMBER = '869'                                         09515381
+         COUNTRY_NAME   = 'URUGUAY'                                     09515481
+     END;                                                               09515581
+ IF WRK_PARM.LVL2 = 'R871'                                              09515681
+     THEN DO ;                                                          09515781
+         CSET = 'LU'                                                    09515881
+         COUNTRY_NUMBER = '871'                                         09515981
+         COUNTRY_NAME   = 'VENEZUELA'                                   09516081
+     END;                                                               09516181
+ IF WRK_PARM.LVL2 = 'R681'                                              09516281
+     THEN DO ;                                                          09516381
+         CSET = 'LV'                                                    09516481
+         COUNTRY_NUMBER = '681'                                         09516581
+         COUNTRY_NAME   = 'DOMINICAN REPUBLIC'                          09516681
+     END;                                                               09516781
+ IF WRK_PARM.LVL2 = 'ROXA'                                              09516881
+     THEN DO ;                                                          09516981
+         CSET = 'XA'                                                    09517081
+         COUNTRY_NUMBER = ''                                            09517181
+         COUNTRY_NAME   = 'ALL XCLS COUNTRIES'                          09517281
+     END;                                                               09517381
+ IF WRK_PARM.LVL2 = 'RG05'                                              09517481
+     THEN DO ;                                                          09517581
+         CSET = 'XB'                                                    09517681
+         COUNTRY_NUMBER = 'G05'                                         09517781
+         COUNTRY_NAME   = 'GBM OMAN'                                    09517881
+     END;                                                               09517981
+ IF WRK_PARM.LVL2 = 'RG20'                                              09518081
+     THEN DO ;                                                          09518181
+         CSET = 'XC'                                                    09518281
+         COUNTRY_NUMBER = 'G20'                                         09518381
+         COUNTRY_NAME   = 'GBM BAHRAIN'                                 09518481
+     END;                                                               09518581
+ IF WRK_PARM.LVL2 = 'RG23'                                              09518681
+     THEN DO ;                                                          09518781
+         CSET = 'XD'                                                    09518881
+         COUNTRY_NUMBER = 'G23'                                         09518981
+         COUNTRY_NAME   = 'GBM QATAR'                                   09519081
+     END;                                                               09519181
+ IF WRK_PARM.LVL2 = 'RG67'                                              09519281
+     THEN DO ;                                                          09519381
+         CSET = 'XE'                                                    09519481
+         COUNTRY_NUMBER = 'G67'                                         09519581
+         COUNTRY_NAME   = 'GBM KUWAIT'                                  09519681
+     END;                                                               09519781
+ IF WRK_PARM.LVL2 = 'RG77'                                              09519881
+     THEN DO ;                                                          09519981
+         CSET = 'XF'                                                    09520081
+         COUNTRY_NUMBER = 'G77'                                         09520181
+         COUNTRY_NAME   = 'GBM UAE(DUBAI)'                              09520281
+     END;                                                               09520381
+ IF WRK_PARM.LVL2 = 'RG80'                                              09520481
+     THEN DO ;                                                          09520581
+         CSET = 'XG'                                                    09520681
+         COUNTRY_NUMBER = 'G80'                                         09520781
+         COUNTRY_NAME   = 'GBM ABU DHABI'                               09520881
+     END;                                                               09520981
+ IF WRK_PARM.LVL2 = 'RS32'                                              09521081
+     THEN DO ;                                                          09521181
+         CSET = 'XH'                                                    09521281
+         COUNTRY_NUMBER = 'S32'                                         09521381
+         COUNTRY_NAME   = 'SBM SAUDI ARABIA'                            09521481
+     END;                                                               09521581
+ IF WRK_PARM.LVL2 = 'RG49'                                              09521681
+     THEN DO ;                                                          09521781
+         CSET = 'XI'                                                    09521881
+         COUNTRY_NUMBER = 'G49'                                         09521981
+         COUNTRY_NAME   = 'GBM YEMEN'                                   09522081
+     END;                                                               09522181
+ END SET_CSET;                                                          09522281
+                                                                        09522381
+ PUT SKIP LIST( 'THE PROCESS SELECTED IS      :', WRK_PARM.PROC_ID);    09523081
+ IF CSET = '' & COUNTRY_NUMBER = ''                                     09530076
+ THEN DO;                                                               09540076
+ PUT SKIP LIST( 'THE 2ND LEVEL QUALIFIER '||''''||WRK_PARM.LVL2||       09550076
+      ''''|| ' IS IN VALID');                                           09560076
+ END;                                                                   09570076
+ ELSE                                                                   09580076
+ DO;                                                                    09590076
+ PUT SKIP LIST( 'THE CSET IS                  :', CSET);                09600076
+ PUT SKIP LIST( 'THE COUNTRY NUMBER IS        :', COUNTRY_NUMBER);      09610076
+ PUT SKIP LIST( 'THE COUNTRY NAME   IS        :', COUNTRY_NAME);        09620076
+ END;                                                                   09630076
+ IF INFIL_COUNT = 0                                                     09640076
+ THEN                                                                   09650076
+      PUT SKIP LIST( 'INPUT FILE IS EITHER EMPTY OR INVALID');          09660076
+ IF (INFIL_COUNT ¬=0 &(CSET ¬='' | COUNTRY_NUMBER ¬='')                 09670076
+     & VALID_PROCESS & VALID_FILE)                                      09680076
+ THEN DO;                                                               09690076
+   PUT SKIP LIST( 'THE FILE NAME SELECTED IS    :                  '||  09700076
+                'CEDSDT.'||WRK_PARM.LVL2||'.'|| WRK_PARM.FILE_NAME);    09710076
+   PUT SKIP LIST( 'NUMBER OF RECORDS READ       :',INFIL_COUNT);        09720076
+   HASH_TOTAL_PIC = HASH_TOTAL;                                         09730076
+   PUT SKIP LIST( 'THE HASH TOTAL CALCULATED IS :', HASH_TOTAL_PIC);    09740076
+   PUT SKIP LIST( '************************************************'||  09750076
+   '*******************************');                                  09760076
+   PUT SKIP LIST( 'P.S CONSIDER LAST 7 CHAR OF HASH TOTAL TO UPDATE'||  09760188
+   ' DELTA FILE                    ');                                  09760288
+   PUT SKIP LIST( '************************************************'||  09761087
+   '*******************************');                                  09762087
+   PUT SKIP LIST( 'USE THE FOLLOWING SPUFI TO SELECT RCB024 PARAMETER');09770076
+   PUT SKIP LIST( '************************************************'||  09780076
+   '*******************************');                                  09790076
+   PUT SKIP LIST( 'SELECT * FROM CEDSR.RCBV0500_PARM WHERE '||          09800076
+   'PARAMETER_NUMBER = '|| '''RCB024''' ||' AND ' );                    09810076
+   PUT SKIP LIST ('PARAMETER_KEY LIKE  '|| '''' ||                      09820076
+   WRK_PARM.PROC_ID ||'%'||HASH_FILE_NAME  || '''' || ';');             09830076
+ END;                                                                   09840076
+ END ROLHSTM;                                                           09850076

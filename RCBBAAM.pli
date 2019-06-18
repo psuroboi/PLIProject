@@ -1,0 +1,3028 @@
+ /* RCBBAAM - SOF/WTAAS CUSTOMER: EXTRACT                            */
+ /*                                                                  */
+ /* 5695-153 (C) COPYRIGHT IBM EMEA WORLD TRADE CORPORATION 1991     */
+ /* LICENSED MATERIAL - PROGRAM PROPERTY OF IBM                      */
+ /* REFER TO COPYRIGHT INSTRUCTIONS: FORM G120-2083                  */
+ /*                                                                  */
+ /********************************************************************/
+ /* PROGRAM          : RCBBAAM                                       */
+ /*                                                                  */
+ /* LANGUAGE         : PLI                                           */
+ /*                                                                  */
+ /* TYPE             : BMP                                           */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE CUSTOMER INFORMATION FROM            */
+ /*                    SOF/WTAAS.                                    */
+ /*                    CREATE TABLE-LIKE FILES.                      */
+ /*                                                                  */
+ /* NOTE             : HW ADDRESSES WILL ONLY BE WRITTEN IF          */
+ /*                    THE PRODUCT TYPE IS REQUESTED BY CEDS.        */
+ /*                    (SEE SUBROUTINE CHECK_REQUESTED)              */
+ /*                                                                  */
+ /* INPUT            : - DB2   : RCBT0040_OU                RB01249  */
+ /*                              RCBT0070_TYPE_MOD1                  */
+ /*                              RCBT0500_PARM                       */
+ /*                    - IMS   : VSDCM0  CUSTOMER MASTER             */
+ /*                              VSDCM1  FINANCE SEGMENT             */
+ /*                              VSDCA0  CUSTOMER ADDRESS            */
+ /*                              VSDCT0  CUSTOMER XREF.              */
+ /*                              VSDCD0  CP CUSTOMER                 */
+ /*                                                                  */
+ /* OUTPUT           : - FILES : RCBBAA0 CUSTOMER             (GSAM) */
+ /*                            : RCBBAA1 CUST. ADDR.          (GSAM) */
+ /*                            : RCBBAA2 CUST. ADDR. LINE     (GSAM) */
+ /*                            : RCBBAA3 HW ADDR.             (GSAM) */
+ /*                            : RCBBAA4 MOD. CUSTOMER        (GSAM) */
+ /*                            : RCB0M10 MESSAGE FILE                */
+ /*                                                                  */
+ /* SEC TRANSACTIONS :  ----                                         */
+ /*                                                                  */
+ /* EXTERNAL MODULES : - PLITDLI   CALL TO IMS                       */
+ /*                    - RCB0E1M   COMMON ERROR ROUTINE              */
+ /*                    - RCB0M1M   COMMON MESSAGE ROUTINE            */
+ /*                    - RCB0T1M   COMMON MESSAGE ROUTINE            */
+ /*                    - RCB004M   CHECK/CONVERT DATE                */
+ /*                    - RCB018M   COMPUTE HASH TOTAL                */
+ /*                    - RCB019M   RETRIEVE COUNTRY NUMBERS          */
+ /*                    - RCB020M   RETRIEVE RUN DATE                 */
+ /*                    - RCBF50M   INSERT IN TABLE 500               */
+ /*                    - RCBG50M   UPDATE IN TABLE 500               */
+ /*                    - RCBI04M   REFERENCE T0040_OU       RB01249  */
+ /*                    - RCBI50M   REFERENCE PARAMETER               */
+ /*                    - RCBIAGM   REFERENCE T0070_TYPE_MOD1         */
+ /*                    - RCBBA1U   USER EXIT                         */
+ /*                    - RCBBA2U   USER EXIT (FOR CUF PROCESSING)    */
+ /*                    - RCBBA3U   USER EXIT (FOR ZIP PROCESSING)    */
+ /*                                                                  */
+ /*                                                                  */
+ /* MESSAGES         : 0002/0003/0004/0005/0008/0012/0173/9998/9999  */
+ /*                                                                  */
+ /* SCREENS          : ----                                          */
+ /*                                                                  */
+ /* DEPENDENCIES     : HAS TO BE NORMAL COMPLETED BEFORE             */
+ /*                    RUNNING RCBBACM/.../RCBBAGM.                  */
+ /*                                                                  */
+ /* FREQUENCY        : USER DEPENDENT (ON REQUEST)                   */
+ /*                                                                  */
+ /* MAINTENANCE LOG  :                                               */
+ /* ---------------                                                  */
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */
+ /* --------------------------------------------------------------   */
+ /*  01-04-1992 | ----         | CEDS FIRST IMPLEMENTATION           */
+ /*  31-07-1992 |CED00001      | HASH TOTALS                         */
+ /*  05-04-1993 |RC1032        | MCO                                 */
+ /*  05-04-1993 |RC1035        | COUNTRY USE FIELDS                  */
+ /*  16-06-1993 |PTM 302       | SEE PTM DESCRIPTION                 */
+ /*  23-11-1993 |PTM 416       | SEE PTM DESCRIPTION                 */
+ /*  30-11-1993 |CED0014       | CHANGE FETCH INTO CALL SEE PTM 374  */
+ /*  03-01-1995 |RA01117       | CASH ON DELIVERY FROM CD FILE       */
+ /*  30-08-1995 |RB01140       | TABLE CHAGE  390 TO 070             */
+ /*  30-08-1995 |RC01141       | DISPLAY OFFENDING KEY               */
+ /*  30-08-1995 |RA01138       | ZIP CODE IN SOF CUSTOMER RECON      */
+ /*  23-10-1995 |PTM 761       | ALTER EFFECTIVE DATE ASSIGNMENT     */
+ /*  10-04-1996 |PTM 917       | ADD NETHERLANDS SPECIAL             */
+ /*  13-05-1996 |PTM 921       | WRONG PROGRAM NAME TEST RCB018      */
+ /*  05-09-1996 |PTM 952       | ZIP CODE NOT INITIALIZED            */
+ /*  05-09-1996 |PTM 960       | SECOND ADDRESS RECORD NOT PROCESSED */
+ /*  27-11-1996 |PTM 997       | SPECIAL PROCESSING FOR BELGIUM      */
+ /*  1997-05-02 | PTM1036      | CHANGED PROLOG                      */
+ /*  1997-10-30 | PTM1107      | FILL CHECKPOINT PARAMETERS FOR      */
+ /*             |              | CORRECT REPOSITIONING               */
+ /*  1998-09-25 | PTM1211      | DANISH (BILL ADDRESS XREF)          */
+ /*  1999-01-11 | RA01215      | SAVING EURO INDICATOR               */
+ /*  1999-01-21 | PTM1240      | MISSING DATE CHECK                  */
+ /*  1999-01-27 | PTM1242      | CONCATENATION TOO LONG, OVERWRITES  */
+ /*  1999-06-16 | PTM1239      | WRONG MESSAGE COUNTS                */
+ /*  1999-09-30 | PTM1310      | INCORRECT INIT OF WORKFIELD         */
+ /*  1999-07-28 | RC01219      | DORO                                */
+ /*  1999-07-28 | RC01226      | MAIN ADDRESS FOR AUSTRIA            */
+ /*  2001-05-17 | RA01215      | SAVING EURO INDICATOR - SPECIAL TEMP*/
+ /*             |              | CHANGE FOR 618, 702 AND 838         */
+ /*  2004-06-30 | RB01242      | INCREASE LENGTH OF SERIAL NUMBER    */
+ /*  2004-11-03 | RB01249      | CUSTOMER ENGINEERING OU MISMATCH    */
+ /*  2004-12-07 | PTM 1425     | RESTART DOES NOT WORK CORRECTLY     */
+ /*  2013-04-12 | CEDS00000628 | DATE '00000' WRONGLY POPULATED IN   */
+ /*             |              | MESSAGE FILE FOR INVALID DATE IN CA */
+ /*             |              | FILE                                */
+ /*  2016-04-11 | RC01378      | PCR 629- IMPROVE CE OU CROSSCHECK   */
+ /*             |              |          WITH T040 IN US01          */
+ /*             |              | PCR 628- DATA QUALITY CHECK THAT    */
+ /*             |              |  OMITS T350 ENTRY IS COMMENTED      */
+ /*  2019-02-22 | S1766862     | REMOVE CIDAW CHECK IN CT FILE READ  */
+ /********************************************************************/
+
+1RCBBAAM: PROC (PTR_PCB_IO               /* IO PCB                   */
+               ,PTR_RBDGCM0              /* CUSTOMER MASTER DB       */
+               ,PTR_RBDGCA0              /* CUSTOMER ADDRESS DB      */
+               ,PTR_RBDGCT0              /* CUSTOMER XREF DB         */
+               ,PTR_RBDGCD0              /* DP CUSTOMER DB   RA01117 */
+               ,PTR_RCBBAA0              /* CUSTOMERS                */
+               ,PTR_RCBBAA1              /* CUSTOMER ADDRESSES       */
+               ,PTR_RCBBAA2              /* CUSTOMER ADDRESS LINES   */
+               ,PTR_RCBBAA3              /* HW ADDRESSES             */
+               ,PTR_RCBBAA4)             /* CUSTOMER MODIFIABLE INFO */
+          OPTIONS (MAIN)
+          REORDER;
+
+ /********************************************************************/
+ /*  PARAMETERS                                                      */
+ /********************************************************************/
+       DCL NR_CKP               PIC '(1)9' INIT (0);
+ DCL PTR_PCB_IO              PTR;
+ DCL PTR_RBDGCM0             PTR;
+ DCL PTR_RBDGCA0             PTR;
+ DCL PTR_RBDGCT0             PTR;
+ DCL PTR_RBDGCD0             PTR;                          /* RA01117 */
+ DCL PTR_RCBBAA0             PTR;
+ DCL PTR_RCBBAA1             PTR;
+ DCL PTR_RCBBAA2             PTR;
+ DCL PTR_RCBBAA3             PTR;
+ DCL PTR_RCBBAA4             PTR;
+
+ /********************************************************************/
+ /* FILE DECLARATIONS (NON GSAM)                                     */
+ /********************************************************************/
+ DCL RCB0M10  FILE RECORD OUTPUT;
+
+ /********************************************************************/
+ /* EXTERNAL ENTRIES                                                 */
+ /********************************************************************/
+ DCL PLITDLI   ENTRY  EXTERNAL;          /* CALL TO IMS              */
+ DCL RCB0E1M   ENTRY  EXTERNAL;          /* COMMON ERROR ROUTINE     */
+ DCL RCB0M1M   ENTRY  EXTERNAL;          /* COMMON MESSAGE ROUTINE   */
+ DCL RCB0T1M   ENTRY  EXTERNAL;          /* COMMON MESSAGE ROUTINE   */
+ DCL RCB004M   ENTRY  EXTERNAL;          /* CHECK/CONVERT DATE       */
+ DCL RCB018M   ENTRY  EXTERNAL;          /* COMPUTE HASH TOTAL       */
+ DCL RCB019M   ENTRY  EXTERNAL;          /* RETRIEVE COUNTRY NUMBERS */
+ DCL RCB020M   ENTRY  EXTERNAL;          /* RETRIEVE RUN DATE        */
+                                         /* PTM 416                  */
+ DCL RCBF50M   ENTRY  EXTERNAL;          /* INSERT PARAMETER         */
+ DCL RCBG50M   ENTRY  EXTERNAL;          /* UPDATE PARAMETER         */
+ DCL RCBI04M   ENTRY  EXTERNAL;          /* REF. RCBT0040    RB01249 */
+ DCL RCBI50M   ENTRY  EXTERNAL;          /* REFERENCE PARAMETER      */
+ DCL RCBIAGM   ENTRY  EXTERNAL;          /* REFERENCE RCBT0070       */
+ DCL RCBBA1U   ENTRY  EXTERNAL;          /* USER EXIT                */
+ DCL RCBBA2U   ENTRY  EXTERNAL;          /* USER EXIT CUF PROCESSING */
+ DCL RCBBA3U   ENTRY  EXTERNAL;          /* USER EXIT ZIP PROCESSING */
+                                                          /* RA1138  */
+
+1/********************************************************************/
+ /* EXTERNAL PARAMETER INTERFACES                                    */
+ /********************************************************************/
+ DCL PTR_INT_AREA        PTR;
+ DCL PTR_RETURN_AREA     PTR;
+ DCL PTR_DATE_AREA       PTR;
+ DCL PTR_COUNTRY_AREA    PTR;
+ DCL PTR_RUN_DATE_AREA   PTR;            /* INTERFACE RCB020M        */
+                                         /* PTM 416                  */
+
+ DCL 1 PARM_INT_AREA,                           /* INTERFACE AREA    */
+       %INCLUDE (RCBZ01S);;
+ DCL 1 RETURN_AREA,                             /* RETURN AREA       */
+       %INCLUDE (RCBZ02S);;
+ DCL 1 DATE_AREA,                               /* DATE AREA         */
+       %INCLUDE (RCBZ03S);;
+ DCL 1 RUN_DATE_AREA,                           /* RUN DATE AREA     */
+       %INCLUDE (RCBZ28S);;                     /* PTM 416
+
+1/********************************************************************/
+ /* IMS CONSTANTS                                                    */
+ /********************************************************************/
+ DCL 1 IMS_CONSTANTS,
+       %INCLUDE (RCBZ04S);;
+
+1/********************************************************************/
+ /*  IMS CHECKPOINT/RESTART/ROLLBACK FIELDS                          */
+ /********************************************************************/
+ DCL PTR_CHKP_LEN_IO      PTR;
+ DCL PTR_CHKP_LEN_AREA    PTR;
+ DCL PTR_CHKP_AREA        PTR;
+ DCL PTR_CHKP_ID          PTR;
+ DCL PTR_CHKP_XRST        PTR;
+ DCL CHKP_CNT_STEPS       FIXED BIN (31);
+ DCL CHKP_LEN_IO          FIXED BIN (31);
+ DCL CHKP_LEN_AREA        FIXED BIN (31);
+
+ DCL 1 CHKP_ID,
+       %INCLUDE (RCBZ11S);;
+
+ DCL 1 CHKP_XRST,
+       %INCLUDE (RCBZ12S);;
+
+ DCL 1 CHKP_AREA,
+         %INCLUDE (RCBZ14S);,
+       2 COUNTRY_AREA,
+         %INCLUDE (RCBZ26S);,
+       2 KEY_VALUES,
+         %INCLUDE (RCBBAASC);;
+
+1/********************************************************************/
+ /* IMS PCB STRUCTURES                                               */
+ /********************************************************************/
+
+ DCL 1 PCB_IO         BASED (PTR_PCB_IO),
+       %INCLUDE (RCBZ16S);;
+
+ DCL 1 PCB_RBDGCM0    BASED (PTR_RBDGCM0),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RBDGCA0    BASED (PTR_RBDGCA0),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RBDGCT0    BASED (PTR_RBDGCT0),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RBDGCD0    BASED (PTR_RBDGCD0),                 /* RA01117 */
+       %INCLUDE (RCBZ10S);;                                /* RA01117 */
+
+ DCL 1 PCB_RCBBAA0    BASED (PTR_RCBBAA0),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RCBBAA1    BASED (PTR_RCBBAA1),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RCBBAA2    BASED (PTR_RCBBAA2),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RCBBAA3    BASED (PTR_RCBBAA3),
+       %INCLUDE (RCBZ10S);;
+
+ DCL 1 PCB_RCBBAA4    BASED (PTR_RCBBAA4),
+       %INCLUDE (RCBZ10S);;
+
+1/********************************************************************/
+ /* IMS SSA STRUCTURES                                               */
+ /********************************************************************/
+ DCL 1 SSA_RRDCM1,
+       3 SEG_NAME        CHAR(08)      INIT('SDCM0   '),
+       3 BRKT_OPEN       CHAR(01)      INIT('(')       ,
+       3 SEG_KEY1        CHAR(08)      INIT('GRKCM   '),
+       3 REL_OP1         CHAR(02)      INIT('> ')      ,
+       3 KEY_VAL1                                      ,
+         5 CTRYNO1       CHAR(04)      INIT(' ')       ,
+         5 AASID1        CHAR(02)      INIT('CM')      ,
+         5 RCUXA1        CHAR(06)      INIT(' ')       ,
+       3 REL_AND         CHAR(01)      INIT('&')       ,
+       3 SEG_KEY2        CHAR(08)      INIT('GRKCM   '),
+       3 REL_OP2         CHAR(02)      INIT('< ')      ,
+       3 KEY_VAL2                                      ,
+         5 CTRYNO2       CHAR(04)      INIT(' ')       ,
+         5 AASID2        CHAR(02)      INIT('CM')      ,
+         5 RCUXA2        CHAR(06)      INIT('FEFEFEFEFEFE'X),
+       3 BRKT_CLOSE      CHAR(01)      INIT(')')       ;
+       /* FOR EACH COUNTRY IN VSDCM0 EXISTS A DUMMY RECORD
+          END_OF_COUNTRY RECORD) WITH AN EOC-MARK (HEX 'FE') */
+
+ DCL 1 SSA_RRDCM2,
+       3 SEG_NAME        CHAR(08)      INIT('RRDCM2  '),
+       3 FILL_1          CHAR(02)      INIT('  ')      ;
+
+ DCL 1 SSA_RRDCA1,
+       3 SEG_NAME        CHAR(08)      INIT('SDCA0   '),
+       3 BRKT_OPEN       CHAR(01)      INIT('(')       ,
+       3 SEG_KEY1        CHAR(08)      INIT('GRKCA   '),
+       3 REL_OP1         CHAR(02)      INIT('>=')      ,
+       3 KEY_VAL1                                      ,
+         5 CTRYNO1       CHAR(04)      INIT(' ')       ,
+         5 AASID1        CHAR(02)      INIT('CA')      ,
+         5 RCUXA1        CHAR(06)      INIT(' ')       ,
+         5 REST1         CHAR(04)      INIT(' ')       ,
+       3 REL_AND         CHAR(01)      INIT('&')       ,
+       3 SEG_KEY2        CHAR(08)      INIT('GRKCA   '),
+       3 REL_OP2         CHAR(02)      INIT('<=')      ,
+       3 KEY_VAL2                                      ,
+         5 CTRYNO2       CHAR(04)      INIT(' ')       ,
+         5 AASID2        CHAR(02)      INIT('CA')      ,
+         5 RCUXA2        CHAR(06)      INIT(' ')       ,
+         5 REST2         CHAR(04)      INIT(' ')       ,
+       3 BRKT_CLOSE      CHAR(01)      INIT(')')       ;
+
+ DCL 1 SSA_RRDCD1,                                         /* RA01117 */
+       3 SEG_NAME        CHAR(08)      INIT('SDCD0   '),
+       3 BRKT_OPEN       CHAR(01)      INIT('(')       ,
+       3 SEG_KEY1        CHAR(08)      INIT('GRKCD   '),
+       3 REL_OP1         CHAR(02)      INIT('>=')      ,
+       3 KEY_VAL1                                      ,
+         5 CTRYNO1       CHAR(04)      INIT(' ')       ,
+         5 AASID1        CHAR(02)      INIT('CD')      ,
+         5 RCUXA1        CHAR(06)      INIT(' ')       ,
+         5 CRCAK1        CHAR(01)      INIT(' ')       ,
+       3 REL_AND         CHAR(01)      INIT('&')       ,
+       3 SEG_KEY2        CHAR(08)      INIT('GRKCD   '),
+       3 REL_OP2         CHAR(02)      INIT('<=')      ,
+       3 KEY_VAL2                                      ,
+         5 CTRYNO2       CHAR(04)      INIT(' ')       ,
+         5 AASID2        CHAR(02)      INIT('CD')      ,
+         5 RCUXA2        CHAR(06)      INIT(' ')       ,
+         5 CRCAK2        CHAR(01)      INIT(' ')       ,
+       3 BRKT_CLOSE      CHAR(01)      INIT(')')       ;
+
+ DCL 1 SSA_RRDCFW,
+       3 SEG_NAME        CHAR(08)      INIT('SDCT0   '),
+       3 BRKT_OPEN       CHAR(01)      INIT('(')       ,
+       3 SEG_KEY1        CHAR(08)      INIT('GRKCT   '),
+       3 REL_OP1         CHAR(02)      INIT('>=')      ,
+       3 KEY_VAL1        CHAR(29)      INIT(' ')       ,
+       3 REL_AND         CHAR(01)      INIT('&')       ,
+       3 SEG_KEY2        CHAR(08)      INIT('GRKCT   '),
+       3 REL_OP2         CHAR(02)      INIT('<=')      ,
+       3 KEY_VAL2        CHAR(29)      INIT(' ')       ,
+       3 BRKT_CLOSE      CHAR(01)      INIT(')')       ;
+
+1/********************************************************************/
+ /* DB2 TABLE STRUCTURES                                             */
+ /********************************************************************/
+                                                      /* SOC RB01249 */
+ DCL PTR_RCBV040    PTR;
+ DCL PTR_RCBV040I   PTR;
+ DCL 1 TB_RCBV040,
+       %INCLUDE (RCB040S);;
+ DCL 1 TB_RCBV040_I,
+       %INCLUDE (RCB040SI);;
+                                                      /* EOC RB01249 */
+ DCL PTR_RCBV070    PTR;                      /* START RB01140 */
+ DCL PTR_RCBV070I   PTR;
+ DCL 1 TB_RCBV070,
+       %INCLUDE (RCB070S);;
+ DCL 1 TB_RCBV070_I,
+       %INCLUDE (RCB070SI);;                   /* END RB01140 */
+
+ DCL PTR_RCBV500    PTR;               /* PTR PARAMETER ROW          */
+ DCL PTR_RCBV500I   PTR;               /* PTR NULL-IND. PARAMETER    */
+ DCL 1 TB_RCBV500,                     /* PARAMETER ROW              */
+       %INCLUDE (RCB500S);;
+ DCL 1 TB_RCBV500_I,                   /* NULL-IND. PARAMETER        */
+       %INCLUDE (RCB500SI);;
+
+1/********************************************************************/
+ /* IMS DB STRUCTURES                                                */
+ /********************************************************************/
+
+ DCL 1 DB_CUST_MAST,
+       %INCLUDE (RRDCM1);
+
+ DCL 1 DB_CUST_MAST_COPY,
+       %INCLUDE (RRDCM1);
+
+ DCL 1 DB_CUST_FIN,
+       %INCLUDE (RRDCM2);
+
+ DCL 1 DB_CUST_ADDR,
+       %INCLUDE (RRDCA1);
+
+ DCL 1 DB_CUST_DP,                                         /* RA01117 */
+       %INCLUDE (RRDCD1);                                  /* RA01117 */
+
+ DCL 1 DB_CUST_XREF,
+       %INCLUDE (RRDCFW);
+
+1/********************************************************************/
+ /*  RECORD STRUCTURES FOR GSAM OUTPUT FILES                         */
+ /********************************************************************/
+ DCL 1 RCBBAA0_REC       CHAR(132);
+ DCL 1 RCBBAA0_REC_COPY  CHAR(132);
+ DCL 1 RCBBAA1_REC       CHAR(108);
+ DCL 1 RCBBAA2_REC       CHAR(088);
+ DCL 1 RCBBAA3_REC       CHAR(116);                       /* RB01242 */
+ DCL 1 RCBBAA4_REC       CHAR(112);
+ DCL 1 RCBBAA4_REC_COPY  CHAR(112);
+
+ DCL 1 RCBBAA0_HEADER   BASED(ADDR(RCBBAA0_REC)),
+       %INCLUDE (RCBBAASH);;
+
+ DCL 1 RCBBAA1_HEADER   BASED(ADDR(RCBBAA1_REC)),
+       %INCLUDE (RCBBAASH);;
+
+ DCL 1 RCBBAA2_HEADER   BASED(ADDR(RCBBAA2_REC)),
+       %INCLUDE (RCBBAASH);;
+
+ DCL 1 RCBBAA3_HEADER   BASED(ADDR(RCBBAA3_REC)),
+       %INCLUDE (RCBBAASH);;
+
+ DCL 1 RCBBAA4_HEADER   BASED(ADDR(RCBBAA4_REC)),
+       %INCLUDE (RCBBAASH);;
+
+ DCL 1 RCBBAA0_TRAILER  BASED(ADDR(RCBBAA0_REC)),
+       %INCLUDE (RCBBAAST);;
+
+ DCL 1 RCBBAA1_TRAILER  BASED(ADDR(RCBBAA1_REC)),
+       %INCLUDE (RCBBAAST);;
+
+ DCL 1 RCBBAA2_TRAILER  BASED(ADDR(RCBBAA2_REC)),
+       %INCLUDE (RCBBAAST);;
+
+ DCL 1 RCBBAA3_TRAILER  BASED(ADDR(RCBBAA3_REC)),
+       %INCLUDE (RCBBAAST);;
+
+ DCL 1 RCBBAA4_TRAILER  BASED(ADDR(RCBBAA4_REC)),
+       %INCLUDE (RCBBAAST);;
+
+ DCL 1 RCBBAA0_CUSTOMER BASED(ADDR(RCBBAA0_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV010,
+         %INCLUDE (RCB010S);,
+       3 TB_RCBV010_IND,
+         %INCLUDE (RCB010SI);;
+
+ DCL 1 RCBBAA0_CUSTOMER_COPY BASED(ADDR(RCBBAA0_REC_COPY)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV010,
+         %INCLUDE (RCB010S);,
+       3 TB_RCBV010_IND,
+         %INCLUDE (RCB010SI);;
+
+ DCL 1 RCBBAA1_CUST_ADDR BASED(ADDR(RCBBAA1_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV150,
+         %INCLUDE (RCB150S);,
+       3 TB_RCBV150_IND,
+         %INCLUDE (RCB150SI);;
+
+ DCL 1 RCBBAA2_ADDR_LINE BASED(ADDR(RCBBAA2_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV280,
+         %INCLUDE (RCB280S);,
+       3 TB_RCBV280_IND,
+         %INCLUDE (RCB280SI);;
+
+ DCL 1 RCBBAA3_HW_ADDR  BASED(ADDR(RCBBAA3_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV340,
+         %INCLUDE (RCB340S);,
+       3 TB_RCBV340_IND,
+         %INCLUDE (RCB340SI);;
+
+ DCL 1 RCBBAA4_CUST_MOD BASED(ADDR(RCBBAA4_REC)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV350,
+         %INCLUDE (RCB350S);,
+       3 TB_RCBV350_IND,
+         %INCLUDE (RCB350SI);;
+
+ DCL 1 RCBBAA4_CUST_MOD_COPY BASED(ADDR(RCBBAA4_REC_COPY)),
+       %INCLUDE (RCBBAAS1);,
+       3 TB_RCBV350,
+         %INCLUDE (RCB350S);,
+       3 TB_RCBV350_IND,
+         %INCLUDE (RCB350SI);;
+
+1/********************************************************************/
+ /*  PROGRAM CONTROL PARAMETERS                                      */
+ /********************************************************************/
+
+ DCL 1 PARM_COUNTRY     BASED(PTR_RCBV500),        /* COUNTRYNUMBER  */
+       %INCLUDE (RCBP00S);;
+
+ DCL 1 PARM_CHKP        BASED(PTR_RCBV500),        /* CHECKPOINT LIM */
+       %INCLUDE (RCBP12S);;
+
+ DCL 1 PARM_ZIP         BASED(PTR_RCBV500),        /* ZIP CODE ID    */
+       %INCLUDE (RCBP18S);;
+
+ DCL 1 PARM_HASH        BASED(ADDR(TB_RCBV500)),   /* HASH TOTAL     */
+       %INCLUDE (RCBP24S);;
+                                                      /* SOC RB01249 */
+
+ DCL 1 PARM_RCB069      BASED(PTR_RCBV500),        /* DFLT CE OU-CODE*/
+       %INCLUDE (RCBP69S);;
+                                                      /* EOC RB01249 */
+
+1/********************************************************************/
+ /*  COUNTS                                                          */
+ /********************************************************************/
+ DCL CNT_PIC9              PIC'(9)9';
+ DCL CNT_PIC15             PIC'(15)9';
+
+ /********************************************************************/
+ /*  BIT SWITCHES                                                    */
+ /********************************************************************/
+ DCL TRUE                    BIT (1)         INIT ('1'B);
+ DCL FALSE                   BIT (1)         INIT ('0'B);
+ DCL (SWITCH_RSTRT
+     ,SWITCH_HW_ADDR
+     ,SWITCH_CRITCUST_EXIT
+     ,SWITCH_ZIP_EXIT                                    /* RA01138 */
+     ,SWITCH_ZIP_FLAG                                    /* RA01138 */
+     ,SWITCH_CUF_EXIT)           BIT (1);
+
+1/********************************************************************/
+ /*  ALL OTHER USED TEMPORARY FIELDS                                 */
+ /********************************************************************/
+ DCL WRK_MOD_NAME         CHAR (08) INIT ('RCBBAAM ');
+ DCL WRK_PGM_NAME         CHAR (08) INIT ('RCBBAAP ');
+ DCL WRK_SYSTEM_TYPE      CHAR (01) INIT ('I');
+ DCL WRK_LAST_UPD_DATE    CHAR (10);
+ DCL WRK_DVOXB_ISO_OLD    CHAR (10);                      /* PTM1240 */
+ DCL WRK_DVOXB_ISO_NEW    CHAR (10);                      /* PTM1240 */
+ DCL WRK_RUN_DATE         CHAR (10);                      /* PTM 416 */
+ DCL WRK_CE_OU_CODE       CHAR (07);                      /* RB01249 */
+ DCL WRK_HW_REQUEST_CEDS  CHAR (01);
+ DCL WRK_FUNC             CHAR (04);
+ DCL WRK_DVOXB            FIXED DEC(05);
+ DCL WRK_DVOXB_P          PIC'99999';
+ DCL WRK_DVOXB_P2         PIC'99999';                     /* PTM1240 */
+ DCL WRK_RASXA_P          PIC'99999';
+ DCL WRK_SAVE_MAIN_P      PIC'99999';                     /* RC01226 */
+ DCL WRK_WRITE_MAIN       BIT(1) INIT('0'B);              /* RC01226 */
+ DCL WRK_RCBBAA0          CHAR (07) INIT ('RCBBAA0');
+ DCL WRK_RCBBAA1          CHAR (07) INIT ('RCBBAA1');
+ DCL WRK_RCBBAA2          CHAR (07) INIT ('RCBBAA2');
+ DCL WRK_RCBBAA3          CHAR (07) INIT ('RCBBAA3');
+ DCL WRK_RCBBAA4          CHAR (07) INIT ('RCBBAA4');
+ DCL WRK_XREF_KEY         CHAR(16);
+
+ DCL 1 WRK_XREF_KEY_S     BASED(ADDR(WRK_XREF_KEY)),
+       3 GCYAA            CHAR(04),
+       3 AASID            CHAR(02),
+       3 CSUXA            CHAR(01),
+       3 RCUXA            CHAR(06),
+       3 RASXA            FIXED DEC(05);
+
+ DCL 1 WRK_ADDRESSES,
+       3 ADDR_LINE(9)     CHAR(150);
+
+ DCL 1 WRK_ADDR_1         BASED(ADDR(WRK_ADDRESSES.ADDR_LINE(1))),
+       3 ADDR_CNTL,
+         5 ADDR_CNT       FIXED DEC(1),
+         5 ELEM_POST      FIXED DEC(3),
+         5 ELEM_ADDR      FIXED DEC(3),
+         5 FILLER         CHAR(01),
+       3 ADDR_PART        CHAR(144);
+
+ DCL WRK_LENGTH_ACUXA     FIXED BIN(15);
+ DCL WRK_LENGTH_LINE      FIXED BIN(15);
+ DCL WRK_LENGTH_CURR      FIXED BIN(15);
+ DCL WRK_LENGTH_ADDR      CHAR(02);
+ DCL WRK_LENGTH_ADDR_P    PIC'99' BASED(ADDR(WRK_LENGTH_ADDR));
+ DCL WRK_PLACE            CHAR(01);
+ DCL WRK_PLACE_P          PIC'9' BASED(ADDR(WRK_PLACE));
+ DCL WRK_PREV_PLACE       CHAR(01);
+ DCL WRK_START            FIXED BIN(15);
+ DCL WRK_LINE_NUMBER      FIXED BIN(15);
+ DCL WRK_RCBBAA2_LINE_N   BASED(ADDR(RCBBAA2_ADDR_LINE.LINE_NUMBER))
+                          PIC'99';
+ DCL WRK_CAPXB            BIT(16);
+ DCL WRK_ADDRESS_MASK     BIT(16);
+ DCL WRK_ADDR_LINE        CHAR(30);
+ DCL WRK_CNT_ADDR_LINE    FIXED BIN(15);
+ DCL WRK_HASH_FIELD       CHAR(04);
+ DCL WRK_FILE_NAME        CHAR(07);
+ DCL WRK_HASH_TOTAL       FIXED DEC(15,0);
+ DCL WRK_LENGTH_RCB024    FIXED BIN (15);
+
+ DCL 1 WRK_SOURCE_IND,
+       %INCLUDE (RCBZ29S);;
+
+ DCL 1 ZIP_AREA,
+       3 ADDR_LINE        CHAR(50),
+       3 ZIP_CODE         CHAR(9);
+
+1/********************************************************************/
+ /*  BUILTIN FUNCTIONS                                               */
+ /********************************************************************/
+ DCL (ADDR,
+      NULL,
+      CSTG,
+      STG,
+      DATE,
+      TIME,
+      HIGH,
+      LOW,
+      TRANSLATE,
+      LENGTH,
+      STRING,
+      SUBSTR)           BUILTIN;
+
+ /********************************************************************/
+ /* ON ERROR CONDITIONS                                              */
+ /********************************************************************/
+ %INCLUDE (RCB0E0M);
+   END;
+
+1/********************************************************************/
+ /*                 S T A R T   P R O C E S S I N G                  */
+ /********************************************************************/
+ CALL RCBBAAM_INIT_PROGRAM;
+
+ CALL RCBBAAM_INIT_COUNTRY;
+
+ DO WHILE (¬CHKP_AREA.SWITCH_END_COUNTRIES);
+
+   CALL RCBBAAM_PROCESS_CUSTOMER;
+
+   CALL RCBBAAM_TERM_COUNTRY;
+   CALL RCBBAAM_INIT_COUNTRY;
+
+ END;
+
+ CALL RCBBAAM_TERM_PROGRAM;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_CUSTOMER                              */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS CUSTOMER INFORMATION                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_CUSTOMER: PROC;
+
+ DO WHILE (¬CHKP_AREA.SWITCH_END_CM);
+
+   CALL PLITDLI(FOUR,GN,PTR_RBDGCM0,DB_CUST_MAST,SSA_RRDCM1);
+   SELECT (PCB_RBDGCM0.ST_CODE);
+   WHEN ('  ')
+     DO;
+       PARM_INT_AREA.SEQUENCE_KEY =                        /* RC01141 */
+                'DB'||CHKP_AREA.COUNTRY||DB_CUST_MAST.RCUXA;
+       IF DB_CUST_MAST.CIDEF |        /* DP CUSTOMER IND.  */
+          DB_CUST_MAST.CIDDY |        /* OP CUSTOMER IND.  */
+          DB_CUST_MAST.CIDEB          /* MPR CUSTOMER IND. */
+       THEN
+         DO;
+           IF DB_CUST_MAST.CIDEF      /* DP CUSTOMER        * RA01117 */
+           THEN                       /* READ CD FILE       * RA01117 */
+             CALL RCBBAAM_PROCESS_CUST_DP;                 /* RA01117 */
+           ELSE                       /* NO DP CUSTOMER     * RA01117 */
+             DB_CUST_DP = '';                              /* RA01117 */
+
+                                                     /* START RA01215 */
+             IF WRK_RUN_DATE >= '2001-07-01'
+              & WRK_RUN_DATE <= '2001-12-31'
+              & DB_CUST_DP.CCRXA = ' '
+              & (CHKP_AREA.COUNTRY = '618'
+               | CHKP_AREA.COUNTRY = '702'
+               | CHKP_AREA.COUNTRY = '838') THEN
+              DO;
+                DB_CUST_DP.CCRXA = 'EU';
+              END;
+                                                       /* END RA01215 */
+
+                                                     /* START PTM 661 */
+                   /* CHECK LAST UPDATE DATE CUSTOMER MASTER SEGMENT */
+           WRK_LAST_UPD_DATE       = ' ';
+           WRK_DVOXB_P             = DB_CUST_MAST.DVOXB;
+           DATE_AREA               = '';
+           DATE_AREA.WD_IN_FORMAT  = 'YYDDD';
+           DATE_AREA.WD_OUT_FORMAT = 'ISO';
+           DATE_AREA.WD_FUNCTION   = 'C';
+           DATE_AREA.WD_IN_DATE    = WRK_DVOXB_P;
+
+           CALL RCB004M (PTR_DATE_AREA);
+           IF DATE_AREA.WD_STATUS = ' '
+           THEN
+             WRK_LAST_UPD_DATE = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+           ELSE
+             CALL RCBBAAM_ISSUE_INV_DATE ('DVOXB',
+                                           WRK_DVOXB_P,
+                                           DATE_AREA.WD_STATUS);
+                                                     /* END   PTM 661 */
+           CALL RCBBAAM_PROCESS_CUST_FIN;
+
+           CALL RCBBAAM_WRITE_CUSTOMER;
+           CALL RCBBAAM_CUF_EXIT;
+
+           CHKP_AREA.CNT_CTRY.PROC_CM = CHKP_AREA.CNT_CTRY.PROC_CM + 1;
+
+           IF DB_CUST_MAST.CIDDX           /* ADDRESS LINK INDICATOR */
+           THEN
+             CALL RCBBAAM_PROCESS_ADDRESSES;
+
+           CHKP_AREA.CNT_CTRY.READ_CM = CHKP_AREA.CNT_CTRY.READ_CM + 1;
+         END;
+       ELSE
+         CHKP_AREA.CNT_CTRY.OTH_CM  = CHKP_AREA.CNT_CTRY.OTH_CM  + 1;
+       CHKP_AREA.CUSTOMER_NUMBER  = DB_CUST_MAST.RCUXA;    /* PTM1107 */
+     END;
+   WHEN ('GE','GB')
+     CHKP_AREA.SWITCH_END_CM = TRUE;
+   OTHERWISE
+     CALL RCBBAAM_ERROR(PTR_RBDGCM0,'IMS_DB','#001');
+   END;
+
+   CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+   IF ((CHKP_AREA.CHKP_LIMIT ¬= 0) &
+       (CHKP_CNT_STEPS > CHKP_AREA.CHKP_LIMIT))
+   THEN
+   DO;
+     NR_CKP = NR_CKP+1;
+     CALL RCBBAAM_CHECKPOINT;
+   END;
+
+ END;
+
+ END RCBBAAM_PROCESS_CUSTOMER;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_CUST_FIN                              */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS FINANCE INFO FROM RBDGCM0 (VSDCM1)    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_CUST_FIN: PROC;
+
+ DB_CUST_FIN = '';
+ CALL PLITDLI(FOUR,GNP,PTR_RBDGCM0,DB_CUST_FIN,SSA_RRDCM2);
+ SELECT (PCB_RBDGCM0.ST_CODE);
+ WHEN ('  ')
+   DO;
+     CALL RCBBAAM_WRITE_CUST_MOD;
+     CHKP_AREA.CNT_CTRY.READ_FIN = CHKP_AREA.CNT_CTRY.READ_FIN + 1;
+   END;
+ WHEN ('GE','GB')
+   DO;
+   /*IF DB_CUST_MAST.CEMXA = ''                      *//* SOC RC01378 */
+   /*&  DB_CUST_DP.CPMXA = ''                              /* RA01117 */
+   /*&  DB_CUST_DP.RENXA = ''                              /* RA01117 */
+   /*&  STRING(DB_CUST_DP.RLCXC) = ''                      /* RA01117 */
+   /*&  STRING(DB_CUST_DP.RLCXI) = ''                      /* RA01117 */
+   /*&   DB_CUST_DP.CCRXA ¬= 'EU'                          /* RA01215 */
+   /*THEN
+       RCBBAA4_REC = '';
+     ELSE                                            *//* EOC RC01378 */
+       CALL RCBBAAM_WRITE_CUST_MOD2;
+   END;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_RBDGCM0,'IMS_DB','#002');
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_PROCESS_CUST_FIN;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_CUST_MOD                        */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE CUSTOMER MOD. RECORD RCBBAA1            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_CUST_MOD: PROC;
+
+ /* CHECK LAST UPDATE DATE CUSTOMER FINANCE SEGMENT */
+ /* REMOVED BECAUSE T380 CONTAINS MORE THAN FINANCE DATA */
+
+ RCBBAA4_REC                        = ' ';
+ RCBBAA4_CUST_MOD.INDNULL(*)        = 0;
+ RCBBAA4_CUST_MOD.REC_TYPE          = '02';
+ RCBBAA4_CUST_MOD.CTRYNO            = CHKP_AREA.COUNTRY;
+ RCBBAA4_CUST_MOD.PGR_TYPE          = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA4_CUST_MOD.RUN_DATE          = WRK_RUN_DATE;
+
+ RCBBAA4_CUST_MOD.COUNTRY_NUMBER    = CHKP_AREA.COUNTRY;
+ RCBBAA4_CUST_MOD.CUSTOMER_NUMBER   = '00'||DB_CUST_MAST.RCUXA;
+ RCBBAA4_CUST_MOD.EMBARGO_CODE      = DB_CUST_MAST.CEMXA;
+ RCBBAA4_CUST_MOD.CREDIT_LIMIT_CODE = DB_CUST_FIN.CRDXA;
+ RCBBAA4_CUST_MOD.CREDIT_AMOUNT_LIM = DB_CUST_FIN.VLLXA;
+ RCBBAA4_CUST_MOD.CASH_ON_DELIVERY  = DB_CUST_DP.CPMXA;    /* RA01117 */
+                                                       /* SOC RB01249 */
+ CALL RCBBAAM_CHECK_CE_OU_CODE;
+ RCBBAA4_CUST_MOD.CU_ENGINEERING_OU = WRK_CE_OU_CODE;
+                                                       /* EOC RB01249 */
+                                                           /* RA01117 */
+ RCBBAA4_CUST_MOD.MKT_INSTALLING_OU = STRING(DB_CUST_DP.RLCXI);
+
+ SELECT(DB_CUST_DP.CCRXA);                             /* SOC RA01215 */
+ WHEN ('EU')
+   RCBBAA4_CUST_MOD.CURRENCY = 'EUR';
+ OTHERWISE
+   RCBBAA4_CUST_MOD.CURRENCY = '';
+ END;                                                  /* EOC RA01215 */
+
+ RCBBAA4_CUST_MOD.EFFECTIVE_DATE    = WRK_LAST_UPD_DATE;  /* PTM 761 */
+ RCBBAA4_CUST_MOD.END_DATE          = ' ';
+
+                                                       /* SOC PTM0997 */
+ /* THIS IS A SPECIAL CASE FOR BELGIUM WHERE THEY USE MODE_OF_PAYMENT */
+ /* AS CREDIT_LIMIT_CODE.                                             */
+
+ IF CHKP_AREA.COUNTRY = '624'        /* BELGIUM */
+ THEN
+   DO;
+     IF DB_CUST_DP.CPMXA = '1'
+     THEN
+       RCBBAA4_CUST_MOD.CREDIT_LIMIT_CODE = DB_CUST_DP.CPMXA || ' ';
+   END;
+                                                       /* EOC PTM0997 */
+
+                                             /************************/
+                                             /* NULL INDICATORS      */
+                                             /************************/
+ IF RCBBAA4_CUST_MOD.EMBARGO_CODE      = ''
+ THEN RCBBAA4_CUST_MOD.INDNULL(3)      = -1;
+
+ IF RCBBAA4_CUST_MOD.CREDIT_LIMIT_CODE = ''
+ THEN RCBBAA4_CUST_MOD.INDNULL(4)      = -1;
+
+ IF RCBBAA4_CUST_MOD.CASH_ON_DELIVERY  = ''
+ THEN RCBBAA4_CUST_MOD.INDNULL(6)      = -1;
+
+ IF RCBBAA4_CUST_MOD.CU_ENGINEERING_OU = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(7)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.MKT_INSTALLING_OU = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(8)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.CURRENCY          = ''                /* RA01215 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(9)      = -1;               /* RA01215 */
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA4,RCBBAA4_REC);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#003');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA4 = CHKP_AREA.CNT_CTRY.RCBBAA4 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA4_CUST_MOD.CUSTOMER_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA4,
+              PTR_INT_AREA);
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_CUST_MOD;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_CUST_MOD2                       */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE CUSTOMER MOD. RECORD RCBBAA1            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_CUST_MOD2: PROC;
+
+ RCBBAA4_REC                        = ' ';
+ RCBBAA4_CUST_MOD.INDNULL(*)        = 0;
+ RCBBAA4_CUST_MOD.REC_TYPE          = '02';
+ RCBBAA4_CUST_MOD.CTRYNO            = CHKP_AREA.COUNTRY;
+ RCBBAA4_CUST_MOD.PGR_TYPE          = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA4_CUST_MOD.RUN_DATE          = WRK_RUN_DATE;
+
+ RCBBAA4_CUST_MOD.COUNTRY_NUMBER    = CHKP_AREA.COUNTRY;
+ RCBBAA4_CUST_MOD.CUSTOMER_NUMBER   = '00'||DB_CUST_MAST.RCUXA;
+ RCBBAA4_CUST_MOD.EMBARGO_CODE      = DB_CUST_MAST.CEMXA;
+ RCBBAA4_CUST_MOD.CREDIT_AMOUNT_LIM = 0;
+ RCBBAA4_CUST_MOD.CASH_ON_DELIVERY  = DB_CUST_DP.CPMXA;    /* RA01117 */
+                                                       /* SOC RB01249 */
+ CALL RCBBAAM_CHECK_CE_OU_CODE;
+ RCBBAA4_CUST_MOD.CU_ENGINEERING_OU = WRK_CE_OU_CODE;
+                                                       /* EOC RB01249 */
+                                                           /* RA01117 */
+ RCBBAA4_CUST_MOD.MKT_INSTALLING_OU = STRING(DB_CUST_DP.RLCXI);
+
+ SELECT(DB_CUST_DP.CCRXA);                             /* SOC RA01215 */
+ WHEN ('EU')
+   RCBBAA4_CUST_MOD.CURRENCY = 'EUR';
+ OTHERWISE
+   RCBBAA4_CUST_MOD.CURRENCY = '';
+ END;                                                  /* EOC RA01215 */
+
+ RCBBAA4_CUST_MOD.EFFECTIVE_DATE    = WRK_LAST_UPD_DATE;  /* PTM 761 */
+ RCBBAA4_CUST_MOD.END_DATE          = ' ';
+
+                                                       /* SOC PTM0997 */
+ /* THIS IS A SPECIAL CASE FOR BELGIUM WHERE THEY USE MODE_OF_PAYMENT */
+ /* AS CREDIT_LIMIT_CODE.                                             */
+
+ IF CHKP_AREA.COUNTRY = '624'        /* BELGIUM */
+ THEN
+   DO;
+     IF DB_CUST_DP.CPMXA = '1'
+     THEN
+       RCBBAA4_CUST_MOD.CREDIT_LIMIT_CODE = DB_CUST_DP.CPMXA || ' ';
+   END;
+                                                       /* EOC PTM0997 */
+
+                                             /************************/
+                                             /* NULL INDICATORS      */
+                                             /************************/
+
+ IF RCBBAA4_CUST_MOD.EMBARGO_CODE      = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(3)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.CREDIT_LIMIT_CODE = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(4)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.CASH_ON_DELIVERY  = ''
+ THEN RCBBAA4_CUST_MOD.INDNULL(6)      = -1;
+
+ IF RCBBAA4_CUST_MOD.CU_ENGINEERING_OU = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(7)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.MKT_INSTALLING_OU = ''                /* RA01117 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(8)      = -1;               /* RA01117 */
+
+ IF RCBBAA4_CUST_MOD.CURRENCY          = ''                /* RA01215 */
+ THEN RCBBAA4_CUST_MOD.INDNULL(9)      = -1;               /* RA01215 */
+
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA4,RCBBAA4_REC);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#004');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA4 = CHKP_AREA.CNT_CTRY.RCBBAA4 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA4_CUST_MOD.CUSTOMER_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA4,
+              PTR_INT_AREA);
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_CUST_MOD2;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_CUSTOMER                        */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE CUSTOMER DATA RECORD RCBBAA0            */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_CUSTOMER: PROC;
+
+ RCBBAA0_REC                        = ' ';
+ RCBBAA0_CUSTOMER.INDNULL(*)        = 0;
+ RCBBAA0_CUSTOMER.REC_TYPE          = '02';
+ RCBBAA0_CUSTOMER.CTRYNO            = CHKP_AREA.COUNTRY;
+ RCBBAA0_CUSTOMER.PGR_TYPE          = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA0_CUSTOMER.RUN_DATE          = WRK_RUN_DATE;
+
+ RCBBAA0_CUSTOMER.COUNTRY_NUMBER    = CHKP_AREA.COUNTRY;
+ RCBBAA0_CUSTOMER.CUSTOMER_NUMBER   = '00'||DB_CUST_MAST.RCUXA;
+ RCBBAA0_CUSTOMER.CUSTOMER_NAME     = DB_CUST_MAST.NCUXB;
+ RCBBAA0_CUSTOMER.CUSTOMER_LOCATION = DB_CUST_MAST.LCUXB;
+ RCBBAA0_CUSTOMER.TYPE_OF_CUSTOMER  = DB_CUST_MAST.CCUAI;
+ RCBBAA0_CUSTOMER.ENTERPRISE_NUMBER = DB_CUST_DP.RENXA;   /* RA01117 */
+
+ CALL RCBBAAM_CRITCUST_EXIT;
+
+ IF CHKP_AREA.SWITCH_CRITCUST_EXIT = TRUE
+ THEN
+   RCBBAA0_CUSTOMER.CRIT_CUST_DATA_CDE =
+     RCBBAA0_CUSTOMER_COPY.CRIT_CUST_DATA_CDE;
+
+ RCBBAA0_CUSTOMER.EFFECTIVE_DATE    = WRK_LAST_UPD_DATE;
+ RCBBAA0_CUSTOMER.END_DATE          = ' ';
+
+                                             /************************/
+                                             /* NULL INDICATORS      */
+                                             /************************/
+ IF RCBBAA0_CUSTOMER.ENTERPRISE_NUMBER = ''                /* RA01117 */
+ THEN RCBBAA0_CUSTOMER.INDNULL(5)   = -1;                  /* RA01117 */
+ ELSE RCBBAA0_CUSTOMER.ENTERPRISE_NUMBER =                 /* RA01117 */
+      '00'||RCBBAA0_CUSTOMER.ENTERPRISE_NUMBER;
+
+ IF RCBBAA0_CUSTOMER.TYPE_OF_CUSTOMER = ''
+ THEN RCBBAA0_CUSTOMER.INDNULL(6)   = -1;                  /* RA01117 */
+
+ IF RCBBAA0_CUSTOMER.CRIT_CUST_DATA_CDE = ''
+ THEN RCBBAA0_CUSTOMER.INDNULL(7)   = -1;                  /* RA01117 */
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA0,RCBBAA0_REC);
+ IF PCB_RCBBAA0.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA0,'IMS_DB','#005');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA0 = CHKP_AREA.CNT_CTRY.RCBBAA0 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA0_CUSTOMER.CUSTOMER_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA0,
+              PTR_INT_AREA);
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_CUSTOMER;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_ADDRESSES                             */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS HW AND CUSTOMER ADDRESSES             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_ADDRESSES: PROC;
+
+                  /* SET KEY FOR READING ALL ADDRESSES OF A CUSTOMER */
+ SSA_RRDCA1.CTRYNO1 = ' '||CHKP_AREA.COUNTRY;   /* GCYAA             */
+ SSA_RRDCA1.RCUXA1  = DB_CUST_MAST.RCUXA;       /* RCUXA             */
+ SSA_RRDCA1.REST1   = LOW(4);                   /* RASXA,RSQA1       */
+ SSA_RRDCA1.CTRYNO2 = ' '||CHKP_AREA.COUNTRY;   /* GCYAA             */
+ SSA_RRDCA1.RCUXA2  = DB_CUST_MAST.RCUXA;       /* RCUXA             */
+ SSA_RRDCA1.REST2   = HIGH(4);                  /* RASXA,RSQA1       */
+
+ CHKP_AREA.SWITCH_END_CA = FALSE;
+ WRK_DVOXB               = 0;             /* LAST UPDATE DATE        */
+ WRK_FUNC                = GU;            /* 'GU' FOR FIRST ADDRESS  */
+
+                                          /* RC01226 */
+                                          /* MAIN ADDRESS FOR AUSTRIA*/
+ IF CHKP_AREA.COUNTRY = '618'
+ THEN DO;
+   IF DB_CUST_DP.RASXA(3) = 0 |
+      DB_CUST_DP.RASXA(3) = 99999 |
+      DB_CUST_MAST.RCUXA ¬= DB_CUST_DP.RCUXA
+   THEN
+     WRK_SAVE_MAIN_P = '00000';
+   ELSE
+     WRK_SAVE_MAIN_P = DB_CUST_DP.RASXA(3);
+   WRK_WRITE_MAIN = '0'B;
+ END;
+ ELSE
+   WRK_SAVE_MAIN_P = '00000';
+
+
+ CALL RCBBAAM_READ_CUST_ADDR;             /* FIRST CUSTOMER ADDRESS  */
+                                          /* LINE OF FIRST ADDRESS   */
+ WRK_FUNC = GN;                           /* 'GN' FOR OTHER ADDRESSES*/
+                                          /* 'OR ADDRESS LINES       */
+ DO WHILE (¬CHKP_AREA.SWITCH_END_CA);
+
+ /************************** LOCAL START *****************************/
+ IF DB_CUST_ADDR.GCYAA = ' 788'                /* PTM 917 */
+ THEN DO;
+
+   IF DB_CUST_ADDR.RASXA < 00010
+     THEN
+       DB_CUST_ADDR.CAPXB = '1111000000000000'B;
+
+   IF DB_CUST_ADDR.RASXA >= 20400 & DB_CUST_ADDR.RASXA <= 20499
+     THEN
+       DB_CUST_ADDR.CAPXB = '0001000000000000'B;
+
+   IF DB_CUST_ADDR.RASXA >= 20800 & DB_CUST_ADDR.RASXA <= 20899
+     THEN
+       DB_CUST_ADDR.CAPXB = '0001000000000000'B;
+
+   IF DB_CUST_ADDR.RASXA >= 24000 & DB_CUST_ADDR.RASXA <= 24099
+     THEN
+       DB_CUST_ADDR.CAPXB = '0000010000000000'B;
+
+   IF DB_CUST_ADDR.RASXA >= 24100 & DB_CUST_ADDR.RASXA <= 24159
+     THEN
+       DB_CUST_ADDR.CAPXB = '0000001000000000'B;
+
+   IF DB_CUST_ADDR.RASXA >= 24160 & DB_CUST_ADDR.RASXA <= 24199
+     THEN
+       DB_CUST_ADDR.CAPXB = '0000100000000000'B;
+
+   IF DB_CUST_ADDR.RASXA = 29901
+     THEN
+       DB_CUST_ADDR.CAPXB = '0000000100000000'B;
+   END;                                            /* PTM 917 */
+ /*************************** LOCAL END ******************************/
+   WRK_ADDRESS_MASK   = FALSE;            /* MASK = '000000000000000 */
+   WRK_CAPXB= DB_CUST_ADDR.CAPXB;
+   CALL RCBBAAM_READ_ADDR_LINES;
+                                                      /* SOC S1766862 */
+ /*IF DB_CUST_ADDR.CIDAW = '1' | WRK_CAPXB     /* ADDRESS LINK SET OR */
+ /*THEN                                        /* DP ADDR. MASK ¬= 0  */
+ /*  DO;                                       /* --> NO ACTION       */
+ /*  END;
+ /*ELSE
+ /*  DO;
+ /*    WRK_CAPXB = '';
+ /*    CHKP_AREA.CNT_CTRY.SKIP_CA = CHKP_AREA.CNT_CTRY.SKIP_CA + 1;
+ /*  END;                                             /* EOC S1766862 */
+
+   SWITCH_HW_ADDR = FALSE;                                 /* PTM1310 */
+
+                                                      /* SOC S1766862 */
+ /*IF DB_CUST_ADDR.CIDAW = '1'         /* READ PRODUCTS WHEN LINK SET */
+ /*THEN                                               /* EOC S1766862 */
+     CALL RCBBAAM_PROCESS_HW_ADDRESSES;
+                                                      /* SOC S1766862 */
+ /*IF WRK_CAPXB |                  /* WRITE ADDRESS AND LINES WHEN DP */
+   IF WRK_CAPXB ¬= '0'B |         /* WRITE ADDRESS AND LINES WHEN DP */
+                                                      /* EOC S1766862 */
+      SWITCH_HW_ADDR               /* ADDRESS OR HW PRODUCTS LINKED   */
+   THEN
+     DO;
+                       /* ALL HW ADDRESS MASKS (IN WRK_ADDRESS_MASK) */
+                       /* BITWISE OR DP ADDRESS MASK                 */
+       WRK_ADDRESS_MASK = WRK_ADDRESS_MASK | WRK_CAPXB;
+                 /* FOLLOWING PROCEDURES SWAPPED */       /* RA01138 */
+       CALL RCBBAAM_MAKE_ADDR_LINES;                      /* RA01138 */
+       CALL RCBBAAM_WRITE_CUST_ADDR;                      /* RA01138 */
+     END;
+
+   CALL RCBBAAM_READ_CUST_ADDR;             /* NEXT CUSTOMER ADDRESS */
+                                            /* LINES AND NEXT ADRESSES*/
+ END;
+
+ END RCBBAAM_PROCESS_ADDRESSES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : READ_ADDR_LINES                               */
+ /*                                                                  */
+ /* DESCRIPTION      : READ ADDRESS LINES FROM VSDCA0 ADDRESS RECORDS*/
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_READ_ADDR_LINES: PROC;
+
+                    /* SAVE FIRST (ALREADY READ) ADDRESS LINE RECORD */
+ WRK_ADDRESSES              = ' ';
+ ZIP_AREA = '';                        /* INIT ZIP CODE AREA PTM0952 */
+ WRK_ADDRESSES.ADDR_LINE(1) = DB_CUST_ADDR.ACUXA;
+ CHKP_AREA.CNT_CTRY.PROC_CA = CHKP_AREA.CNT_CTRY.PROC_CA + 1;
+
+                        /* READ/SAVE ALL OTHER (MAX 9) ADDRESS LINES */
+ DO WHILE (DB_CUST_ADDR.RSQA1 < WRK_ADDR_1.ADDR_CNT &  /* SEQ. NBR.  */
+           DB_CUST_ADDR.CCTXA ¬= 0);                   /* CONT. IND. */
+
+   CALL RCBBAAM_READ_CUST_ADDR;
+   WRK_ADDRESSES.ADDR_LINE(DB_CUST_ADDR.RSQA1) = DB_CUST_ADDR.ACUXA;
+   CHKP_AREA.CNT_CTRY.PROC_CA = CHKP_AREA.CNT_CTRY.PROC_CA + 1;
+
+ END;
+
+                    /* CHECK MAXIMUM LAST UPDATE DATE ADDRESS LINES */
+ WRK_LAST_UPD_DATE       = ' ';
+ WRK_DVOXB_P             = WRK_DVOXB;
+ DATE_AREA               = '';
+ DATE_AREA.WD_IN_FORMAT  = 'YYDDD';
+ DATE_AREA.WD_OUT_FORMAT = 'ISO';              /* 'YYYY-MM'DD'       */
+ DATE_AREA.WD_FUNCTION   = 'C';                /* CONVERT            */
+ DATE_AREA.WD_IN_DATE    = WRK_DVOXB_P;        /* MAX LAST UPD. DATE */
+ CALL RCB004M (PTR_DATE_AREA);
+
+                                                  /* SOC CEDS00000628 */
+ IF WRK_DVOXB_P = '00000' THEN
+    WRK_DVOXB_P = DB_CUST_ADDR.DVOXB;
+                                                  /* EOC CEDS00000628 */
+ IF DATE_AREA.WD_STATUS = ' '
+ THEN
+   WRK_LAST_UPD_DATE = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+ ELSE
+   CALL RCBBAAM_ISSUE_INV_DATE ('DVOXB',
+                                WRK_DVOXB_P,
+                                DATE_AREA.WD_STATUS);
+
+ END RCBBAAM_READ_ADDR_LINES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : READ_CUST_ADDR                                */
+ /*                                                                  */
+ /* DESCRIPTION      : READ CUSTOMER ADDRESS FROM RBDGCA0 (VSDCA0)   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_READ_CUST_ADDR: PROC;
+
+                       /* WRK_FUNC CONTAINS 'GU  ' FOR FIRST ADDRESS */
+                       /* 'GN  ' OTHERWISE                           */
+ DB_CUST_ADDR = '';
+ CALL PLITDLI(FOUR,WRK_FUNC,PTR_RBDGCA0,DB_CUST_ADDR,SSA_RRDCA1);
+ SELECT (PCB_RBDGCA0.ST_CODE);
+ WHEN ('  ')
+   DO;
+     CHKP_AREA.CNT_CTRY.READ_CA = CHKP_AREA.CNT_CTRY.READ_CA + 1;
+
+                                                  /* START OF PTM1240 */
+     WRK_DVOXB_ISO_OLD       = ' ';
+     WRK_DVOXB_P2            = WRK_DVOXB;
+     DATE_AREA               = '';
+     DATE_AREA.WD_IN_FORMAT  = 'YYDDD';
+     DATE_AREA.WD_OUT_FORMAT = 'ISO';
+     DATE_AREA.WD_FUNCTION   = 'C';
+     DATE_AREA.WD_IN_DATE    = WRK_DVOXB_P2;
+
+     CALL RCB004M (PTR_DATE_AREA);
+     IF DATE_AREA.WD_STATUS = ' '
+     THEN
+       WRK_DVOXB_ISO_OLD = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+
+     WRK_DVOXB_ISO_NEW       = ' ';
+     WRK_DVOXB_P2            = DB_CUST_ADDR.DVOXB;
+     DATE_AREA               = '';
+     DATE_AREA.WD_IN_FORMAT  = 'YYDDD';
+     DATE_AREA.WD_OUT_FORMAT = 'ISO';
+     DATE_AREA.WD_FUNCTION   = 'C';
+     DATE_AREA.WD_IN_DATE    = WRK_DVOXB_P2;
+
+     CALL RCB004M (PTR_DATE_AREA);
+     IF DATE_AREA.WD_STATUS = ' '
+     THEN
+       WRK_DVOXB_ISO_NEW = SUBSTR(DATE_AREA.WD_OUT_DATE,1,10);
+
+     IF WRK_DVOXB_ISO_OLD < WRK_DVOXB_ISO_NEW    /* SAVE MAXIMUM LAST */
+                                                  /* END   OF PTM1240 */
+     THEN                                         /* UPDATE DATE      */
+       WRK_DVOXB = DB_CUST_ADDR.DVOXB;
+   END;
+ WHEN ('GE','GB')
+   CHKP_AREA.SWITCH_END_CA = TRUE;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_RBDGCA0,'IMS_DB','#006');
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_READ_CUST_ADDR;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_CUSTOMER_DP                   RA01117 */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS DP CUSTOMER                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_CUST_DP: PROC;
+
+                                  /* SET KEY FOR READING DP CUSTOMER */
+ SSA_RRDCD1.CTRYNO1 = ' '||CHKP_AREA.COUNTRY;   /* GCYAA             */
+ SSA_RRDCD1.RCUXA1  = DB_CUST_MAST.RCUXA;       /* RCUXA             */
+ SSA_RRDCD1.CRCAK1  = LOW(1);                   /* CRCAK             */
+ SSA_RRDCD1.CTRYNO2 = ' '||CHKP_AREA.COUNTRY;   /* GCYAA             */
+ SSA_RRDCD1.RCUXA2  = DB_CUST_MAST.RCUXA;       /* RCUXA             */
+ SSA_RRDCD1.CRCAK2  = HIGH(1);                  /* CRCAK             */
+
+ CHKP_AREA.SWITCH_END_CD = FALSE;
+
+ CALL RCBBAAM_READ_CUST_DP;               /* READ DP CUSTOMER        */
+ /* translate ccrxa to upper case                            RA01215 */
+ DB_CUST_DP.CCRXA = TRANSLATE(DB_CUST_DP.CCRXA,
+                              'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                              'abcdefghijklmnopqrstuvwxyz');
+
+ END RCBBAAM_PROCESS_CUST_DP;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : READ_CUST_DP                          RA01117 */
+ /*                                                                  */
+ /* DESCRIPTION      : READ CUSTOMER DP FROM RBDGCD0 (VSDCD0)        */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_READ_CUST_DP: PROC;
+
+                       /* WRK_FUNC CONTAINS 'GU  ' FOR FIRST ADDRESS */
+                       /* 'GN  ' OTHERWISE                           */
+ DB_CUST_DP = '';
+ CALL PLITDLI(FOUR,GN,PTR_RBDGCD0,DB_CUST_DP,SSA_RRDCD1);
+ SELECT (PCB_RBDGCD0.ST_CODE);
+ WHEN ('  ')
+   DO;
+     CHKP_AREA.CNT_CTRY.READ_CD = CHKP_AREA.CNT_CTRY.READ_CD + 1;
+     CHKP_AREA.CNT_CTRY.PROC_CD = CHKP_AREA.CNT_CTRY.PROC_CD + 1;
+
+   END;
+ WHEN ('GE','GB')
+   CHKP_AREA.SWITCH_END_CD = TRUE;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_RBDGCD0,'IMS_DB','#007');
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_READ_CUST_DP;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_HW_ADDRESSES                          */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS THE HW ADDRESSES FOR A CERTAIN        */
+ /*                    CUSTOMER                                      */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_HW_ADDRESSES: PROC;
+
+ /* SET KEY FOR READING ALL PRODUCTS (CSUXA = '3') OF CUST. ADDRESS  */
+ WRK_XREF_KEY_S.GCYAA = ' '||CHKP_AREA.COUNTRY;   /* COUNTRYNUMBER   */
+ WRK_XREF_KEY_S.AASID = 'CT';                     /* AAS FILE-ID     */
+ WRK_XREF_KEY_S.CSUXA = '3';                      /* SUBJECT-ID      */
+ WRK_XREF_KEY_S.RCUXA = DB_CUST_ADDR.RCUXA;       /* CUSTOMER NUMBER */
+ WRK_XREF_KEY_S.RASXA = DB_CUST_ADDR.RASXA;       /* ADDRESS NUMBER  */
+ SSA_RRDCFW.KEY_VAL1 = WRK_XREF_KEY||
+                       LOW(13);                 /* CMAXA,RMAXA,CFUXB */
+ SSA_RRDCFW.KEY_VAL2 = WRK_XREF_KEY||
+                       HIGH(13);                /* CMAXA,RMAXA,CFUXB */
+
+ CHKP_AREA.SWITCH_END_CT = FALSE;
+ /* SWITCH_HW_ADDR       = FALSE                            *PTM1310 */
+ WRK_FUNC                = GU;            /* 'GU' FOR FIRST PRODUCT  */
+
+ CALL RCBBAAM_READ_HW_ADDR;               /* READ FIRST PRODUCT      */
+
+ WRK_FUNC           = GN;                 /* 'GN' FOR OTHER PRODUCTS */
+ DO WHILE (¬CHKP_AREA.SWITCH_END_CT);
+
+                                /* HW ADDRESSES OF DP DIVISIONS ONLY */
+   IF DB_CUST_XREF.CFUXB = 'DP' &                 /* DIVISION CODE   */
+      DB_CUST_XREF.CRCAB = '3' &                  /* RECORD ID       */
+      ¬(SUBSTR(DB_CUST_XREF.CMAXA,1,2) = '56' |
+        SUBSTR(DB_CUST_XREF.CMAXA,1,2) = '57')    /* HW ONLY         */
+        &
+      ¬((CHKP_AREA.COUNTRY = '678')  &
+        ((DB_CUST_XREF.CAPXA & '0010000000000000'B) =
+                                         '0000000000000000'B))
+          /* IF DENMARK AND THE ADDRESS MASK HAS NO INSTALL BIT ON,
+             THEN SKIP THIS ADDRESS */
+   THEN
+     DO;
+       SWITCH_HW_ADDR = TRUE;
+                               /* HW ADDRESS WILL ONLY BE             */
+                               /* WRITTEN IF THE PRODUCT IS REQUESTED */
+       CALL RCBBAAM_CHECK_REQUESTED (CHKP_AREA.COUNTRY,
+                                     DB_CUST_XREF.CMAXA,
+                                     WRK_RUN_DATE);
+       IF WRK_HW_REQUEST_CEDS =  '1'
+       THEN
+         DO;
+           CALL RCBBAAM_WRITE_HW_ADDR;
+           CHKP_AREA.CNT_CTRY.PROC_CT = CHKP_AREA.CNT_CTRY.PROC_CT + 1;
+         END;
+       ELSE
+         DO;
+           CHKP_AREA.CNT_CTRY.SKIP_CT = CHKP_AREA.CNT_CTRY.SKIP_CT + 1;
+         END;
+
+            /* MASK (CONTAINING APPLICATION CODES OF ALL PREVIOUS HW */
+            /* PRODUCTS) BITWISE OR WITH CURRENT APPLICATION CODE    */
+       WRK_ADDRESS_MASK = WRK_ADDRESS_MASK | DB_CUST_XREF.CAPXA;
+     END;
+   ELSE
+     CHKP_AREA.CNT_CTRY.OTH_CT = CHKP_AREA.CNT_CTRY.OTH_CT + 1;
+
+   CALL RCBBAAM_READ_HW_ADDR;             /* READ NEXT PRODUCT       */
+ END;
+
+ END RCBBAAM_PROCESS_HW_ADDRESSES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : READ_HW_ADDR                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : READ HW ADDRESS FROM RBDGCT0                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_READ_HW_ADDR: PROC;
+
+ /* WRK_FUNC CONTAINS 'GU  ' FOR FIRST PRODUCT, 'GN  ' OTHERWISE     */
+ DB_CUST_XREF = '';
+ CALL PLITDLI(FOUR,WRK_FUNC,PTR_RBDGCT0,DB_CUST_XREF,SSA_RRDCFW);
+ SELECT (PCB_RBDGCT0.ST_CODE);
+ WHEN ('  ')
+   CHKP_AREA.CNT_CTRY.READ_CT = CHKP_AREA.CNT_CTRY.READ_CT + 1;
+ WHEN ('GE','GB')
+   CHKP_AREA.SWITCH_END_CT = TRUE;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_RBDGCT0,'IMS_DB','#008');
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_READ_HW_ADDR;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : WRITE_HW_ADDR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE HW ADDRESS OF CUSTOMER RECORD RCBBAA3   */
+ /*                                                                  */
+ /* NOTE : NO DATE SHIFT POSSIBLE FOR THE EFFECTIVE DATE             */
+ /*        SEE THE DESCRIPTION OF PTM 302                            */
+ /********************************************************************/
+ RCBBAAM_WRITE_HW_ADDR: PROC;
+
+ WRK_RASXA_P                     = DB_CUST_XREF.RASXA;
+ RCBBAA3_REC                     = ' ';
+ RCBBAA3_HW_ADDR.INDNULL(*)      = 0;
+ RCBBAA3_HW_ADDR.REC_TYPE        = '02';
+ RCBBAA3_HW_ADDR.CTRYNO          = CHKP_AREA.COUNTRY;
+ RCBBAA3_HW_ADDR.PGR_TYPE        = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA3_HW_ADDR.RUN_DATE        = WRK_RUN_DATE;
+
+ RCBBAA3_HW_ADDR.COUNTRY_NUMBER  = CHKP_AREA.COUNTRY;
+ RCBBAA3_HW_ADDR.PRODUCT_TYPE    = DB_CUST_XREF.CMAXA;
+ RCBBAA3_HW_ADDR.ORIGIN          = SUBSTR(DB_CUST_XREF.RMAXA,1,2);
+ RCBBAA3_HW_ADDR.SEQUENCE_NUMBER = '00'||
+                                   SUBSTR(DB_CUST_XREF.RMAXA,3,5);
+ RCBBAA3_HW_ADDR.CUSTOMER_USER   = '00'||DB_CUST_XREF.RCUAB;
+ RCBBAA3_HW_ADDR.ADDRESS_NUMBER  = WRK_RASXA_P;
+
+ RCBBAA3_HW_ADDR.EFFECTIVE_DATE = WRK_LAST_UPD_DATE;   /* PTM 302 */
+
+ RCBBAA3_HW_ADDR.END_DATE        = ' ';
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA3,RCBBAA3_REC);
+ IF PCB_RCBBAA3.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA3,'IMS_DB','#009');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA3 = CHKP_AREA.CNT_CTRY.RCBBAA3 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA3_HW_ADDR.SEQUENCE_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA3,
+              PTR_INT_AREA);
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_HW_ADDR;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : WRITE_CUST_ADDR                               */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE CUSTOMER ADDRESS RECORD RCBBAA1         */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_CUST_ADDR: PROC;
+
+ RCBBAA1_REC                       = ' ';
+ RCBBAA1_CUST_ADDR.INDNULL(*)      = 0;
+ RCBBAA1_CUST_ADDR.REC_TYPE        = '02';
+ RCBBAA1_CUST_ADDR.CTRYNO          = CHKP_AREA.COUNTRY;
+ RCBBAA1_CUST_ADDR.PGR_TYPE        = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA1_CUST_ADDR.RUN_DATE        = WRK_RUN_DATE;
+
+ RCBBAA1_CUST_ADDR.COUNTRY_NUMBER  = CHKP_AREA.COUNTRY;
+ RCBBAA1_CUST_ADDR.CUSTOMER_NUMBER = '00'||DB_CUST_ADDR.RCUXA;
+ RCBBAA1_CUST_ADDR.ADDRESS_NUMBER  = WRK_RASXA_P;
+ RCBBAA1_CUST_ADDR.ADDRESS_GROUP   = 'P';
+
+                                                    /* START RA01138 */
+ RCBBAA1_CUST_ADDR.ZIP_CODE        = ZIP_AREA.ZIP_CODE;
+ IF CHKP_AREA.ZIP_CODE_ID          = ' '
+ THEN
+     RCBBAA1_CUST_ADDR.ZIP_CODE    = ' ';
+ IF CHKP_AREA.SWITCH_ZIP_EXIT = TRUE
+ THEN
+     RCBBAA1_CUST_ADDR.ZIP_CODE    = ZIP_AREA.ZIP_CODE;
+                                                      /* END RA01138 */
+
+ RCBBAA1_CUST_ADDR.EFFECTIVE_DATE  = WRK_LAST_UPD_DATE;  /*LATEST UPD*/
+                                                         /*DATE CA   */
+ RCBBAA1_CUST_ADDR.END_DATE        = ' ';
+
+                    /* CONVERT ADDRESS MASK BIT-STRING              */
+                    /* TO CHAR-STRING (MIS)USING THE AUTOMATIC DATA */
+                    /* CONVERSION OF THE TRANSLATE BUILTIN FUNCTION */
+ RCBBAA1_CUST_ADDR.ADDRESS_MASK    =
+                          TRANSLATE('ABCDEFGHIJKLMNOP',
+                                    WRK_ADDRESS_MASK,    /* CAPXB +  */
+                                    'ABCDEFGHIJKLMNOP'); /* ALL CAPXA*/
+
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA1,RCBBAA1_REC);
+ IF PCB_RCBBAA1.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#010');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA1 = CHKP_AREA.CNT_CTRY.RCBBAA1 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA1_CUST_ADDR.CUSTOMER_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA1,
+              PTR_INT_AREA);
+
+                                               /* RC01226 */
+
+ SELECT;
+ /* CHECK MASK BITS */
+ WHEN ((WRK_ADDRESS_MASK & '0010000000000000'B) =
+                                         '0000000000000000'B)
+   DO;         /* NOT AN INSTALL ADDRESS */
+   END;
+ WHEN (WRK_SAVE_MAIN_P = '00000')
+   DO;
+   END;
+ WHEN (WRK_RASXA_P < WRK_SAVE_MAIN_P)
+   DO;
+      WRK_WRITE_MAIN = '1'B;    /* INDICATE LATER CORRECTION NEEDED */
+   END;
+ WHEN (WRK_RASXA_P = WRK_SAVE_MAIN_P & WRK_WRITE_MAIN ='0'B)
+   DO;
+      WRK_SAVE_MAIN_P = '00000';  /* NO CORRECTION NEEDED */
+   END;
+ WHEN  (WRK_RASXA_P = WRK_SAVE_MAIN_P & WRK_WRITE_MAIN ='1'B)
+   DO;
+      /*  THIS IS WHERE CORRECTION IS NEEDED */
+      RCBBAA1_CUST_ADDR.ADDRESS_NUMBER  = '00000';
+      CALL PLITDLI(THREE,ISRT,PTR_RCBBAA1,RCBBAA1_REC);
+      IF PCB_RCBBAA1.ST_CODE ¬= '  '
+      THEN
+        CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#011');
+      CHKP_AREA.CNT_CTRY.RCBBAA1 = CHKP_AREA.CNT_CTRY.RCBBAA1 + 1;
+
+      WRK_HASH_FIELD = SUBSTR(RCBBAA1_CUST_ADDR.CUSTOMER_NUMBER,3,4);
+
+      CALL RCB018M(WRK_HASH_FIELD,
+                   CHKP_AREA.CNT_HASH_TOTAL.RCBBAA1,
+                   PTR_INT_AREA);
+   END;
+ WHEN (WRK_RASXA_P > WRK_SAVE_MAIN_P)
+   DO;
+      WRK_SAVE_MAIN_P = '00000';  /* PAST CORRECTION */
+   END;
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_CUST_ADDR;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : MAKE_ADDR_LINES                               */
+ /*                                                                  */
+ /* DESCRIPTION      : MAKE ADDRESS LINES FROM VSDCA0 ADDRESS RECORDS*/
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_MAKE_ADDR_LINES: PROC;
+                                /* PROCESS FIRST ADDRESS LINE        */
+ WRK_CNT_ADDR_LINE   = 1;
+ WRK_START           = 7;       /* LENGTH ADDR. CNTL. 1ST RECORD + 1 */
+ WRK_LENGTH_CURR     = 0;
+ WRK_LINE_NUMBER     = 0;
+ WRK_PREV_PLACE = SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                              WRK_START+1,1);
+ CALL RCBBAAM_PROCESS_ADDR_LINE;
+
+ WRK_START           = 1;       /* NO ADDRESS CNTL IN NEXT   PTM0960 */
+                                  /* PROCESS ALL OTHER FILLED LINES */
+ WRK_CNT_ADDR_LINE   = WRK_CNT_ADDR_LINE + 1;
+ DO WHILE (WRK_CNT_ADDR_LINE <= WRK_ADDR_1.ADDR_CNT &
+           WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE) ¬= ' ');
+
+   CALL RCBBAAM_PROCESS_ADDR_LINE;
+   WRK_CNT_ADDR_LINE = WRK_CNT_ADDR_LINE + 1;
+
+ END;
+ CALL RCBBAAM_WRITE_ADDR_LINE;            /* WRITE LAST ADDRESS LINE */
+
+ END RCBBAAM_MAKE_ADDR_LINES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : PROCESS_ADDR_LINE                             */
+ /*                                                                  */
+ /* DESCRIPTION      : PROCESS ADDRESS LINE FROM ADDRESS RECORD      */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_PROCESS_ADDR_LINE: PROC;
+
+ DO WHILE (WRK_START + 5 < WRK_LENGTH_ACUXA);
+                                                   /* START RA01138 */
+   IF SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE)
+             ,WRK_START,1) ¬= ' '
+   THEN
+     DO;
+       IF SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE)
+             ,WRK_START,1) = CHKP_AREA.ZIP_CODE_ID
+       THEN
+            SWITCH_ZIP_FLAG = TRUE;
+       ELSE
+         DO;
+            SWITCH_ZIP_FLAG = FALSE;
+       END;
+     END;
+
+                                                   /* END   RA01138 */
+                                           /* PROCESS COMPLETE LINE */
+                                       /* PROCESS FILLED PARTS ONLY */
+                                       /*    (SKIP TRAILING BLANKS) */
+   IF SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE)
+                 ,WRK_START,5) ¬= ' '
+   THEN
+     DO;
+       WRK_PLACE =   SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                            WRK_START+1,1);
+       WRK_LENGTH_ADDR =
+                     SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                            WRK_START+3,2);
+       WRK_START       = WRK_START + 5;
+
+                                          /* STORE DIFFERENT PLACES  */
+                                          /* AND PLACES > 6          */
+       IF WRK_PLACE ¬= WRK_PREV_PLACE |   /* IN SEPARATED LINES      */
+          WRK_PLACE_P > 6
+       THEN
+         DO;
+           WRK_PREV_PLACE = WRK_PLACE;              /* SAVE PLACE    */
+           CALL RCBBAAM_WRITE_ADDR_LINE;
+           CALL RCBBAAM_REPOSIT_START;              /* RE-INIT LINE  */
+         END;
+       ELSE
+         DO;
+                                    /* CONCATENATE PARTS PLACES <= 6 */
+                                    /* WHEN FIT ON SAME LINE         */
+                                    /* PTM1242 REMOVE '='            */
+         IF WRK_LENGTH_CURR + WRK_LENGTH_ADDR_P < WRK_LENGTH_LINE
+         THEN DO;
+           CALL RCBBAAM_CONCAT_LINE;
+           END;
+         ELSE DO;
+           IF WRK_LENGTH_CURR > 0  /* PTM1242: ONLY WRITE ADDRESS    */
+                                   /* LINE IF LENGTH > 0. IF IT IS   */
+                                   /* ZERO, THE LAST FIELD FROM THE  */
+                                   /* PREV. CUST. WILL BE WRITTEN    */
+           THEN DO;                /* AGAIN.                         */
+             CALL RCBBAAM_WRITE_ADDR_LINE;
+             END;
+           CALL RCBBAAM_REPOSIT_START;              /* RE-INIT LINE  */
+           END;
+         END;
+     END;
+   ELSE
+     /* FORCE END OF WHILE LOOP (SKIP TRAILING BLANKS)               */
+     WRK_START = WRK_LENGTH_ACUXA;
+
+ END;
+
+ END RCBBAAM_PROCESS_ADDR_LINE;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_ADDR_LINE                       */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE ADDRESS LINE OF CUSTOMER RECORD RCBBAA2 */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_ADDR_LINE: PROC;
+
+ WRK_RASXA_P                       = DB_CUST_ADDR.RASXA;
+ WRK_LINE_NUMBER = WRK_LINE_NUMBER + 1;
+
+ RCBBAA2_REC                       = ' ';
+ RCBBAA2_ADDR_LINE.INDNULL(*)      = 0;
+ RCBBAA2_ADDR_LINE.REC_TYPE        = '02';
+ RCBBAA2_ADDR_LINE.CTRYNO          = CHKP_AREA.COUNTRY;
+ RCBBAA2_ADDR_LINE.PGR_TYPE        = CHKP_AREA.PGR_RUN_TYPE;
+ RCBBAA2_ADDR_LINE.RUN_DATE        = WRK_RUN_DATE;
+
+ RCBBAA2_ADDR_LINE.COUNTRY_NUMBER  = CHKP_AREA.COUNTRY;
+ RCBBAA2_ADDR_LINE.CUSTOMER_NUMBER = '00'||DB_CUST_ADDR.RCUXA;
+ RCBBAA2_ADDR_LINE.ADDRESS_NUMBER  = WRK_RASXA_P;
+ WRK_RCBBAA2_LINE_N                = WRK_LINE_NUMBER;
+ RCBBAA2_ADDR_LINE.TEXT            = WRK_ADDR_LINE;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA2,RCBBAA2_REC);
+ IF PCB_RCBBAA2.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#012');
+
+ CHKP_AREA.CNT_CTRY.RCBBAA2 = CHKP_AREA.CNT_CTRY.RCBBAA2 + 1;
+
+ WRK_HASH_FIELD = SUBSTR(RCBBAA2_ADDR_LINE.CUSTOMER_NUMBER,3,4);
+
+ CALL RCB018M(WRK_HASH_FIELD,
+              CHKP_AREA.CNT_HASH_TOTAL.RCBBAA2,
+              PTR_INT_AREA);
+
+                                             /* RC01226 */
+ IF (WRK_WRITE_MAIN = '1'B) & (WRK_RASXA_P = WRK_SAVE_MAIN_P) &
+    ((WRK_ADDRESS_MASK & '0010000000000000'B) =
+                                         '0010000000000000'B)
+ THEN DO;
+   RCBBAA2_ADDR_LINE.ADDRESS_NUMBER  = '00000';
+   CALL PLITDLI(THREE,ISRT,PTR_RCBBAA2,RCBBAA2_REC);
+   IF PCB_RCBBAA2.ST_CODE ¬= '  '
+   THEN
+     CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#013');
+   CHKP_AREA.CNT_CTRY.RCBBAA2 = CHKP_AREA.CNT_CTRY.RCBBAA2 + 1;
+
+   WRK_HASH_FIELD = SUBSTR(RCBBAA2_ADDR_LINE.CUSTOMER_NUMBER,3,4);
+
+   CALL RCB018M(WRK_HASH_FIELD,
+                CHKP_AREA.CNT_HASH_TOTAL.RCBBAA2,
+                PTR_INT_AREA);
+
+ END;
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_ADDR_LINE;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : REPOSIT_START                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : REPOSITION OF START AND LENGTHS               */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_REPOSIT_START: PROC;
+
+ WRK_ADDR_LINE   = SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                          WRK_START,WRK_LENGTH_ADDR_P);
+ WRK_START       = WRK_START + WRK_LENGTH_ADDR_P;
+ WRK_LENGTH_CURR = WRK_LENGTH_ADDR_P;
+                                                    /* START RA01138 */
+ IF SWITCH_ZIP_FLAG = TRUE
+ THEN
+   DO;
+     CALL RCBBAAM_ZIP_CODE_EXIT;
+   END;
+                                                    /* END   RA01138 */
+
+ END RCBBAAM_REPOSIT_START;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : CONCAT_LINE                                   */
+ /*                                                                  */
+ /* DESCRIPTION      : CONCATENATE ADDRESS PART TO CURRENT LINE      */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CONCAT_LINE: PROC;
+
+ IF WRK_LENGTH_CURR = 0
+ THEN
+   DO;
+     WRK_ADDR_LINE = SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                            WRK_START,WRK_LENGTH_ADDR_P);
+     WRK_LENGTH_CURR = WRK_LENGTH_ADDR_P;
+                                                    /* START RA01138 */
+     IF SWITCH_ZIP_FLAG = TRUE
+     THEN
+       DO;
+         CALL RCBBAAM_ZIP_CODE_EXIT;
+       END;
+                                                    /* END   RA01138 */
+
+   END;
+ ELSE
+   DO;
+     SUBSTR(WRK_ADDR_LINE,
+            WRK_LENGTH_CURR+1,
+            WRK_LENGTH_ADDR_P+1)  = ' '||
+                 SUBSTR(WRK_ADDRESSES.ADDR_LINE(WRK_CNT_ADDR_LINE),
+                        WRK_START,WRK_LENGTH_ADDR_P);
+     WRK_LENGTH_CURR = WRK_LENGTH_CURR + 1 + WRK_LENGTH_ADDR_P;
+   END;
+
+ WRK_START = WRK_START + WRK_LENGTH_ADDR_P;
+
+ END RCBBAAM_CONCAT_LINE;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : INIT_PROGRAM                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALISE PROGRAM VARIABLES. OPEN FILES      */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_INIT_PROGRAM: PROC;
+                                              /* INITIALISE POINTERS */
+ PTR_INT_AREA       = ADDR(PARM_INT_AREA);
+ PTR_COUNTRY_AREA   = ADDR(COUNTRY_AREA);
+ PTR_RETURN_AREA    = ADDR(RETURN_AREA);
+ PTR_DATE_AREA      = ADDR(DATE_AREA);
+ PTR_RUN_DATE_AREA  = ADDR(RUN_DATE_AREA);    /* PTM 416             */
+ PTR_RCBV040        = ADDR(TB_RCBV040);               /* RB01249 */
+ PTR_RCBV040I       = ADDR(TB_RCBV040_I);             /* RB01249 */
+ PTR_RCBV070        = ADDR(TB_RCBV070);               /* RC01141 */
+ PTR_RCBV070I       = ADDR(TB_RCBV070_I);             /* RC01141 */
+ PTR_RCBV500        = ADDR(TB_RCBV500);
+ PTR_RCBV500I       = ADDR(TB_RCBV500_I);
+
+                  /* INITIALISE INTERFACE AREA AND OPEN MESSAGE FILE */
+ PARM_INT_AREA.MSG_AREA       = '';
+ PARM_INT_AREA.ERR_AREA       = ' ';
+ PARM_INT_AREA.MSG_REQUEST    = 'O';
+ PARM_INT_AREA.MSG_TARGET     = 'F';
+ PARM_INT_AREA.ID_SOURCE_APPL = 'RCB';
+ PARM_INT_AREA.ID_SOURCE_PROG = WRK_PGM_NAME;
+ PARM_INT_AREA.ID_MOD_PATH(1) = WRK_MOD_NAME;
+ PARM_INT_AREA.ID_MOD_LEVEL   = 1;
+ PARM_INT_AREA.SYSTEM_TYPE    = WRK_SYSTEM_TYPE;
+ PARM_INT_AREA.PTR_PCB_IO     = NULL;
+ PARM_INT_AREA.PTR_PCB_ALT    = NULL;
+ PARM_INT_AREA.TXN_CODE       = '';
+ PARM_INT_AREA.VERSION        = '';
+ CALL RCB0M1M(PTR_INT_AREA);
+
+                                    /* MISCELLANEOUS INITIALISATIONS */
+ WRK_LENGTH_RCB024          = CSTG (PARM_HASH.TIME_STAMP) +
+                              CSTG (PARM_HASH.HASH_TOTAL);
+ WRK_LENGTH_ACUXA           = LENGTH(DB_CUST_ADDR.ACUXA);
+ WRK_LENGTH_LINE            = LENGTH(RCBBAA2_ADDR_LINE.TEXT);
+
+                                            /* RETRIEVE SYSTEM DATE  */
+ CALL RCB0T1M(PTR_INT_AREA);
+
+                          /* INITIALISE CHECKPOINT/RESTART VARIABLES */
+ PTR_CHKP_LEN_IO   = ADDR(CHKP_LEN_IO);
+ PTR_CHKP_LEN_AREA = ADDR(CHKP_LEN_AREA);
+ PTR_CHKP_AREA     = ADDR(CHKP_AREA);
+ PTR_CHKP_ID       = ADDR(CHKP_ID);
+ PTR_CHKP_XRST     = ADDR(CHKP_XRST);
+ CHKP_ID.NAME      = SUBSTR(WRK_PGM_NAME,4,3);
+ CHKP_LEN_IO       = STG(CHKP_XRST);
+ CHKP_LEN_AREA     = STG(CHKP_AREA);
+ CHKP_AREA         = '';
+ CHKP_XRST         = '';
+ CHKP_CNT_STEPS    = 0;
+ SWITCH_RSTRT      = FALSE;
+
+ /********************************************************************/
+ /* DETERMINE CHECKPOINT TO RESTART PROGRAM                          */
+ /********************************************************************/
+
+ CALL PLITDLI(SIX,XRST,PTR_PCB_IO,PTR_CHKP_LEN_IO,PTR_CHKP_XRST,
+              PTR_CHKP_LEN_AREA,PTR_CHKP_AREA);
+
+ SELECT (PCB_IO.ST_CODE);
+ WHEN ('  ');
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_PCB_IO,'IMS_IO','#014');
+ END;
+
+ IF CHKP_XRST.NAME = ' '
+ THEN
+                          /*******************************************/
+                          /*     N O R M A L   S T A R T             */
+                          /*******************************************/
+   DO;
+     CHKP_AREA.CNT_NUM = 0;
+     CALL RCBBAAM_CHECKPOINT;
+
+     CALL RCBBAAM_OPEN_FILES;
+     CALL RCBBAAM_INIT_NORMAL;
+     CALL RCBBAAM_WRITE_HEADERS;
+
+   END;
+ ELSE
+                          /*******************************************/
+                          /*     R E S T A R T                       */
+                          /*******************************************/
+   DO;
+     CHKP_AREA.CNT_NUM = CHKP_XRST.NUMBER;
+     IF CHKP_AREA.CNT_NUM > 1
+     THEN
+       SWITCH_RSTRT = TRUE;
+   END;
+
+ END RCBBAAM_INIT_PROGRAM;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : INIT_NORMAL                                   */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALISE VARIABLES (NORMAL START OR DUMMY   */
+ /*                    CHECKPOINT ONLY)                              */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_INIT_NORMAL : PROC;
+
+ CALL RCB019M (PTR_COUNTRY_AREA,         /* RETRIEVE ALL COUNTRIES */
+               PTR_INT_AREA);
+
+ IF COUNTRY_AREA.COUNT_CTRY = 0
+ THEN
+   DO;
+     PARM_INT_AREA.COUNTRY_NUMBER    = '';
+     PARM_INT_AREA.MSG_VAR_CODES     = '';
+     PARM_INT_AREA.MESSAGE_TYPE      = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER    = '0005';
+     CALL RCB0M1M (PTR_INT_AREA);
+     CALL RCBBAAM_ERROR (NULL, 'OTHER', '#015');
+   END;
+
+ CHKP_AREA.COUNTRY_AREA = COUNTRY_AREA, BY NAME;
+
+ CHKP_AREA.SWITCH_CRITCUST_EXIT    = TRUE;
+ CHKP_AREA.SWITCH_CUF_EXIT         = TRUE;
+ CHKP_AREA.SWITCH_ZIP_EXIT         = TRUE;
+ CHKP_AREA.SWITCH_END_COUNTRIES    = FALSE;
+
+ END RCBBAAM_INIT_NORMAL;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : INIT_COUNTRY                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : INITIALISE FOR A NEW COUNTRY                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_INIT_COUNTRY: PROC;
+
+ IF ¬SWITCH_RSTRT
+ THEN DO;
+   CHKP_AREA.NBR_ARRAY = CHKP_AREA.NBR_ARRAY + 1;
+   IF CHKP_AREA.NBR_ARRAY > CHKP_AREA.COUNT_CTRY
+   THEN
+     CHKP_AREA.SWITCH_END_COUNTRIES = TRUE;
+   ELSE DO;
+     CHKP_AREA.COUNTRY =
+               CHKP_AREA.CTRY_ARRAY.CTRYNO(CHKP_AREA.NBR_ARRAY);
+     PARM_INT_AREA.COUNTRY_NUMBER = CHKP_AREA.COUNTRY;
+     CHKP_AREA.PGR_RUN_TYPE =
+               CHKP_AREA.CTRY_ARRAY.PGR_TYPE(CHKP_AREA.NBR_ARRAY);
+
+                                       /* RETRIEVE RUN DATE          */
+     CALL RCBBAAM_RETRIEVE_RCB001;
+                                       /* INITIALISE CTRY COUNTERS   */
+     CHKP_AREA.CNT_CTRY       = '';
+     CHKP_AREA.CNT_HASH_TOTAL = '';
+                                       /*   FILL CHKP_AREA           */
+     CHKP_AREA.CUSTOMER_NUMBER = LOW(6);
+                                       /*   INITIALISE SSA'S         */
+     SSA_RRDCM1.CTRYNO1 = ' '||CHKP_AREA.COUNTRY;
+     SSA_RRDCM1.RCUXA1  = CHKP_AREA.CUSTOMER_NUMBER;
+     SSA_RRDCM1.CTRYNO2 = ' '||CHKP_AREA.COUNTRY;
+
+     CHKP_AREA.SWITCH_END_CM = FALSE;
+
+     CALL RCBBAAM_CHECKPOINT;
+   END;
+ END;
+ ELSE                                            /* RESTART          */
+ DO;
+   SSA_RRDCM1.CTRYNO1 = ' '||CHKP_AREA.COUNTRY;      /* SOC PTM 1425 */
+   SSA_RRDCM1.RCUXA1  = CHKP_AREA.CUSTOMER_NUMBER;
+   SSA_RRDCM1.CTRYNO2 = ' '||CHKP_AREA.COUNTRY;
+   WRK_RUN_DATE       = CHKP_AREA.CURR_DATE;         /* EOC PTM 1425 */
+   SWITCH_RSTRT = FALSE;
+ END;
+
+                            /* RETRIEVE COUNTRY DEPENDENT PARAMETERS */
+ CALL RCBBAAM_RETRIEVE_RCB012;
+                            /* RETRIEVE ZIP CODE IDENTIFIER          */
+ CALL RCBBAAM_RETRIEVE_RCB018;                            /* RA01138 */
+                            /* RETR. DEFAULT OU CODE CUST.ENGINEER   */
+ CALL RCBBAAM_RETRIEVE_RCB069;                            /* RB01249 */
+
+ END RCBBAAM_INIT_COUNTRY;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : OPEN_FILES                                    */
+ /*                                                                  */
+ /* DESCRIPTION      : OPEN GSAM OUTPUT FILES                        */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_OPEN_FILES: PROC;
+
+ CALL PLITDLI (TWO,OPEN,PTR_RCBBAA0);
+ IF PCB_RCBBAA0.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA0,'IMS_DB','#016');
+
+ CALL PLITDLI (TWO,OPEN,PTR_RCBBAA1);
+ IF PCB_RCBBAA1.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#017');
+
+ CALL PLITDLI (TWO,OPEN,PTR_RCBBAA2);
+ IF PCB_RCBBAA2.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#018');
+
+ CALL PLITDLI (TWO,OPEN,PTR_RCBBAA3);
+ IF PCB_RCBBAA3.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA3,'IMS_DB','#019');
+
+ CALL PLITDLI (TWO,OPEN,PTR_RCBBAA4);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#020');
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_OPEN_FILES;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_HEADERS                         */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE HEADER RECORDS TO OUTPUT FILES          */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_HEADERS: PROC;
+
+            /* GET CURRENT TIMESTAMP FOR HEADER RECORDS OUTPUT FILES */
+ CHKP_AREA.DATETIME = PARM_INT_AREA.SYSTEM_DATE || '.' || TIME();
+
+ RCBBAA0_REC                     = ' ';
+ RCBBAA0_HEADER.REC_TYPE         = '01';
+ RCBBAA0_HEADER.FILE_ID          = WRK_RCBBAA0;
+ RCBBAA0_HEADER.SOURCE_INDICATOR = WRK_SOURCE_IND.SRC_SOF;
+ RCBBAA0_HEADER.TIMESTAMP        = CHKP_AREA.DATETIME;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA0,RCBBAA0_REC);
+ IF PCB_RCBBAA0.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA0,'IMS_DB','#021');
+
+ RCBBAA1_REC                     = ' ';
+ RCBBAA1_HEADER.REC_TYPE         = '01';
+ RCBBAA1_HEADER.FILE_ID          = WRK_RCBBAA1;
+ RCBBAA1_HEADER.SOURCE_INDICATOR = WRK_SOURCE_IND.SRC_SOF;
+ RCBBAA1_HEADER.TIMESTAMP        = CHKP_AREA.DATETIME;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA1,RCBBAA1_REC);
+ IF PCB_RCBBAA1.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#022');
+
+ RCBBAA2_REC                      = ' ';
+ RCBBAA2_HEADER.REC_TYPE         = '01';
+ RCBBAA2_HEADER.FILE_ID          = WRK_RCBBAA2;
+ RCBBAA2_HEADER.SOURCE_INDICATOR = WRK_SOURCE_IND.SRC_SOF;
+ RCBBAA2_HEADER.TIMESTAMP        = CHKP_AREA.DATETIME;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA2,RCBBAA2_REC);
+ IF PCB_RCBBAA2.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#023');
+
+ RCBBAA3_REC                     = ' ';
+ RCBBAA3_HEADER.REC_TYPE         = '01';
+ RCBBAA3_HEADER.FILE_ID          = WRK_RCBBAA3;
+ RCBBAA3_HEADER.SOURCE_INDICATOR = WRK_SOURCE_IND.SRC_SOF;
+ RCBBAA3_HEADER.TIMESTAMP        = CHKP_AREA.DATETIME;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA3,RCBBAA3_REC);
+ IF PCB_RCBBAA3.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA3,'IMS_DB','#024');
+
+ RCBBAA4_REC                     = ' ';
+ RCBBAA4_HEADER.REC_TYPE         = '01';
+ RCBBAA4_HEADER.FILE_ID          = WRK_RCBBAA4;
+ RCBBAA4_HEADER.SOURCE_INDICATOR = WRK_SOURCE_IND.SRC_SOF;
+ RCBBAA4_HEADER.TIMESTAMP        = CHKP_AREA.DATETIME;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA4,RCBBAA4_REC);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#025');
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_WRITE_HEADERS;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RETRIEVE_RCB001                               */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE RCB001                               */
+ /*                                                                  */
+ /* COMMENT          : ADDED AS PART OF IMPLEMENTATION OF PTM 416    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_RETRIEVE_RCB001 : PROC;
+
+                                                /* RETRIEVE RUN DATE */
+ RUN_DATE_AREA.PROC_ID   =  CHKP_AREA.COUNTRY_AREA.PROC_ID;
+ RUN_DATE_AREA.CTRYNO    =  CHKP_AREA.COUNTRY;
+ RUN_DATE_AREA.PGR_TYPE  =  CHKP_AREA.PGR_RUN_TYPE;
+
+ CALL RCB020M (PTR_RUN_DATE_AREA,
+               PTR_INT_AREA);
+
+ IF RUN_DATE_AREA.RUN_DATE = ''   /* NO RUN DATE RCB001 FOUND */
+ THEN
+   DO;
+     CHKP_AREA.CURR_DATE = PARM_INT_AREA.SYSTEM_DATE;
+   END;
+ ELSE
+   DO;
+     CHKP_AREA.CURR_DATE = RUN_DATE_AREA.RUN_DATE;
+   END;
+
+ WRK_RUN_DATE                   = CHKP_AREA.CURR_DATE;
+
+ PARM_INT_AREA.RUN_DATE         = CHKP_AREA.CURR_DATE;
+
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0002';
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'DT';
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = CHKP_AREA.CURR_DATE;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ CHKP_CNT_STEPS = CHKP_CNT_STEPS + 1;
+
+ END RCBBAAM_RETRIEVE_RCB001;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RETRIEVE_RCB012                               */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE CHECKPOINT LIMIT PARAMETER FROM      */
+ /*                    RCBT0500_PARM USING RCBI50M                   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_RETRIEVE_RCB012: PROC;
+ TB_RCBV500 = '';
+ TB_RCBV500.PARAMETER_NUMBER = 'RCB012';
+ TB_RCBV500.PARAMETER_KEY    = CHKP_AREA.COUNTRY ||
+                               CHKP_AREA.PGR_RUN_TYPE ||
+                               WRK_PGM_NAME;
+
+ CALL RCBI50M ('U',                                       /* RC01219 */
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+ WHEN (0)
+   CHKP_AREA.CHKP_LIMIT     = PARM_CHKP.CHKP_LIMIT;
+ WHEN (4)
+   DO;
+     CHKP_AREA.CHKP_LIMIT           = 0;
+
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0008';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'NO';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = CHKP_AREA.CHKP_LIMIT;
+     CALL RCB0M1M(PTR_INT_AREA);
+   END;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                      'DB2','#026');
+ END;
+
+ END RCBBAAM_RETRIEVE_RCB012;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RETRIEVE_RCB018                               */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE ZIPCODE IDENTIFIER FROM              */
+ /*                    RCBT0500_PARM USING RCBI50M                   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_RETRIEVE_RCB018: PROC;                     /* START RA01138 */
+ CHKP_AREA.ZIP_CODE_ID = ' ';
+ TB_RCBV500 = '';
+ TB_RCBV500.PARAMETER_NUMBER = 'RCB018';
+ TB_RCBV500.PARAMETER_KEY    = CHKP_AREA.COUNTRY ;   /* PTM 0921  */
+ CALL RCBI50M ('U',                                       /* RC01219 */
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+ WHEN (0)
+   DO;
+     CHKP_AREA.ZIP_CODE_ID    = PARM_ZIP.ZIP_CODE_ID;
+
+     IF CHKP_AREA.ZIP_CODE_ID = ' '
+     THEN
+       DO;
+         PARM_INT_AREA.MSG_VAR_CODES    = '';
+         PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+         PARM_INT_AREA.MESSAGE_NUMBER   = '0023';
+         PARM_INT_AREA.MSG_VAR_CODE_6   = 'NO';
+         PARM_INT_AREA.MSG_VAR_VALUE_6  = CHKP_AREA.ZIP_CODE_ID;
+         CALL RCB0M1M(PTR_INT_AREA);
+       END;
+   END;
+ WHEN (4)
+   DO;
+     CHKP_AREA.ZIP_CODE_ID = ' ';
+     PARM_INT_AREA.MSG_VAR_CODES    = '';
+     PARM_INT_AREA.MESSAGE_TYPE     = 'BU';
+     PARM_INT_AREA.MESSAGE_NUMBER   = '0023';
+     PARM_INT_AREA.MSG_VAR_CODE_6   = 'NO';
+     PARM_INT_AREA.MSG_VAR_VALUE_6  = CHKP_AREA.ZIP_CODE_ID;
+     CALL RCB0M1M(PTR_INT_AREA);
+   END;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                      'DB2','#027');
+ END;
+
+ END RCBBAAM_RETRIEVE_RCB018;                         /* END RA01138 */
+
+1/********************************************************************/
+ /*                                                      SOC RB01249 */
+ /* MODULE NAME      : RETRIEVE_RCB069                               */
+ /*                                                                  */
+ /* DESCRIPTION      : RETRIEVE DEFAULT CUSTOMER ENGINEERING OU CODE */
+ /*                    RCBT0500_PARM USING RCBI50M                   */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_RETRIEVE_RCB069: PROC;
+
+ TB_RCBV500                  = '';
+ TB_RCBV500.PARAMETER_NUMBER = 'RCB069';
+ TB_RCBV500.PARAMETER_KEY    = CHKP_AREA.COUNTRY ||
+                               CHKP_AREA.PGR_RUN_TYPE;
+ CALL RCBI50M ('U',
+               PTR_RCBV500,
+               PTR_RCBV500I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0)
+     CHKP_AREA.CE_OU_CODE = PARM_RCB069.OU_CODE;
+
+   WHEN (4)
+     CHKP_AREA.CE_OU_CODE = LOW(7);              /* NO DEFAULT FOUND */
+
+   OTHERWISE
+     CALL RCBBAAM_ERROR(ADDR(RETURN_AREA.RETURN_SQL),
+                      'DB2','#028');
+ END;
+
+ END RCBBAAM_RETRIEVE_RCB069;                         /* EOC RB01249 */
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : TERM_COUNTRY                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : TERMINATE FOR THE CURRENT COUNTRY             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_TERM_COUNTRY: PROC;
+                       /**********************************************/
+                       /* ADAPT THE COUNTERS                        */
+                       /**********************************************/
+ CHKP_AREA.CNT.RCBBAA0 = CHKP_AREA.CNT.RCBBAA0 +
+                         CHKP_AREA.CNT_CTRY.RCBBAA0;
+ CHKP_AREA.CNT.RCBBAA1 = CHKP_AREA.CNT.RCBBAA1 +
+                         CHKP_AREA.CNT_CTRY.RCBBAA1;
+ CHKP_AREA.CNT.RCBBAA2 = CHKP_AREA.CNT.RCBBAA2 +
+                         CHKP_AREA.CNT_CTRY.RCBBAA2;
+ CHKP_AREA.CNT.RCBBAA3 = CHKP_AREA.CNT.RCBBAA3 +
+                         CHKP_AREA.CNT_CTRY.RCBBAA3;
+ CHKP_AREA.CNT.RCBBAA4 = CHKP_AREA.CNT.RCBBAA4 +
+                         CHKP_AREA.CNT_CTRY.RCBBAA4;
+ CHKP_AREA.CNT.READ_CM = CHKP_AREA.CNT.READ_CM +
+                         CHKP_AREA.CNT_CTRY.READ_CM;
+ CHKP_AREA.CNT.PROC_CM = CHKP_AREA.CNT.PROC_CM +
+                         CHKP_AREA.CNT_CTRY.PROC_CM;
+ CHKP_AREA.CNT.SKIP_CM = CHKP_AREA.CNT.SKIP_CM +
+                         CHKP_AREA.CNT_CTRY.SKIP_CM;
+ CHKP_AREA.CNT.OTH_CM  = CHKP_AREA.CNT.OTH_CM +
+                         CHKP_AREA.CNT_CTRY.OTH_CM;
+ CHKP_AREA.CNT.READ_CA = CHKP_AREA.CNT.READ_CA +
+                         CHKP_AREA.CNT_CTRY.READ_CA;
+ CHKP_AREA.CNT.PROC_CA = CHKP_AREA.CNT.PROC_CA +
+                         CHKP_AREA.CNT_CTRY.PROC_CA;
+ CHKP_AREA.CNT.SKIP_CA = CHKP_AREA.CNT.SKIP_CA +
+                         CHKP_AREA.CNT_CTRY.SKIP_CA;
+ CHKP_AREA.CNT.READ_CD = CHKP_AREA.CNT.READ_CD +           /* RA01117 */
+                         CHKP_AREA.CNT_CTRY.READ_CD;       /* RA01117 */
+ CHKP_AREA.CNT.PROC_CD = CHKP_AREA.CNT.PROC_CD +           /* RA01117 */
+                         CHKP_AREA.CNT_CTRY.PROC_CD;       /* RA01117 */
+ CHKP_AREA.CNT.SKIP_CD = CHKP_AREA.CNT.SKIP_CD +           /* RA01117 */
+                         CHKP_AREA.CNT_CTRY.SKIP_CD;       /* RA01117 */
+ CHKP_AREA.CNT.READ_CT = CHKP_AREA.CNT.READ_CT +
+                         CHKP_AREA.CNT_CTRY.READ_CT;
+ CHKP_AREA.CNT.PROC_CT = CHKP_AREA.CNT.PROC_CT +
+                         CHKP_AREA.CNT_CTRY.PROC_CT;
+ CHKP_AREA.CNT.SKIP_CT = CHKP_AREA.CNT.SKIP_CT +
+                         CHKP_AREA.CNT_CTRY.SKIP_CT;
+ CHKP_AREA.CNT.OTH_CT  = CHKP_AREA.CNT.OTH_CT +            /* PTM1239 */
+                         CHKP_AREA.CNT_CTRY.OTH_CT;        /* PTM1239 */
+ CHKP_AREA.CNT.READ_FIN = CHKP_AREA.CNT.READ_FIN +
+                          CHKP_AREA.CNT_CTRY.READ_FIN;
+                       /**********************************************/
+                       /* MESSAGES: READ + PROCESSED + SKIPPED       */
+                       /* FOR THE DIFFERENT DATABASES                */
+                       /**********************************************/
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0003';
+
+                                   /* RBDGCM0 CUSTOMER               */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCM0 CUSTOMER';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.READ_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_VAR_CODE_9               = 'C3';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.PROC_CM;
+ PARM_INT_AREA.MSG_VAR_VALUE_9              = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.SKIP_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_13     = 'C7';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.OTH_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_13    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCM0 FINANCE                */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCM0 FINANCE';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.READ_FIN;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCA0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCA0';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.READ_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.PROC_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.SKIP_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCD0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';          /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';        /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCD0';   /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.READ_CD;                    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.PROC_CD;                    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.SKIP_CD;                    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;    /* RA01117 */
+ CALL RCB0M1M (PTR_INT_AREA);                              /* RA01117 */
+
+                                   /* RBDGCT0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCT0';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.READ_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';        /* PTM1239 */
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.PROC_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;    /* PTM1239 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.SKIP_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_13     = 'C7';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.OTH_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_13    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                             /****************************************/
+                             /* MESSAGES: NUMBER OF RECORDS IN FILES */
+                             /****************************************/
+ PARM_INT_AREA.MESSAGE_TYPE                 = 'IS';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER      = '0004';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C6';
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA0';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.RCBBAA0;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA1';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.RCBBAA1;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA2';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.RCBBAA2;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA3';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.RCBBAA3;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA4';
+ CNT_PIC9 = CHKP_AREA.CNT_CTRY.RCBBAA4;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                       /**********************************************/
+                       /* WRITE HASH TOTALS                          */
+                       /**********************************************/
+ WRK_FILE_NAME         = 'RCBBAA0';
+ WRK_HASH_TOTAL        = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA0;
+ CALL RCBBAAM_UPD_RCB024;
+
+ WRK_FILE_NAME         = 'RCBBAA1';
+ WRK_HASH_TOTAL        = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA1;
+ CALL RCBBAAM_UPD_RCB024;
+
+ WRK_FILE_NAME         = 'RCBBAA2';
+ WRK_HASH_TOTAL        = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA2;
+ CALL RCBBAAM_UPD_RCB024;
+
+ WRK_FILE_NAME         = 'RCBBAA3';
+ WRK_HASH_TOTAL        = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA3;
+ CALL RCBBAAM_UPD_RCB024;
+
+ WRK_FILE_NAME         = 'RCBBAA4';
+ WRK_HASH_TOTAL        = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA4;
+ CALL RCBBAAM_UPD_RCB024;
+                       /**********************************************/
+                       /* WRITE HASH MESSAGES   (MSG 0173)           */
+                       /**********************************************/
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0173';
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MSG_VAR_CODE_6   = 'FL';
+ PARM_INT_AREA.MSG_VAR_CODE_7   = 'TP';
+ PARM_INT_AREA.MSG_VAR_VALUE_7  = CHKP_AREA.DATETIME;
+ PARM_INT_AREA.MSG_VAR_CODE_8   = 'HT';
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBAA0;
+ CNT_PIC15                      = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA0;
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBAA1;
+ CNT_PIC15                      = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA1;
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBAA2;
+ CNT_PIC15                      = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA2;
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBAA3;
+ CNT_PIC15                      = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA3;
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_VAR_VALUE_6  = WRK_RCBBAA4;
+ CNT_PIC15                      = CHKP_AREA.CNT_HASH_TOTAL.RCBBAA4;
+ PARM_INT_AREA.MSG_VAR_VALUE_8  = CNT_PIC15;
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ CALL RCBBAAM_CHECKPOINT;
+
+ END RCBBAAM_TERM_COUNTRY;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : TERM_PROGRAM                                  */
+ /*                                                                  */
+ /* DESCRIPTION      : TERMINATE PROGRAM                             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_TERM_PROGRAM: PROC;
+
+ PARM_INT_AREA.COUNTRY_NUMBER = '';
+                       /**********************************************/
+                       /* MESSAGES: READ + PROCESSED + SKIPPED       */
+                       /* FOR THE DIFFERENT DATABASES                */
+                       /**********************************************/
+ PARM_INT_AREA.MSG_VAR_CODES    = '';
+ PARM_INT_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER   = '0003';
+
+                                   /* RBDGCM0 CUSTOMER               */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCM0 CUSTOMER';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT.READ_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_VAR_CODE_9               = 'C3';
+ CNT_PIC9 = CHKP_AREA.CNT.PROC_CM;
+ PARM_INT_AREA.MSG_VAR_VALUE_9              = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT.SKIP_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_13     = 'C7';
+ CNT_PIC9 = CHKP_AREA.CNT.OTH_CM;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_13    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCM0 FINANCE                */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCM0 FINANCE';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT.READ_FIN;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCA0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCA0';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT.READ_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';
+ CNT_PIC9 = CHKP_AREA.CNT.PROC_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT.SKIP_CA;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                                   /* RBDGCD0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';          /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';        /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCD0';   /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT.READ_CD;                         /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT.PROC_CD;                         /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;    /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';        /* RA01117 */
+ CNT_PIC9 = CHKP_AREA.CNT.SKIP_CD;                         /* RA01117 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;    /* RA01117 */
+ CALL RCB0M1M (PTR_INT_AREA);                              /* RA01117 */
+
+                                   /* RBDGCT0 COUNTS                 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RBDGCT0';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C1';
+ CNT_PIC9 = CHKP_AREA.CNT.READ_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_9      = 'C3';        /* PTM1239 */
+ CNT_PIC9 = CHKP_AREA.CNT.PROC_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_9     = CNT_PIC9;    /* PTM1239 */
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_11     = 'C5';
+ CNT_PIC9 = CHKP_AREA.CNT.SKIP_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_11    = CNT_PIC9;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_13     = 'C7';
+ CNT_PIC9 = CHKP_AREA.CNT.OTH_CT;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_13    = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                             /****************************************/
+                             /* MESSAGES: NUMBER OF RECORDS IN FILES */
+                             /****************************************/
+ PARM_INT_AREA.MESSAGE_TYPE                 = 'IS';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER      = '0004';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES       = '';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_6      = 'FL';
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODE_7      = 'C6';
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA0';
+ CNT_PIC9 = CHKP_AREA.CNT.RCBBAA0;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA1';
+ CNT_PIC9 = CHKP_AREA.CNT.RCBBAA1;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA2';
+ CNT_PIC9 = CHKP_AREA.CNT.RCBBAA2;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA3';
+ CNT_PIC9 = CHKP_AREA.CNT.RCBBAA3;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_6     = 'RCBBAA4';
+ CNT_PIC9 = CHKP_AREA.CNT.RCBBAA4;
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_VALUE_7     = CNT_PIC9;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+                       /***********************************************/
+                       /* END THE PROGRAM                             */
+                       /***********************************************/
+ CALL RCBBAAM_WRITE_TRAILERS;       /* WRITE TRAILERS AND CLOSE FILES */
+
+                       /**********************************************/
+                       /* ISSUE END MESSAGE                          */
+                       /**********************************************/
+ PARM_INT_AREA.MSG_AREA.MSG_VAR_CODES    = ' ';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_TYPE     = 'IS';
+ PARM_INT_AREA.MSG_AREA.MESSAGE_NUMBER   = '9999';
+ CALL RCB0M1M (PTR_INT_AREA);
+                       /**********************************************/
+                       /* CLOSE MESSAGE FILE                         */
+                       /**********************************************/
+ PARM_INT_AREA.MSG_REQUEST    = 'C';
+ CALL RCB0M1M(PTR_INT_AREA);
+
+ END RCBBAAM_TERM_PROGRAM;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_WRITE_TRAILERS                        */
+ /*                                                                  */
+ /* DESCRIPTION      : WRITE TRAILER RECORDS TO OUTPUT FILES AND     */
+ /*                    CLOSE FILES.                                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_WRITE_TRAILERS: PROC;
+
+ RCBBAA0_REC              = ' ';
+ RCBBAA0_TRAILER.REC_TYPE = '99';
+ RCBBAA0_TRAILER.CNT_RECS = CHKP_AREA.CNT.RCBBAA0;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA0,RCBBAA0_REC);
+ IF PCB_RCBBAA0.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA0,'IMS_DB','#029');
+
+ CALL PLITDLI (TWO,CLSE,PTR_RCBBAA0);
+ IF PCB_RCBBAA0.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA0,'IMS_DB','#030');
+
+ RCBBAA1_REC              = '  ';
+ RCBBAA1_TRAILER.REC_TYPE = '99';
+ RCBBAA1_TRAILER.CNT_RECS = CHKP_AREA.CNT.RCBBAA1;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA1,RCBBAA1_REC);
+ IF PCB_RCBBAA1.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#031');
+
+ CALL PLITDLI (TWO,CLSE,PTR_RCBBAA1);
+ IF PCB_RCBBAA1.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA1,'IMS_DB','#032');
+
+ RCBBAA2_REC              = '  ';
+ RCBBAA2_TRAILER.REC_TYPE = '99';
+ RCBBAA2_TRAILER.CNT_RECS = CHKP_AREA.CNT.RCBBAA2;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA2,RCBBAA2_REC);
+ IF PCB_RCBBAA2.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#033');
+
+ CALL PLITDLI (TWO,CLSE,PTR_RCBBAA2);
+ IF PCB_RCBBAA2.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA2,'IMS_DB','#034');
+
+ RCBBAA3_REC              = '  ';
+ RCBBAA3_TRAILER.REC_TYPE = '99';
+ RCBBAA3_TRAILER.CNT_RECS = CHKP_AREA.CNT.RCBBAA3;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA3,RCBBAA3_REC);
+ IF PCB_RCBBAA3.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA3,'IMS_DB','#035');
+
+ CALL PLITDLI (TWO,CLSE,PTR_RCBBAA3);
+ IF PCB_RCBBAA3.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA3,'IMS_DB','#036');
+
+ RCBBAA4_REC              = '  ';
+ RCBBAA4_TRAILER.REC_TYPE = '99';
+ RCBBAA4_TRAILER.CNT_RECS = CHKP_AREA.CNT.RCBBAA4;
+
+ CALL PLITDLI(THREE,ISRT,PTR_RCBBAA4,RCBBAA4_REC);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#037');
+
+ CALL PLITDLI (TWO,CLSE,PTR_RCBBAA4);
+ IF PCB_RCBBAA4.ST_CODE ¬= '  '
+ THEN
+   CALL RCBBAAM_ERROR(PTR_RCBBAA4,'IMS_DB','#038');
+
+ END RCBBAAM_WRITE_TRAILERS;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_UPD_RCB024                            */
+ /*                                                                  */
+ /* DESCRIPTION      : SAVE HASH TOTAL INFORMATION ON PARAMETER.     */
+ /*                    IF THE PARAMETER DOES NOT YET EXIST, IT WILL  */
+ /*                    BE INSERTED.                                  */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_UPD_RCB024 : PROC;
+                                     /* UPDATE PARAMETER RCB024    */
+ TB_RCBV500                  = '';
+ TB_RCBV500_I                = '';
+ PARM_HASH.NUMBER            = 'RCB024';
+ PARM_HASH.PROC_ID           = CHKP_AREA.COUNTRY_AREA.PROC_ID;
+ PARM_HASH.CTRYNO            = CHKP_AREA.COUNTRY;
+ PARM_HASH.FILE_NAME         = WRK_FILE_NAME;
+ PARM_HASH.SEQ_NUMBER        = '01';
+ PARM_HASH.LENGTH_PARM       = WRK_LENGTH_RCB024;
+ PARM_HASH.TIME_STAMP        = CHKP_AREA.DATETIME;
+ PARM_HASH.HASH_TOTAL        = WRK_HASH_TOTAL;
+
+ CALL RCBG50M (ADDR(TB_RCBV500),
+               ADDR(TB_RCBV500_I),
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+ SELECT(RETURN_AREA.RETURN_CODE);
+ WHEN (0);
+ WHEN (4)                          /* WHEN NOT FOUND THEN INSERT  */
+   DO;
+     CALL RCBF50M (ADDR(TB_RCBV500),
+                   ADDR(TB_RCBV500_I),
+                   PTR_RETURN_AREA,
+                   PTR_INT_AREA);
+     SELECT(RETURN_AREA.RETURN_CODE);
+     WHEN (0);
+     OTHERWISE
+       DO;
+         CALL RCBBAAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                             'DB2',
+                             '#039');
+       END;
+     END;
+   END;
+ OTHERWISE
+   DO;
+     CALL RCBBAAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                         'DB2',
+                         '#040');
+   END;
+ END;
+ END RCBBAAM_UPD_RCB024;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_CHECK_REQUESTED                       */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK WHETHER A PRODUCT TYPE IS CURRENTLY     */
+ /*                    REQUESTED BY CEDS. THIS IS THE CASE IF        */
+ /*                    HW_REQUEST_CEDS FROM TABLE RCBV0070 EQUALS '1'*/
+ /*                    IF NO RECORD CAN BE FOUND A DEFAULT OF '1'    */
+ /*                    WILL BE TAKEN.                                */
+ /*                                                                  */
+ /* NOTE: NO DATE SHIFT FOR THE REQUESTED PRODUCT TYPE               */
+ /*       SEE DESCRIPTION OF PTM 302                                 */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CHECK_REQUESTED : PROC (PARM_COUNTRY_NUMBER,
+                                 PARM_PRODUCT_TYPE,
+                                 PARM_EFFECTIVE_DATE);
+
+ DCL PARM_COUNTRY_NUMBER    CHAR(03);
+ DCL PARM_PRODUCT_TYPE      CHAR(04);
+ DCL PARM_EFFECTIVE_DATE    CHAR(10);
+
+ TB_RCBV070   = '';                              /* START RB01140 */
+ TB_RCBV070_I = '';
+
+ TB_RCBV070.COUNTRY_NUMBER = PARM_COUNTRY_NUMBER;
+ TB_RCBV070.PRODUCT_TYPE   = PARM_PRODUCT_TYPE;
+ TB_RCBV070.EFFECTIVE_DATE = PARM_EFFECTIVE_DATE;
+
+ CALL RCBIAGM (PTR_RCBV070,
+               PTR_RCBV070I,                     /* END RB01140*/
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+ WHEN (0)                                             /* PTM 302 */
+   DO;
+     WRK_HW_REQUEST_CEDS = TB_RCBV070.HW_REQUEST_CEDS; /* RB01140 */
+   END;
+ WHEN (4)
+   WRK_HW_REQUEST_CEDS = '1';
+ OTHERWISE
+   CALL RCBBAAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                      'DB2','#041');
+ END;
+ END RCBBAAM_CHECK_REQUESTED;
+
+1/********************************************************************/
+ /*                                                      SOC RB01249 */
+ /* MODULE NAME      : RCBBAAM_CHECK_CE_OU_CODE                      */
+ /*                                                                  */
+ /* DESCRIPTION      : CHECK WHETHER THE CUSTOMER ENGINEERING        */
+ /*                    OU-CODE IS VALID. THIS IS THE CASE IF IT      */
+ /*                    EXISTS IN TABLE RCBV0040.                     */
+ /*                    IF NO RECORD CAN BE FOUND, THE DEFAULT FROM   */
+ /*                    PARAMETER RCB069 WILL BE TAKEN.               */
+ /*                                                                  */
+ /* NOTE: IF NO DEFAULT AVAILABLE, THE INVALID VALUE IS RETAINED.    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CHECK_CE_OU_CODE : PROC;
+
+ TB_RCBV040                = '';
+ TB_RCBV040.COUNTRY_NUMBER = CHKP_AREA.COUNTRY;
+ TB_RCBV040.OU_CODE        = STRING(DB_CUST_DP.RLCXC);
+ TB_RCBV040_I              = '';
+ IF STRING(DB_CUST_DP.RLCXC) ¬= '' THEN               /* SOC RC01378 */
+ DO;                                                  /* EOC RC01378 */
+ CALL RCBI04M (PTR_RCBV040,
+               PTR_RCBV040I,
+               PTR_RETURN_AREA,
+               PTR_INT_AREA);
+
+ SELECT (RETURN_AREA.RETURN_CODE);
+   WHEN (0) DO;
+     IF TB_RCBV040.EFFECTIVE_DATE <= WRK_RUN_DATE
+      & TB_RCBV040.END_DATE       >= WRK_RUN_DATE THEN
+       WRK_CE_OU_CODE = TB_RCBV040.OU_CODE;
+     ELSE DO;
+       IF CHKP_AREA.CE_OU_CODE = LOW(7) THEN          /* NO DEFAULT? */
+         WRK_CE_OU_CODE = STRING(DB_CUST_DP.RLCXC);   /* USE INPUT   */
+       ELSE
+         WRK_CE_OU_CODE = CHKP_AREA.CE_OU_CODE;       /* USE DEFAULT */
+     END;
+   END;
+   WHEN (4) DO;
+     IF CHKP_AREA.CE_OU_CODE = LOW(7) THEN            /* NO DEFAULT? */
+       WRK_CE_OU_CODE = STRING(DB_CUST_DP.RLCXC);     /* USE INPUT   */
+     ELSE
+       WRK_CE_OU_CODE = CHKP_AREA.CE_OU_CODE;         /* USE DEFAULT */
+   END;
+   OTHERWISE
+     CALL RCBBAAM_ERROR (ADDR (RETURN_AREA.RETURN_SQL),
+                        'DB2','#042');
+ END;
+ END;                                                 /* SOC RC01378 */
+ ELSE DO;
+   IF CHKP_AREA.CE_OU_CODE = LOW(7) THEN              /* NO DEFAULT? */
+     WRK_CE_OU_CODE = STRING(DB_CUST_DP.RLCXC);       /* USE INPUT   */
+   ELSE
+     WRK_CE_OU_CODE = CHKP_AREA.CE_OU_CODE;           /* USE DEFAULT */
+ END;                                                 /* EOC RC01378 */
+
+ END RCBBAAM_CHECK_CE_OU_CODE;                        /* EOC RB01249 */
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_CRITCUST_EXIT                         */
+ /*                                                                  */
+ /* DESCRIPTION      : CALL TO USER EXIT                             */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CRITCUST_EXIT: PROC;
+
+ IF CHKP_AREA.SWITCH_CRITCUST_EXIT = TRUE
+ THEN
+   DO;
+     RCBBAA0_CUSTOMER_COPY = RCBBAA0_CUSTOMER;
+     RCBBAA4_CUST_MOD_COPY = RCBBAA4_CUST_MOD;
+     CALL RCBBA1U(ADDR(SWITCH_CRITCUST_EXIT),
+                  ADDR(RCBBAA0_CUSTOMER_COPY),
+                  ADDR(RCBBAA4_CUST_MOD_COPY),
+                  PTR_INT_AREA);
+     CHKP_AREA.SWITCH_CRITCUST_EXIT = SWITCH_CRITCUST_EXIT;
+   END;
+
+ END RCBBAAM_CRITCUST_EXIT;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_CUF_EXIT                              */
+ /*                                                                  */
+ /* DESCRIPTION      : CALL TO USER EXIT AVAILABLE FOR THE CUF       */
+ /*                    PROCESSING                                    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CUF_EXIT: PROC;
+
+ IF CHKP_AREA.SWITCH_CUF_EXIT = TRUE
+ THEN
+   DO;
+     DB_CUST_MAST_COPY = DB_CUST_MAST;
+     CALL RCBBA2U(ADDR(SWITCH_CUF_EXIT),
+                  ADDR(DB_CUST_MAST_COPY),
+                  PTR_INT_AREA);
+     CHKP_AREA.SWITCH_CUF_EXIT = SWITCH_CUF_EXIT;
+   END;
+
+ END RCBBAAM_CUF_EXIT;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_ZIP_CODE_EXIT                         */
+ /*                                                                  */
+ /* DESCRIPTION      : CALL TO USER EXIT AVAILABLE FOR THE ZIPCODE   */
+ /*                    PROCESSING                                    */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_ZIP_CODE_EXIT: PROC;                       /* START RA01138 */
+
+ ZIP_AREA.ADDR_LINE = ' ';
+ ZIP_AREA.ADDR_LINE = WRK_ADDR_LINE;
+ ZIP_AREA.ZIP_CODE = SUBSTR(WRK_ADDR_LINE,1,9);
+
+ IF CHKP_AREA.SWITCH_ZIP_EXIT = TRUE
+ THEN
+   DO;
+     CALL RCBBA3U(ADDR(SWITCH_ZIP_EXIT),
+                  ADDR(ZIP_AREA),
+                  PTR_INT_AREA);
+     CHKP_AREA.SWITCH_ZIP_EXIT = SWITCH_ZIP_EXIT;
+   END;
+
+ END RCBBAAM_ZIP_CODE_EXIT;                         /* END   RA01138 */
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : CHECKPOINT                                    */
+ /*                                                                  */
+ /* DESCRIPTION      : TAKE CHECKPOINT                               */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_CHECKPOINT: PROC;
+
+ CHKP_AREA.CNT_NUM         = CHKP_AREA.CNT_NUM + 1;
+ CHKP_ID.NUMBER            = CHKP_AREA.CNT_NUM;
+
+ CALL PLITDLI(SIX,CHKP,PTR_PCB_IO,PTR_CHKP_LEN_IO,PTR_CHKP_ID,
+              PTR_CHKP_LEN_AREA,PTR_CHKP_AREA);
+
+ SELECT (PCB_IO.ST_CODE);
+ WHEN ('  ')
+   DO;
+                                          /* RE-INIT SSA CUSTOMER DB */
+     SSA_RRDCM1.CTRYNO1 = ' '||CHKP_AREA.COUNTRY;     /* GCYAA       */
+     SSA_RRDCM1.RCUXA1  = CHKP_AREA.CUSTOMER_NUMBER;  /* RCUXA       */
+
+     CHKP_CNT_STEPS = 0;
+   END;
+ WHEN ('XD')
+   DO;
+     PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+     PARM_INT_AREA.MESSAGE_NUMBER  = '9998';
+     PARM_INT_AREA.MSG_VAR_CODES   = '';
+     CALL RCB0M1M (PTR_INT_AREA);
+
+     CALL RCBBAAM_ERROR(PTR_PCB_IO,'IMS_IO','#043');
+   END;
+ OTHERWISE
+   CALL RCBBAAM_ERROR(PTR_PCB_IO,'IMS_IO','#044');
+ END;
+
+ END RCBBAAM_CHECKPOINT;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_ISSUE_INV_DATE                        */
+ /*                                                                  */
+ /* DESCRIPTION      : ISSUE MESSAGE INVALID DATE USING              */
+ /*                    RCB0M1M                                       */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_ISSUE_INV_DATE: PROC   (DATE_NAME
+                                ,DATE_VALUE
+                                ,RETCODE
+                                );
+
+ DCL DATE_NAME       CHAR(05);
+ DCL DATE_VALUE      PIC'99999';
+ DCL RETCODE         CHAR(01);
+
+ PARM_INT_AREA.MESSAGE_TYPE    = 'IS';
+ PARM_INT_AREA.MESSAGE_NUMBER  = '0012';
+ PARM_INT_AREA.MSG_VAR_CODES   = '';
+ PARM_INT_AREA.MSG_VAR_CODE_6  = 'DT';
+ PARM_INT_AREA.MSG_VAR_VALUE_6 = DATE_NAME;
+ PARM_INT_AREA.MSG_VAR_CODE_7  = 'DT';
+ PARM_INT_AREA.MSG_VAR_VALUE_7 = DATE_VALUE;
+ PARM_INT_AREA.MSG_VAR_CODE_8  = 'RC';
+ PARM_INT_AREA.MSG_VAR_VALUE_8 = RETCODE;
+ CALL RCB0M1M (PTR_INT_AREA);
+
+ END RCBBAAM_ISSUE_INV_DATE;
+
+1/********************************************************************/
+ /*                                                                  */
+ /* MODULE NAME      : RCBBAAM_ERROR                                 */
+ /*                                                                  */
+ /* DESCRIPTION      : CALLS THE COMMON ERROR ROUTINE AFTER FILLING  */
+ /*                    THE INPUT VARIABLES                           */
+ /*                                                                  */
+ /********************************************************************/
+ RCBBAAM_ERROR: PROC     (PTR_ERROR,
+                          ERR_TYPE,
+                          CALL_ID);
+
+ DCL PTR_ERROR    PTR;
+ DCL ERR_TYPE     CHAR(8);
+ DCL CALL_ID      CHAR(4);
+
+ PARM_INT_AREA.PTR_ERROR      = PTR_ERROR;
+ PARM_INT_AREA.ERR_TYPE       = ERR_TYPE;
+ PARM_INT_AREA.CALL_ID        = CALL_ID;
+
+ CALL RCB0E1M (PTR_INT_AREA);
+
+ END RCBBAAM_ERROR;
+
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+
+ %INCLUDE DAIFPLH ;                      /* COMPILE DATE/TIME STAMP */
+ $DAIMOD (RCBBAAM);                      /* MODULE TO BE COMPILED   */
+
+ /*******************************************************************/
+ /* END OF ABR BLOCK                                                */
+ /*******************************************************************/
+
+ END RCBBAAM;

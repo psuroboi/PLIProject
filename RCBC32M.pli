@@ -1,0 +1,2302 @@
+ /* RCBC32P - Offering Nickname - Offering Shortname Translation list*/
+ /********************************************************************/
+ /*                                                                  */
+ /* TRANSACTION CODE    : RC32                                       */
+ /*                                                                  */
+ /* PROGRAM NAME        : RCBC32M                                    */
+ /*                                                                  */
+ /* TYPE                : CICS/VS                                    */
+ /*                                                                  */
+ /* USED MAPSET         : RCBM32                                     */
+ /*      MAP            : RCBM32                                     */
+ /*                     : RCBH32                                     */
+ /*                                                                  */
+ /* DESCRIPTION         : OFFERING NICKNAME to OFFERING SHORTNAME    */
+ /*                       TRANSLATION LIST MAINTAINANCE              */
+ /*                                                                  */
+ /* LINKED TRANSACTION  : RC32                                       */
+ /*                                                                  */
+ /* MESSAGES            :                                            */
+ /*                                                                  */
+ /*                                                                  */
+ /*  MAINTENANCE LOG :                                               */
+ /*  ---------------                                                 */
+ /*                                                                  */
+ /*  DATE       | WORK-ITEMNO. | DESCRIPTION                         */
+ /*  --------------------------------------------------------------  */
+ /*  2009-08-07 | RB01301      |CEDS ALIGNMENT TO CHIS 810 - BAU     */
+ /*             |              |SERVICE EXTENSIONS                   */
+ /*  2013-09-02 | CEDS00000646 |PROPER HANDLING OF ERROR MESSAGE     */
+ /*             |              |WHILE UPDATING OFFERING NICK NAME    */
+ /*  2013-09-12 | CEDS00000649 |DISPLAY ERROR MESSAGE WHEN DUPLICATE */
+ /*             |              |VALUES ARE ENTERED ON THE SCREEN FOR */
+ /*             |              |OFFERING NAME, OFFERING SNAME AND    */
+ /*             |              |RANK. THE RANK SHOULD BE UNIQUE FOR  */
+ /*             |              |A COUNTRY.                           */
+ /*  2014-14-02 | CEDS00000669 |TO INSERT NEW OFFERING EVEN IF THE   */
+ /*             |              |OFFERING ID CONTAINS A SPACE         */
+ /*  2014-04-11 | RC01340      |PCR 0461 TO REMOVE VALIDATION FOR    */
+ /*             |              |BOTH OFFERING NICK NAME AND OFFERING */
+ /*             |              |SHORT NAME                           */
+ /*  2014-14-12 | CEDS00000676 |CORRECTED CODE TO HAVE UNIQUE        */
+ /*             |              |OFFERING NNAME, OFFERING SNAME AND   */
+ /*             |              |RANK PER COUNTRY - TREC 1998         */
+ /*  2014-05-05 | RB01338      |CEDS 3.3 A21 RELEASE - RACF USER     */
+ /*             |              |GROUP FOR TS ACCESS MANAGEMENT TEAM  */
+ /*  2014-20-11 | CEDS00000712 |TREC TEMEA-T081552   - INTRODUCED    */
+ /*             |              |ERROR MESSAGE ERR_0249               */
+ /*  2015-11-06 | CEDS00000743 |TREC TEMEA-T081575 - UPDATED TO GET  */
+ /*             |              |ERR_O120 WHILE TRYING TO CHANGE A    */
+ /*             |              |NON EXISTING ROW                     */
+ /********************************************************************/
+1RCBC32M: PROC(COMMPTR)
+          OPTIONS (MAIN)
+          REORDER;
+0/********************************************************************/
+ /*  EXTERNAL ENTRIES                                                */
+ /********************************************************************/
+
+0DCL PLIXOPT   VAR  CHAR (256)
+               INIT ('STORAGE(00,00,00,0)') STATIC EXTERNAL;
+
+ DCL RCB004N ENTRY EXTERNAL;
+0/********************************************************************/
+ /*  BMS RELATED CONSTANTS                                           */
+ /********************************************************************/
+ %INCLUDE DFHBMSCA;
+0/********************************************************************/
+ /*  ATTENTION IDENTIFIER CONSTANTS                                  */
+ /********************************************************************/
+ %INCLUDE DFHAID;
+1/********************************************************************/
+ /*  COMMUNICATION AREA                                              */
+ /********************************************************************/
+     %INCLUDE (RCBCP2S);
+     %INCLUDE (RCBCHDS);,
+     %INCLUDE (RCBC00S);,
+     %INCLUDE (RCBC32S);,
+  /* %INCLUDE (RCBC32S);;                           SOC CEDS00000646 */
+     %INCLUDE (RCBC32S1);;                       /* EOC CEDS00000646 */
+0/********************************************************************/
+ /*  MAP STRUCTURES                                                  */
+ /********************************************************************/
+ %INCLUDE (RCBM32);
+0/********************************************************************/
+ /*  DB2 STRUCTURES                                                  */
+ /********************************************************************/
+ DCL 1 RCB691S,
+     %INCLUDE (RCB691S);;
+ DCL 1 RCB691SI,
+     %INCLUDE (RCB691SI);;
+ DCL 1 RCB650S,
+     %INCLUDE (RCB650S);;
+ DCL 1 RCB650SI,
+     %INCLUDE (RCB650SI);;
+ DCL 1 RCB560S,
+     %INCLUDE (RCB560S);;
+ DCL 1 RCB560SI,
+     %INCLUDE (RCB560SI);;
+0/********************************************************************/
+ /*  INTERFACE AREAS                                                 */
+ /********************************************************************/
+ DCL 1 DATE_AREA,
+     %INCLUDE (RCBZ03S);;
+0/********************************************************************/
+ /*  RETURN CODES                                                    */
+ /********************************************************************/
+ DCL RESPONSE     FIXED BIN(31) INIT(0);    /*RETURN CODE            */
+ DCL CODE_EXPLAIN FIXED BIN(31) INIT(0);    /*RETURN CODE EXPLANATION*/
+-/********************************************************************/
+ /****   DECLARATIONS OF DB2 ERROR CONDITIONS                     ****/
+ /********************************************************************/
+  EXEC SQL  WHENEVER NOT FOUND   CONTINUE   ;/*                      */
+  EXEC SQL  WHENEVER SQLWARNING  CONTINUE   ;/*                      */
+  EXEC SQL  WHENEVER SQLERROR    CONTINUE   ;/*                      */
+0/********************************************************************/
+ /*  NULL INDICATORS                                                 */
+ /********************************************************************/
+ DCL 1 NULL691      BASED(ADDR(RCB691SI)),
+       3 NUL691A    FIXED BIN(15) INIT(0),
+       3 NUL691B    FIXED BIN(15) INIT(0),
+       3 NUL691C    FIXED BIN(15) INIT(0),
+       3 NUL691D    FIXED BIN(15) INIT(0),
+       3 NUL691E    FIXED BIN(15) INIT(0),
+       3 NUL691F    FIXED BIN(15) INIT(0),
+       3 NUL691G    FIXED BIN(15) INIT(0),
+       3 NUL691H    FIXED BIN(15) INIT(0);
+0/********************************************************************/
+ /*  WORKING DECLARATIONS                                            */
+ /********************************************************************/
+ DCL TRUE                           BIT(1)   INIT('1'B);
+ DCL FALSE                          BIT(1)   INIT('0'B);
+ DCL ERR_FLAG                       BIT(1)   INIT('0'B);
+                                                 /* SOC CEDS00000646 */
+ DCL NNAME_FLAG                     BIT(1)   INIT('0'B);
+                                                 /* EOC CEDS00000646 */
+ DCL SNAME_FLAG                     BIT(1)   INIT('0'B);
+ DCL PF5_FLAG                       BIT(1)   INIT('0'B);
+ DCL ACT_SEL                        BIT(1)   INIT('0'B);
+ DCL T691_UPD_FLAG                  BIT(1)   INIT('0'B);
+ DCL ACTION_FLAG                    BIT(1)   INIT('0'B);
+ DCL RANK_FLAG                      BIT(1)   INIT('0'B);
+ DCL WRK_TIME_IN                    CHAR(26) INIT('');
+ DCL WRKMAP_DATA                    CHAR(500);
+ DCL WRK_RANK                       CHAR(4);
+ DCL PIC_RANK                       PIC '9999';
+ DCL PIC_EXPLAIN1                   PIC 'SZZZZ9' INIT(0);
+ DCL WRK_COUNT                      FIXED BIN(15);
+ DCL WRK_REC_COUNT                  FIXED BIN(15);
+ DCL R                              FIXED BIN(15);   /* CEDS00000649 */
+ DCL WRK_TOS_FORMAT                 CHAR(16) VARYING;
+ DCL WRK_SNAME                      CHAR(5);
+ DCL WRK_NNAME                      CHAR(15);
+ DCL WRK_TMP_OFF_ID_OLD             CHAR(15);      /*SOC CEDS00000743*/
+ DCL WRK_TMP_REC_COUNT              FIXED BIN(15); /*EOC CEDS00000743*/
+                                                      /* SOC RC01340 */
+ /*DCL ALPHA   *//*                 CHAR(37)        SOC CEDS00000669 */
+ /*                                 CHAR(38)                         */
+                                                      /* EOC RC01340 */
+                                                 /* SOC CEDS00000646 */
+                 /*    INIT(' ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');*/
+                 /*    INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-');*/
+                                                      /* SOC RC01340 */
+ /*                   INIT(' ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-');*/
+                                                      /* EOC RC01340 */
+                                                 /* EOC CEDS00000646 */
+                                                 /* EOC CEDS00000669 */
+                                                      /* SOC RC01340 */
+ /*DCL ALPHA1                         CHAR(36)                       */
+ /*                     INIT('ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');*/
+                                                      /* EOC RC01340 */
+ DCL NUMERIC                        CHAR(10)
+                        INIT('0123456789');
+ DCL PFLINE1A                       CHAR(66) INIT
+   ('F1=Help F2=Clear F3=Return F5=Execute F7=Bkwd F8=Fwd F9=Top/Bot');
+ DCL PFLINE1                        CHAR(66) INIT
+   ('F1=Help F2=Clear F3=Return F7=Bkwd F8=Fwd F9=Top/Bot');
+ DCL SALINE                         CHAR(52) INIT
+   ('Set Act to A(dd) D(elete) C(hange) and make changes.');
+ DCL 1 WRKMAP                       BASED(ADDR(WRKMAP_DATA)),
+     %INCLUDE RCBB56M;;
+0/********************************************************************/
+ /*  MESSAGES                                                        */
+ /********************************************************************/
+ DCL ERR_MESSAGE2  CHAR(30) INIT('ERROR IN SENDING MAP ');
+ DCL ERR_MESSAGE3  CHAR(30) INIT('ERROR IN RECEIVING MAP ');
+ DCL ERR_MESSAGE14 CHAR(40) INIT('ERROR IN RETURNING TO CICS  ');
+ DCL ERR_MESSAGE30 CHAR(40) INIT('ERROR IN RETURNING TO CICS  ');
+ DCL ERR_O032 CHAR(75) INIT
+       ('NO ITEM SELECETD');
+ DCL ERR_O002 CHAR(75) INIT
+       ('Invalid date. Use ISO Date format: YYYY-MM-DD');
+ DCL ERR_O004 CHAR(30) INIT('Invalid use of Function Key');
+ DCL ERR_O005 CHAR(60) INIT
+       ('Invalid use of Function Key. Press Enter To Execute.');
+ DCL ERR_O022 CHAR(19) INIT('Press F5 to execute');
+ DCL ERR_O030 CHAR(24) INIT('Already on first page');
+ DCL ERR_O031 CHAR(23) INIT('Already on last page');
+ DCL ERR_O057 CHAR(70) INIT
+ ('You are not authorized to use the function for this Country number');
+ DCL ERR_O072 CHAR(25) INIT('Country number is invalid');
+ DCL ERR_O079 CHAR(70) INIT
+ ('Not allowed to maintain ATO translation,no activity report created');
+ DCL ERR_O101 CHAR(33) INIT('FIELD MUST BE FILLED IN CORRECTLY');
+ DCL ERR_O120 CHAR(65) INIT
+  ('Row for update not found. Choose action = A or fill in new values');
+ DCL ERR_O121 CHAR(65) INIT
+  ('Row for delete not found. Choose action = A or fill in new values');
+ DCL ERR_O127 CHAR(48) INIT
+  ('Invalid action. Choose one of the valid options');
+ DCL ERR_O221 CHAR(60) INIT
+  ('No items found for this Search Criteria');
+ DCL ERR_O222 CHAR(48) INIT
+  ('Rank already used');
+ DCL ERR_O223 CHAR(54) INIT
+  ('Invalid Rank value');
+ DCL ERR_O224 CHAR(54) INIT
+  ('SLC TRANSLATION FLAG Should be blank for TOF = WSU/MSU');
+ DCL ERR_O225 CHAR(54) INIT
+  ('RANK Should be blank when TOF = WSU/MSU');
+ DCL ERR_O226 CHAR(60) INIT
+  ('SLC TRANSLATION FLAG should be Y/N for TOF = MESE');
+ DCL ERR_O227 CHAR(48) INIT
+  ('CUSTOMER AGG FLAG should be Y/N');
+ DCL ERR_O228 CHAR(54) INIT
+  ('Invalid TOS FORMAT');
+ DCL ERR_O229 CHAR(48) INIT
+  ('Invalid TYPE OF OFFERING');
+ DCL ERR_0230 CHAR(48) INIT
+ /*('RANK should be numeric '); */               /* SOC CEDS00000646 */
+  ('RANK should be numeric of length 4');        /* EOC CEDS00000646 */
+ DCL ERR_O231 CHAR(48) INIT
+  ('OFFERING SHORT NAME already used');
+ DCL ERR_O232 CHAR(51) INIT
+  ('CUSTOMER AGG FLAG should be blank for TOF= WSU/MSU');
+ DCL ERR_O233 CHAR(51) INIT                      /* SOC CEDS00000646 */
+  ('OFFERING NNAME already used');               /* EOC CEDS00000646 */
+ DCL ERR_O235 CHAR(51) INIT                      /* SOC CEDS00000649 */
+  ('DUPLICATE OFFERING NNAME ENTERED ON THE SCREEN');
+ DCL ERR_O236 CHAR(51) INIT
+  ('DUPLICATE OFFERING SNAME ENTERED ON THE SCREEN');
+ DCL ERR_O237 CHAR(70) INIT
+ ('DUPLICATE RANK ENTERED ON SCREEN.RANK SHOULD BE UNIQUE FOR COUNTRY');
+                                                 /* EOC CEDS00000649 */
+                                                 /* SOC CEDS00000712 */
+ DCL ERR_O249 CHAR(65) INIT
+  ('Country and offering Id of an existing record can not be changed');
+                                                 /* EOC CEDS00000712 */
+ /********************************************************************/
+ /*  TS AREA                                                         */
+ /********************************************************************/
+ DCL 1 TS_REC,
+       3 TS_OFF_NNAME                  CHAR(15) INIT(''),
+       3 TS_TOF                        CHAR(4)  INIT(''),
+       3 TS_OFF_SNAME                  CHAR(3)  INIT(''),
+       3 TS_SLC_TRANS_FLAG             CHAR(1)  INIT(''),
+       3 TS_CUST_AGGR_FLAG             CHAR(1)  INIT(''),
+       3 TS_TOS_FORMAT                 CHAR(16) INIT(''),
+       3 TS_RANK                       CHAR(4)  INIT('');
+0/********************************************************************/
+ /*                 BUILT IN FUNCTIONS                               */
+ /********************************************************************/
+0DCL (LENGTH,
+      STRING,
+      LOW,
+      HIGH,
+      SUBSTR,
+      VERIFY,
+      DECIMAL,
+      DATETIME,
+      INDEX,
+      CHAR,
+      NULL,
+      CSTG,
+      STG,
+      ADDR)   BUILTIN;
+-/********************************************************************/
+ /****   DECLARATIONS OF DB2 SQLCA                                ****/
+ /********************************************************************/
+  EXEC SQL  INCLUDE  SQLCA                  ;/*                      */
+-/********************************************************************/
+ /****   DECLARATIONS OF DB2 CURSORS                              ****/
+ /********************************************************************/
+ EXEC SQL DECLARE C_0691 CURSOR FOR             /* FOR COUNTRY NUM  */
+       SELECT
+        OFFERING_ID,
+        TYPE_OF_OFFERING,
+        OFFERING_SNAME,
+        SLC_TRANS_REQ_FLAG,
+        CUST_AGGR_REQ_FLAG,
+        TOS_FORMAT,
+        RANK_NUMBER
+       FROM  RCBV0691_TRANS_OFF
+       WHERE (COUNTRY_NUMBER   = :WRK_COUNTRY_NUMBER
+       AND ((OFFERING_ID       = :OFFNNSEL)
+            OR (:OFFNNSEL_NULL = 'N'))
+       AND ((TYPE_OF_OFFERING  = :TOFSEL)
+            OR (:TOFSEL_NULL   = 'N'))
+       AND ((OFFERING_SNAME    = :OFFSNSEL)
+            OR (:OFFSNSEL_NULL = 'N'))
+       AND ((RANK_NUMBER       = :RANKSEL)
+            OR (:RANKSEL_NULL  = 'N')))
+   ORDER BY OFFERING_ID,TYPE_OF_OFFERING,OFFERING_SNAME
+   FOR FETCH ONLY
+   WITH UR;
+
+1/********************************************************************/
+ /*              M A I N   P R O C E S S I N G                        */
+1/********************************************************************/
+ RCBM32O.MSGLNO='';
+
+
+ IF EIBCALEN = 0 THEN
+ DO;
+   EXEC CICS XCTL PROGRAM('RCBC00P');
+ END;
+
+ IF HEADER.NEXT = '99' THEN
+ DO;
+    HEADER.NEXT = '00';
+    CALL RCBC32M_CLEAR_WORK;
+    CALL RCBC32M_CLEAR_MAP;
+    TMP_COUNTRY_NUMBER = WRK_COUNTRY_NUMBER;
+    CALL RCBC32M_SEND_MAP;
+ END;
+
+ SELECT (EIBAID);
+   WHEN (DFHPF1,DFHPF13)
+   DO;
+     IF HEADER.NEXT = '00' THEN
+     DO;
+       CALL RCBC32M_RECEIVE_MAP;
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_HELP_MAP;
+     END;
+     ELSE DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+   END;
+
+   WHEN (DFHPF2,DFHPF14)
+   DO;
+     IF HEADER.NEXT = '00' THEN
+     DO;
+     CALL RCBC32M_CLEAR_WORK;
+     CALL RCBC32M_CLEAR_MAP;
+     CALL RCBC32M_SEND_MAP;
+     END;
+     ELSE DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+   END;
+
+   WHEN (DFHPF3,DFHPF15)
+   DO;
+     IF HEADER.NEXT = 'H1' THEN
+     DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_GET_CSR_POS;
+       CALL RCBC32M_RESTORE_MAP;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+     ELSE
+     DO;
+       HEADER.NEXT    = 'H1';
+       CALL RCBC32M_CLEAR_WORK;
+       CALL RCBC32M_CLEAR_MAP;
+       TS_Q = 'RC00' || EIBTRMID;
+       EXEC CICS IGNORE CONDITION QIDERR;
+       EXEC CICS DELETEQ TS QUEUE(TS_Q);
+       EXEC CICS HANDLE CONDITION QIDERR;
+
+       EXEC CICS XCTL
+            PROGRAM('RCBC20P')
+            COMMAREA(COMMAREA)
+            LENGTH(CSTG(COMMAREA))
+            RESP(RESPONSE)
+            RESP2(CODE_EXPLAIN);
+     END;
+   END;
+
+   WHEN (DFHPF5,DFHPF17)
+   DO;
+    IF HEADER.NEXT = 'H1' THEN
+    DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO    = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+    IF HEADER.NEXT = '00' THEN
+    DO;
+ /*  IF ADMIN_FLAG  = FALSE          */                /*SOC RB01338 */
+ /*   & UPD_OK_FLAG = FALSE THEN                                     */
+     IF UPD_OK_FLAG = FALSE THEN                       /*EOC RB01338 */
+     DO;
+       RCBM32O.MSGLNO    = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+
+     CALL RCBC32M_RECEIVE_MAP;
+
+     PF5_FLAG = TRUE;
+     CALL RCBC32M_CHECK_MAP;
+     CALL RCBC32M_CLEAR_MAP;
+     CALL RCBC32M_GET_OFF;
+     CALL RCBC32M_FILL_MAP;
+
+     IF T691_UPD_FLAG = TRUE THEN
+     DO;
+       RCBM32O.MSGLNO     = 'UPDATES HAVE BEEN DONE';
+       T691_UPD_FLAG      = FALSE;
+     END;
+     CALL RCBC32M_SAVE_MAP;
+     CALL RCBC32M_SEND_MAP;
+    END;
+    ELSE
+    DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+     RCBM32O.MSGLNO = ERR_O004;
+     RCBM32I.OFFNNSELL = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+    END;
+   END;
+   WHEN (DFHPF7,DFHPF19)
+   DO;
+    IF HEADER.NEXT = 'H1' THEN
+    DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+     IF TS_CNT1 = 0 THEN
+     DO;
+       CALL RCBC32M_CLEAR_WORK;
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+
+     IF L - 12 < 0 THEN
+     DO;
+       J = 0;
+       RCBM32O.MSGLNO = ERR_O030;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SEND_MAP;
+     END;
+     ELSE DO;
+       J = L - 12;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+   END;
+
+   WHEN (DFHPF8,DFHPF20)
+   DO;
+    IF HEADER.NEXT = 'H1' THEN
+    DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+    IF TS_CNT1 = 0 THEN
+    DO;
+       CALL RCBC32M_CLEAR_WORK;
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_SEND_MAP;
+    END;
+
+    IF J >= TS_CNT1 THEN
+     DO;
+       J = J - K;
+       RCBM32O.MSGLNO = ERR_O031;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SEND_MAP;
+     END;
+     CALL RCBC32M_FILL_MAP;
+     CALL RCBC32M_SAVE_MAP;
+     CALL RCBC32M_SAVE_OLD_MAP;                      /* CEDS00000646 */
+     CALL RCBC32M_SEND_MAP;
+   END;
+
+   WHEN (DFHPF9,DFHPF21)
+   DO;
+    IF HEADER.NEXT = 'H1' THEN
+    DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       RCBM32O.MSGLNO = ERR_O004;
+       RCBM32I.OFFNNSELL = -1;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+    IF TS_CNT1 = 0 THEN
+    DO;
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+       CALL RCBC32M_SEND_MAP;
+    END;
+
+     IF TS_CNT1/2 < O THEN
+     DO;
+       J = 0;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+     ELSE
+     DO;
+       J =  TS_CNT1 - 11;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+   END;
+
+   WHEN (DFHENTER)
+   DO;
+     IF HEADER.NEXT = 'H1' THEN
+     DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_GET_CSR_POS;
+       CALL RCBC32M_RESTORE_MAP;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+
+     CALL RCBC32M_CLEAR_MAP;
+     CALL RCBC32M_RECEIVE_MAP;
+     ACTION_FLAG = FALSE;
+     DO I = 1 TO 11;
+       IF VERIFY(RCBM32I.ACTIONDI(I),'ACD') =0 THEN
+       ACTION_FLAG = TRUE;
+     END;
+     IF (RCBM32I.COUNTRYI        ¬= WRK_COUNTRY_NUMBER
+      |  RCBM32I.OFFNNSELI       ¬= OFFNNSEL
+      |  RCBM32I.TOFSELI         ¬= TOFSEL
+      |  RCBM32I.OFFSNSELI       ¬= OFFSNSEL
+      |  RCBM32I.RANKSELI        ¬= RANKSEL)
+      &  ACTION_FLAG              = FALSE    THEN
+     DO;
+       CALL RCBC32M_VALIDATE_MAP;
+       CALL RCBC32M_GET_OFF;
+       CALL RCBC32M_FILL_MAP;
+       CALL RCBC32M_SAVE_OLD_MAP;                    /* CEDS00000646 */
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+     ELSE
+     DO;
+       CALL RCBC32M_VALIDATE_MAP;
+       CALL RCBC32M_CHECK_MAP;
+       CALL RCBC32M_FILL_MAP;
+                                                 /* SOC CEDS00000676 */
+ /*    CALL RCBC32M_SAVE_OLD_MAP;               */   /* CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+       CALL RCBC32M_SAVE_MAP;
+       CALL RCBC32M_SEND_MAP;
+     END;
+   END;
+
+   WHEN (DFHCLEAR)
+   DO;
+     EXEC CICS SEND
+        CONTROL
+        ERASE
+        FREEKB;
+     EXEC CICS RETURN;
+   END;
+
+   OTHERWISE
+   DO;
+     CALL RCBC32M_RESTORE_MAP;
+     IF HEADER.NEXT = '00' THEN
+     CALL RCBC32M_RECEIVE_MAP;
+     IF HEADER.NEXT = 'H1' THEN
+     DO;
+       HEADER.NEXT = '00';
+       CALL RCBC32M_CLEAR_MAP;
+       CALL RCBC32M_CLEAR_WORK;
+     END;
+     RCBM32O.MSGLNO = ERR_O004;
+     RCBM32I.OFFNNSELL = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+  END;
+
+1/********************************************************************/
+ /*      CLEAR WORK FIELDS                                           */
+ /********************************************************************/
+0RCBC32M_CLEAR_WORK: PROC;
+
+    OFFNNSEL       = '***';
+    OFFSNSEL       = '***';
+    TOFSEL         = '***';
+    RANKSEL        = '***';
+    TS_CNT1        = 0;
+0END RCBC32M_CLEAR_WORK;
+1/********************************************************************/
+ /*      CLEAR MAP RCBM32                                            */
+ /********************************************************************/
+ RCBC32M_CLEAR_MAP: PROC;
+
+ RCBM32O.COUNTRYO                 = WRK_COUNTRY_NUMBER;
+ RCBM32O.OFFNNSELO                = '';
+ RCBM32O.TOFSELO                  = '';
+ RCBM32O.INCNTO                   = '';
+ RCBM32O.TOTCNTO                  = '';
+ RCBM32O.OFFSNSELO                = '';
+ RCBM32O.RANKSELO                 = '';
+
+ DO I = 1 TO 11;
+ RCBM32O.ACTIONDO(I)              = '';
+ RCBM32O.OFF_NNAMEO(I)            = '';
+ RCBM32O.TOFO(I)                  = '';
+ RCBM32O.OFF_SNAMEO(I)            = '';
+ RCBM32O.SLC_TRANS_FLAGO(I)       = '';
+ RCBM32O.CUST_AGGR_FLAGO(I)       = '';
+ RCBM32O.TOS_FORMATO(I)           = '';
+ RCBM32O.RANKO(I)                 = '';
+ FILL_FLAG(I)                     = FALSE;
+ END;
+
+ END RCBC32M_CLEAR_MAP;
+1/********************************************************************/
+ /*      CLEAR MAP RCBM32                                            */
+ /********************************************************************/
+ RCBC32M_CLEAR_MAP_2: PROC;
+
+ RCBM32O.OFFNNSELO                = '';
+ RCBM32O.TOFSELO                  = '';
+ RCBM32O.INCNTO                   = '';
+ RCBM32O.TOTCNTO                  = '';
+ RCBM32O.OFFSNSELO                = '';
+ RCBM32O.RANKSELO                 = '';
+
+ DO I = 1 TO 11;
+ RCBM32O.ACTIONDO(I)              = '';
+ RCBM32O.OFF_NNAMEO(I)            = '';
+ RCBM32O.TOFO(I)                  = '';
+ RCBM32O.OFF_SNAMEO(I)            = '';
+ RCBM32O.SLC_TRANS_FLAGO(I)       = '';
+ RCBM32O.CUST_AGGR_FLAGO(I)       = '';
+ RCBM32O.TOS_FORMATO(I)           = '';
+ RCBM32O.RANKO(I)                 = '';
+ FILL_FLAG(I)                     = FALSE;
+ END;
+
+ END RCBC32M_CLEAR_MAP_2;
+1/********************************************************************/
+ /*      SEND MAP RCBM32                                             */
+ /********************************************************************/
+0RCBC32M_SEND_MAP: PROC;
+
+ IF RCBM32O.OFFNNSELO = '***' THEN RCBM32O.OFFNNSELO = '';
+ IF RCBM32O.TOFSELO   = '***' THEN RCBM32O.TOFSELO   = '';
+ IF RCBM32O.OFFSNSELO = '***' THEN RCBM32O.OFFSNSELO = '';
+ IF RCBM32O.RANKSELO  = '***' THEN RCBM32O.RANKSELO  = '';
+
+ /*IF ADMIN_FLAG  = TRUE             */                /*SOC RB01338 */
+ /* | UPD_OK_FLAG = TRUE THEN                                        */
+ IF UPD_OK_FLAG   = TRUE THEN                          /*EOC RB01338 */
+ DO;
+   RCBM32O.PFLINEO = PFLINE1A;
+   RCBM32O.SALINEO = SALINE;
+ END;
+ ELSE RCBM32O.PFLINEO = PFLINE1;
+
+ RCBM32O.COUNTRYO = WRK_COUNTRY_NUMBER;
+
+0EXEC CICS SEND
+    MAP('RCBM32')
+    MAPSET('RCBM32')
+    FREEKB
+    ERASE
+    RESP(RESPONSE)
+    RESP2(CODE_EXPLAIN);
+
+0SELECT(RESPONSE);
+    WHEN(DFHRESP(NORMAL))
+    DO;
+      EXEC CICS RETURN
+         TRANSID('RC32')
+         COMMAREA(COMMAREA)
+         LENGTH(CSTG(COMMAREA));
+    END;
+    OTHERWISE
+    DO;
+      RCBM32O.MSGLNO = ERR_MESSAGE2 || 'RCBM32';
+      CALL RCBC32M_SEND_MAP;
+    END;
+ END;
+
+0END RCBC32M_SEND_MAP;
+1/********************************************************************/
+ /*      RECEIVE MAP RCBM32                                          */
+ /********************************************************************/
+0RCBC32M_RECEIVE_MAP: PROC;
+
+  EXEC CICS RECEIVE                  /* RECEIVE DRIVER MAP       */
+     MAP('RCBM32')
+     MAPSET('RCBM32')
+     RESP(RESPONSE)
+     RESP2(CODE_EXPLAIN);
+  SELECT(RESPONSE);                  /* CHECK RESPONSE           */
+     WHEN(DFHRESP(NORMAL))
+     DO;
+       HEADER.RET_CODE = '';        /* INITIALISE RETURN CODES  */
+       HEADER.SUB_CODE = '';
+     END;
+
+     OTHERWISE
+     DO;
+       RCBM32O.MSGLNO = ERR_MESSAGE3;
+       CALL RCBC32M_SEND_MAP;
+     END;
+   END;
+
+0END RCBC32M_RECEIVE_MAP;
+1/********************************************************************/
+ /*      SEND ERROR MAP                                              */
+ /********************************************************************/
+ RCBC32M_SEND_MAP_CSR: PROC;
+
+ IF RCBM32O.OFFNNSELO = '***' THEN RCBM32O.OFFNNSELO = '';
+ IF RCBM32O.TOFSELO   = '***' THEN RCBM32O.TOFSELO   = '';
+ IF RCBM32O.OFFSNSELO = '***' THEN RCBM32O.OFFSNSELO = '';
+ IF RCBM32O.RANKSELO  = '***' THEN RCBM32O.RANKSELO  = '';
+
+ /*IF ADMIN_FLAG  = TRUE             */                /*SOC RB01338 */
+ /* | UPD_OK_FLAG = TRUE THEN                                        */
+   IF UPD_OK_FLAG = TRUE THEN                          /*EOC RB01338 */
+   DO;
+     RCBM32O.PFLINEO = PFLINE1A;
+     RCBM32O.SALINEO = SALINE;
+   END;
+   ELSE RCBM32O.PFLINEO = PFLINE1;
+
+ EXEC CICS SEND
+    MAP('RCBM32')
+    MAPSET('RCBM32')
+    CURSOR
+    ERASE
+    FREEKB;
+
+ EXEC CICS RETURN
+    TRANSID('RC32')
+    COMMAREA(COMMAREA)
+    LENGTH(CSTG(COMMAREA));
+
+ END RCBC32M_SEND_MAP_CSR;
+1/********************************************************************/
+ /*      SEND HELP MAP                                               */
+ /********************************************************************/
+0RCBC32M_HELP_MAP: PROC;
+
+ HEADER.NEXT = 'H1';
+ HELP_FLAG   = FALSE;
+ CSR_POS     = 0;
+ CSR_ROW     = 1;
+
+ DO N = 1 TO 11;
+   CSR_ROW = N;
+
+   IF RCBM32I.ACTIONDF(N) = CSR_HELP |
+      RCBM32I.ACTIONDF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 6;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('ACTACD')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+   IF RCBM32I.OFF_NNAMEF(N) = CSR_HELP  |
+      RCBM32I.OFF_NNAMEF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 7;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('OFFNNM')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+   IF RCBM32I.TOFF(N) = CSR_HELP  |
+      RCBM32I.TOFF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 8;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('TOFHLP')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+   IF RCBM32I.OFF_SNAMEF(N) = CSR_HELP  |
+      RCBM32I.OFF_SNAMEF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 9;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('OFFSNM')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+   IF RCBM32I.SLC_TRANS_FLAGF(N) = CSR_HELP  |
+      RCBM32I.SLC_TRANS_FLAGF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 10;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('SLCTRN')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+   IF RCBM32I.CUST_AGGR_FLAGF(N) = CSR_HELP  |
+      RCBM32I.CUST_AGGR_FLAGF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 11;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('CUSTAGG')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+   IF RCBM32I.TOS_FORMATF(N) = CSR_HELP  |
+      RCBM32I.TOS_FORMATF(N) = CSR_EOF THEN
+   DO;
+       N = 11;
+       CSR_POS   = 12;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('TOSFMT')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+
+  IF RCBM32I.RANKF(N) = CSR_HELP  |
+     RCBM32I.RANKF(N) = CSR_EOF THEN
+  DO;
+       N = 11;
+       CSR_POS   = 13;
+       HELP_FLAG = TRUE;
+       EXEC CICS SEND
+         MAP('RANKHLP')
+         MAPSET('RCBHELP')
+         FREEKB
+         ERASE;
+   END;
+ END;
+
+ IF RCBM32I.COUNTRYF = CSR_HELP |
+    RCBM32I.COUNTRYF = CSR_EOF THEN
+       CSR_POS = 1;
+
+ IF RCBM32I.OFFNNSELF = CSR_HELP |
+    RCBM32I.OFFNNSELF = CSR_EOF THEN
+       CSR_POS = 2;
+
+ IF RCBM32I.TOFSELF   = CSR_HELP |
+    RCBM32I.TOFSELF   = CSR_EOF THEN
+       CSR_POS = 3;
+
+ IF RCBM32I.OFFSNSELF = CSR_HELP |
+    RCBM32I.OFFSNSELF = CSR_EOF THEN
+       CSR_POS = 4;
+
+ IF RCBM32I.RANKSELF = CSR_HELP |
+    RCBM32I.RANKSELF = CSR_EOF THEN
+       CSR_POS = 5;
+
+ IF HELP_FLAG = FALSE THEN
+ EXEC CICS SEND
+    MAP('RCBH32')
+    MAPSET('RCBM32')
+    FREEKB
+    ERASE;
+
+0EXEC CICS RETURN
+    TRANSID('RC32')
+    COMMAREA(COMMAREA)
+    LENGTH(CSTG(COMMAREA))
+    RESP(RESPONSE)
+    RESP2(CODE_EXPLAIN);
+
+ SELECT(RESPONSE);                       /* CHECK RESPONSE           */
+    WHEN(DFHRESP(NORMAL));
+    WHEN(DFHRESP(LENGERR))               /* LENGTH ERROR             */
+
+    DO;
+      COMMAREA_LENGTH = EIBCALEN;
+      EXEC CICS RETURN
+         TRANSID('RC32')
+         COMMAREA(COMMAREA)
+         LENGTH(COMMAREA_LENGTH);
+    END;
+
+    OTHERWISE
+    DO;
+      RCBM32O.MSGLNO = ERR_MESSAGE14;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+ END;
+
+0END RCBC32M_HELP_MAP;
+ /********************************************************************/
+ /*      RESTORE MAP RCBM32                                          */
+ /********************************************************************/
+ RCBC32M_RESTORE_MAP: PROC;
+
+ RCBM32O.COUNTRYO             = WRK_COUNTRY_NUMBER;
+
+ RCBM32O.OFFNNSELO            = OFFNNSEL;
+ RCBM32O.OFFSNSELO            = OFFSNSEL;
+ RCBM32O.TOFSELO              = TOFSEL;
+ RCBM32O.RANKSELO             = RANKSEL;
+
+ DO P = 1 TO 11;
+   FILL_FLAG(P)               = TMP_FILL_FLAG(P);
+   RCBM32O.ACTIONDO(P)        = TMP_ACTION(P);
+   RCBM32O.OFF_NNAMEO(P)      = TMP_OFF_ID(P);
+   RCBM32O.TOFO(P)            = TMP_TOF(P);
+   RCBM32O.OFF_SNAMEO(P)      = TMP_OFF_SNAME(P);
+   RCBM32O.SLC_TRANS_FLAGO(P) = TMP_SLC_TRANS_FLAG(P);
+   RCBM32O.CUST_AGGR_FLAGO(P) = TMP_CUST_AGGR_FLAG(P);
+   RCBM32O.TOS_FORMATO(P)     = TMP_TOS_FORMAT(P);
+   RCBM32O.RANKO(P)           = TMP_RANK(P);
+ END;
+
+ RCBM32O.INCNTO  = SAVE_INCNT;
+ RCBM32O.TOTCNTO = SAVE_TOTCNT;
+
+ END RCBC32M_RESTORE_MAP;
+1/********************************************************************/
+ /*      GET CURSOR POSITION                                         */
+ /*         FOR RETURN FROM HELP SCREENS                             */
+ /********************************************************************/
+0RCBC32M_GET_CSR_POS: PROC;
+
+ SELECT(CSR_POS);
+   WHEN(1)  RCBM32I.COUNTRYL                 = -1;
+   WHEN(2)  RCBM32I.OFFNNSELL                = -1;
+   WHEN(3)  RCBM32I.TOFSELL                  = -1;
+   WHEN(4)  RCBM32I.OFFSNSELL                = -1;
+   WHEN(5)  RCBM32I.RANKSELL                 = -1;
+   WHEN(6)  RCBM32I.ACTIONDL(CSR_ROW)        = -1;
+   WHEN(7)  RCBM32I.OFF_NNAMEL(CSR_ROW)      = -1;
+   WHEN(8)  RCBM32I.TOFL(CSR_ROW)            = -1;
+   WHEN(9)  RCBM32I.OFF_SNAMEL(CSR_ROW)      = -1;
+   WHEN(10) RCBM32I.SLC_TRANS_FLAGL(CSR_ROW) = -1;
+   WHEN(11) RCBM32I.CUST_AGGR_FLAGL(CSR_ROW) = -1;
+   WHEN(12) RCBM32I.TOS_FORMATL              = -1;
+   WHEN(13) RCBM32I.RANKL                    = -1;
+   OTHERWISE RCBM32I.OFFNNSELL               = -1;
+ END;
+
+0END RCBC32M_GET_CSR_POS;
+1/********************************************************************/
+ /*      SAVE DATA BEFORE GO TO HELP MAP.                            */
+ /********************************************************************/
+ RCBC32M_SAVE_MAP: PROC;
+
+ OFFNNSELO                     = RCBM32I.OFFNNSELI;
+ OFFSNSELO                     = RCBM32I.OFFSNSELI;
+ TOFSELO                       = RCBM32I.TOFSELI;
+ RANKSELO                      = RCBM32I.RANKSELI;
+
+ DO P = 1 TO 11;
+  TMP_ACTION(P)                = RCBM32I.ACTIONDI(P);
+  TMP_OFF_ID(P)                = RCBM32I.OFF_NNAMEI(P);
+  TMP_TOF(P)                   = RCBM32I.TOFI(P);
+  TMP_OFF_SNAME(P)             = RCBM32I.OFF_SNAMEI(P);
+  TMP_SLC_TRANS_FLAG(P)        = RCBM32I.SLC_TRANS_FLAGI(P);
+  TMP_CUST_AGGR_FLAG(P)        = RCBM32I.CUST_AGGR_FLAGI(P);
+  TMP_TOS_FORMAT(P)            = RCBM32I.TOS_FORMATI(P);
+  TMP_RANK(P)                  = RCBM32I.RANKI(P);
+  TMP_FILL_FLAG(P)             = FILL_FLAG(P);
+ END;
+  SAVE_INCNT                   = RCBM32I.INCNTI;
+  SAVE_TOTCNT                  = RCBM32I.TOTCNTI;
+ END RCBC32M_SAVE_MAP;
+1/********************************************************************/
+ /*      SAVE DATA BEFORE SEND A MAP                SOC CEDS00000646 */
+ /********************************************************************/
+ RCBC32M_SAVE_OLD_MAP: PROC;
+
+ DO P = 1 TO 11;
+  TMP_ACTION_OLD(P)                = RCBM32O.ACTIONDO(P);
+  TMP_OFF_ID_OLD(P)                = RCBM32O.OFF_NNAMEO(P);
+  TMP_TOF_OLD(P)                   = RCBM32O.TOFO(P);
+  TMP_OFF_SNAME_OLD(P)             = RCBM32O.OFF_SNAMEO(P);
+  TMP_SLC_TRANS_FLAG_OLD(P)        = RCBM32O.SLC_TRANS_FLAGO(P);
+  TMP_CUST_AGGR_FLAG_OLD(P)        = RCBM32O.CUST_AGGR_FLAGO(P);
+  TMP_TOS_FORMAT_OLD(P)            = RCBM32O.TOS_FORMATO(P);
+  TMP_RANK_OLD(P)                  = RCBM32O.RANKO(P);
+  TMP_FILL_FLAG_OLD(P)             = FILL_FLAG(P);
+ END;
+
+ END RCBC32M_SAVE_OLD_MAP;                       /* EOC CEDS00000646 */
+1/********************************************************************/
+ /*      VALIDATE MAP RCBM32                                         */
+ /********************************************************************/
+0RCBC32M_VALIDATE_MAP: PROC;
+
+ OFFNNSEL          = '';
+ TOFSEL            = '';
+ OFFSNSEL          = '';
+ RANKSEL           = '';
+ OFFNNSEL_NULL     = 'N';
+ TOFSEL_NULL       = 'N';
+ OFFSNSEL_NULL     = 'N';
+ RANKSEL_NULL      = 'N';
+
+ IF WRK_COUNTRY_NUMBER ¬= RCBM32I.COUNTRYI THEN
+ DO;
+   SEL_OPT = '9';
+   WRK_COUNTRY_NUMBER = RCBM32I.COUNTRYI;
+
+   EXEC CICS LINK
+      PROGRAM('RCBC99P')
+      COMMAREA(COMMAREA)
+      LENGTH(CSTG(COMMAREA));
+
+   IF CTY_OK_FLAG = FALSE THEN
+   DO;
+     RCBM32I.COUNTRYL = -1;
+     RCBM32O.COUNTRYC = DFHRED;
+     WRK_COUNTRY_NUMBER      = '001';
+     CALL RCBC32M_CLEAR_MAP_2;
+     RCBM32O.MSGLNO          = ERR_O072;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF OK_FLAG = FALSE THEN
+   DO;
+     RCBM32I.COUNTRYL        = -1;
+     RCBM32O.COUNTRYC        = DFHRED;
+     WRK_COUNTRY_NUMBER      = '001';
+     CALL RCBC32M_CLEAR_MAP_2;
+     RCBM32O.MSGLNO          = ERR_O057;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF RCB025_FLAG = FALSE THEN
+   DO;
+     RCBM32O.COUNTRYC = DFHRED;
+     RCBM32I.COUNTRYL = -1;
+     WRK_COUNTRY_NUMBER      = '001';
+     CALL RCBC32M_CLEAR_MAP_2;
+     RCBM32O.MSGLNO =
+                     'Parameter RCB025 is missing for this country';
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF RCB098_FLAG = FALSE THEN
+   DO;
+     RCBM32O.COUNTRYC        = DFHRED;
+     RCBM32I.COUNTRYL        = -1;
+     WRK_COUNTRY_NUMBER      = '001';
+     CALL RCBC32M_CLEAR_MAP_2;
+     RCBM32O.MSGLNO          =
+                     'Parameter RCB098 is missing for this country';
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF ASCA_STOP_FLAG = TRUE THEN
+   DO;
+     RCBM32O.COUNTRYC        = DFHRED;
+     RCBM32I.COUNTRYL        = -1;
+     WRK_COUNTRY_NUMBER      = '001';
+     CALL RCBC32M_CLEAR_MAP_2;
+     RCBM32O.MSGLNO          = ERR_O079;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   WRK_COUNTRY_NUMBER   = RCBM32I.COUNTRYI;
+ END;
+
+ IF RCBM32I.OFFNNSELL  = 0 |
+    RCBM32I.OFFNNSELF  = ERASE_EOF THEN
+ DO;
+   RCBM32O.OFFNNSELO   = ' ';
+   RCBM32I.OFFNNSELI   = ' ';
+ END;
+
+ IF RCBM32I.TOFSELL    = 0 |
+    RCBM32I.TOFSELF    = ERASE_EOF THEN
+ DO;
+   RCBM32O.TOFSELO     = ' ';
+   RCBM32I.TOFSELI     = ' ';
+ END;
+
+ IF RCBM32I.OFFSNSELL  = 0 |
+    RCBM32I.OFFSNSELF  = ERASE_EOF THEN
+ DO;
+   RCBM32O.OFFSNSELO   = ' ';
+   RCBM32I.OFFSNSELI   = ' ';
+ END;
+
+ IF RCBM32I.RANKSELL   = 0 |
+    RCBM32I.RANKSELF   = ERASE_EOF THEN
+ DO;
+   RCBM32O.RANKSELO    = ' ';
+   RCBM32I.RANKSELI    = ' ';
+ END;
+
+ IF RCBM32I.OFFNNSELI ¬= ' ' THEN
+ DO;
+   OFFNNSEL            = RCBM32I.OFFNNSELI;
+   OFFNNSEL_NULL       = 'Y';
+ END;
+
+ IF RCBM32I.TOFSELI   ¬= ' '  THEN
+ DO;
+   TOFSEL              = RCBM32I.TOFSELI;
+   TOFSEL_NULL         = 'Y';
+ END;
+
+ IF RCBM32I.OFFSNSELI ¬= ' ' THEN
+ DO;
+   OFFSNSEL            = RCBM32I.OFFSNSELI;
+   OFFSNSEL_NULL       = 'Y';
+ END;
+
+ IF RCBM32I.RANKSELI  ¬= ' ' THEN
+ DO;
+   RANKSEL             = RCBM32I.RANKSELI;
+   RANKSEL_NULL        = 'Y';
+ END;
+
+0END RCBC32M_VALIDATE_MAP;
+1/********************************************************************/
+ /*      GET OFFERING ID TRANSLATION LIST                            */
+ /********************************************************************/
+0RCBC32M_GET_OFF: PROC;
+
+ IF OFFNNSEL = '***' THEN
+    OFFNNSEL  = ' ';
+
+ IF OFFSNSEL = '***' THEN
+    OFFSNSEL = ' ';
+
+ IF TOFSEL   = '***' THEN
+    TOFSEL   = ' ';
+
+ IF RANKSEL = '***' THEN
+    RANKSEL  = ' ';
+
+ DO M = 1 TO 11;
+    FILL_FLAG(M)       = FALSE;
+ END;
+
+ TS_Q = 'RC00' || EIBTRMID;
+
+ EXEC CICS IGNORE CONDITION QIDERR;
+
+ EXEC CICS DELETEQ TS QUEUE(TS_Q);
+
+ EXEC CICS HANDLE CONDITION QIDERR;
+
+ OK_FLAG = TRUE;
+ TS_CNT1 = 0;
+ J      = 0;
+ L      = 1;
+
+ EXEC SQL OPEN C_0691;
+
+ SELECT(SQLCA.SQLCODE);
+   WHEN(0);
+   OTHERWISE
+   DO;
+     RCBM32O.MSGLNO = 'DB2 ERROR ' || SQLCA.SQLCODE || ' OCCURED
+     WHILE ACCESSING RCBT0691';
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+ DO WHILE (OK_FLAG = TRUE);
+   RCB691SI.INDNULL(*)         = 0;
+   TS_REC                      = '';
+
+   EXEC SQL FETCH C_0691
+            INTO :RCB691S.OFFERING_ID              : NUL691A
+                ,:RCB691S.TYPE_OF_OFFERING         : NUL691B
+                ,:RCB691S.OFFERING_SNAME           : NUL691C
+                ,:RCB691S.SLC_TRANS_REQ_FLAG       : NUL691D
+                ,:RCB691S.CUST_AGGR_REQ_FLAG       : NUL691E
+                ,:RCB691S.TOS_FORMAT               : NUL691F
+                ,:RCB691S.RANK_NUMBER              : NUL691G;
+
+     IF (SQLCODE = 0) THEN
+     DO;
+       IF NUL691A ¬= -1 THEN
+       TS_REC.TS_OFF_NNAME     = RCB691S.OFFERING_ID;
+
+       IF NUL691B ¬= -1 THEN
+       TS_REC.TS_TOF           = RCB691S.TYPE_OF_OFFERING;
+
+       IF NUL691C ¬= -1 THEN
+       TS_REC.TS_OFF_SNAME     = RCB691S.OFFERING_SNAME;
+
+       IF NUL691D ¬= -1 THEN
+          TS_REC.TS_SLC_TRANS_FLAG = RCB691S.SLC_TRANS_REQ_FLAG;
+
+       IF NUL691E ¬= -1 THEN
+       TS_REC.TS_CUST_AGGR_FLAG = RCB691S.CUST_AGGR_REQ_FLAG;
+
+       IF NUL691F ¬= -1 THEN
+       TS_REC.TS_TOS_FORMAT    = RCB691S.TOS_FORMAT;
+
+       IF NUL691G ¬= -1 THEN
+          TS_REC.TS_RANK       = RCB691S.RANK_NUMBER;
+
+       EXEC CICS WRITEQ TS QUEUE(TS_Q) FROM(TS_REC);
+       TS_CNT1 = TS_CNT1 + 1;
+     END;
+
+
+     IF (SQLCODE ¬= 0) THEN
+     DO;
+       OK_FLAG = FALSE;
+     END;
+ END;
+ EXEC SQL CLOSE C_0691;
+
+ IF TS_CNT1 = 0 THEN
+ DO;
+   CALL RCBC32M_CLEAR_MAP;
+   IF (OFFNNSEL    ¬= ''
+    |  TOFSEL      ¬= ''
+    |  OFFSNSEL    ¬= ''
+    |  RANKSEL     ¬= '') THEN
+     DO;
+       RCBM32O.MSGLNO          =  ERR_O221;
+       RCBM32O.OFFNNSELO       = OFFNNSEL;
+       RCBM32O.TOFSELO         = TOFSEL;
+       RCBM32O.OFFSNSELO       = OFFSNSEL;
+       RCBM32O.RANKSELO        = RANKSEL;
+     END;
+   ELSE
+     RCBM32O.MSGLNO = 'NO ITEMS FOUND FOR THE SELECTED COUNTRY';
+   CALL RCBC32M_SEND_MAP;
+ END;
+
+0END RCBC32M_GET_OFF;
+1/********************************************************************/
+ /*      FILL MAP RCBM32                                             */
+ /********************************************************************/
+0RCBC32M_FILL_MAP: PROC;
+
+ CALL RCBC32M_CLEAR_MAP;
+ RCBM32O.OFFNNSELO   = OFFNNSEL;
+ RCBM32O.OFFSNSELO   = OFFSNSEL;
+ RCBM32O.TOFSELO     = TOFSEL;
+ RCBM32O.RANKSELO    = RANKSEL;
+
+ K                             = 0;
+ PIC_CNT                       = J + 1;
+ IF PIC_CNT = 0 THEN
+    PIC_CNT = 1;
+ RCBM32O.INCNTO                = PIC_CNT;
+ L                             = PIC_CNT;
+ PIC_CNT                       = TS_CNT1;
+ RCBM32O.TOTCNTO               = PIC_CNT;
+
+ RCBM32I.ACTIONDL(1)           = -1;
+
+ DO I = 1 TO 11;
+
+   IF J <= TS_CNT1 THEN
+   DO;
+     J = J + 1;     /* NUMBER OF LINES DISPLAYED */
+     K = K + 1;     /* NUMBER OF LINES DISPLAYED ON CURRENT SCREEN */
+     EXEC CICS READQ TS QUEUE(TS_Q) INTO(TS_REC) ITEM(J);
+     RCBM32O.OFF_NNAMEO(I)      = TS_REC.TS_OFF_NNAME;
+     RCBM32O.TOFO(I)            = TS_REC.TS_TOF;
+     RCBM32O.OFF_SNAMEO(I)      = TS_REC.TS_OFF_SNAME;
+     RCBM32O.SLC_TRANS_FLAGO(I) = TS_REC.TS_SLC_TRANS_FLAG;
+     RCBM32O.CUST_AGGR_FLAGO(I) = TS_REC.TS_CUST_AGGR_FLAG;
+     RCBM32O.TOS_FORMATO(I)     = TS_REC.TS_TOS_FORMAT;
+     RCBM32O.RANKO(I)           = TS_REC.TS_RANK;
+     FILL_FLAG(I)               = TRUE;
+   END;
+
+   IF J >= TS_CNT1 THEN
+     I = 12;
+ END;
+ O = J;
+0END RCBC32M_FILL_MAP;
+1/********************************************************************/
+ /*      CHECK MAP RCBM32                                            */
+ /********************************************************************/
+0RCBC32M_CHECK_MAP: PROC;
+
+ ALL_EMPTY_ACTION_FLAG         = FALSE;
+
+ DO I = 1 TO 11;
+   IF VERIFY(RCBM32I.ACTIONDI(I), ' ACD') ¬= 0 THEN
+   DO;
+     RCBM32I.ACTIONDL(I)       = -1;
+     RCBM32O.ACTIONDC(I)       = DFHRED;
+     RCBM32O.MSGLNO            = ERR_O127;
+     CALL RCBC32M_SEND_MAP_CSR;
+     END;
+ END;
+
+ ALL_EMPTY_ACTION_FLAG         = TRUE;
+
+ DO I = 1 TO 11;
+   IF RCBM32I.ACTIONDI(I) ¬= ' ' THEN
+      ALL_EMPTY_ACTION_FLAG    = FALSE;
+ END;
+
+ IF ALL_EMPTY_ACTION_FLAG = TRUE THEN
+ DO;
+   /*NO ITEM SELECTED*/
+   RCBM32O.ACTIONDC(1)         = DFHRED;
+   RCBM32I.ACTIONDL(1)         = -1;
+   RCBM32O.MSGLNO              = ERR_O032;
+   CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+ DO I = 1 TO 11;
+   IF VERIFY(RCBM32I.ACTIONDI(I),'ACD') = 0 THEN
+   DO;
+     IF RCBM32I.OFF_NNAMEL(I)  = 0 |
+        RCBM32I.OFF_NNAMEI(I)  = ''|
+        RCBM32I.OFF_NNAMEF(I)  = ERASE_EOF THEN
+     DO;
+        RCBM32O.OFF_NNAMEC(I)  = DFHRED;
+        RCBM32I.OFF_NNAMEL(I)  = -1;
+        RCBM32O.MSGLNO         = ERR_O101;
+        CALL RCBC32M_SEND_MAP_CSR;
+     END;
+   END;
+
+   IF VERIFY(RCBM32I.ACTIONDI(I),'AC') = 0 THEN
+     CALL RCBC32M_UPDATE_CHECK;
+
+ END;
+
+ DO I = 1 TO 11;
+   IF VERIFY(RCBM32I.ACTIONDI(I), 'ACD') = 0
+    & PF5_FLAG = FALSE THEN
+   DO;
+     CALL RCBC32M_PROTECT_MAP1;
+     RCBM32O.MSGLNO            = ERR_O022;
+     PF5_FLAG                  = TRUE;
+     CALL RCBC32M_SEND_MAP;
+   END;
+ END;
+
+ T691_UPD_FLAG               = FALSE;
+ IF PF5_FLAG = TRUE THEN
+ DO;
+   DO I = 1 TO 11;
+
+     IF (RCBM32I.ACTIONDI(I) = 'A') THEN
+     DO;
+       CALL RCBC32M_INSERT_RECORD;
+       WRK_ACTION              = '1';
+       CALL RCBC32M_UPD_T560;
+       RCBM32I.ACTIONDI(I)     = '';
+     END;
+
+     IF (RCBM32I.ACTIONDI(I) = 'C') THEN
+     DO;
+       CALL RCBC32M_UPDATE_RECORD;
+       WRK_ACTION                = '2';
+       CALL RCBC32M_UPD_T560;
+       RCBM32I.ACTIONDI(I)       = '';
+     END;
+
+     IF (RCBM32I.ACTIONDI(I) = 'D') THEN
+     DO;
+       CALL RCBC32M_DELETE_RECORD;
+       WRK_ACTION                = '3';
+       CALL RCBC32M_UPD_T560;
+       RCBM32I.ACTIONDI(I)       = '';
+     END;
+   END;
+ END;
+ T691_UPD_FLAG                 = TRUE;
+
+0END RCBC32M_CHECK_MAP;
+1/********************************************************************/
+ /*      CHECK FIELDS FOR CORRECTNESS                                */
+ /********************************************************************/
+0RCBC32M_UPDATE_CHECK: PROC;
+
+                                                 /* SOC CEDS00000676 */
+ /* FOR (A)DD WHEN OLD AND CURRENT OFF_NNAME IN SCREEN IS EQUAL FOR  */
+ /* COUNTRY THEN BELOW MESSAGE IS DISPLAYED                          */
+ /* FOR (C)HANGE WHEN ALL CURRENT VALUES IN SCREEN ARE SAME AS OLD   */
+ /* VALUES FOR COUNTRY THEN BELOW MESSAGE IS DISPLAYED               */
+
+ IF ( TMP_OFF_ID_OLD(I) = RCBM32I.OFF_NNAMEI(I)
+    & RCBM32I.ACTIONDI(I) = 'A') |
+    ( TMP_OFF_ID_OLD(I) = RCBM32I.OFF_NNAMEI(I)
+    & TMP_TOF_OLD(I) = RCBM32I.TOFI(I)
+    & TMP_OFF_SNAME_OLD(I) = RCBM32I.OFF_SNAMEI(I)
+    & TMP_SLC_TRANS_FLAG_OLD(I) = RCBM32I.SLC_TRANS_FLAGI(I)
+    & TMP_CUST_AGGR_FLAG_OLD(I) = RCBM32I.CUST_AGGR_FLAGI(I)
+    & TMP_TOS_FORMAT_OLD(I) = RCBM32I.TOS_FORMATI(I)
+    & TMP_RANK_OLD(I) = RCBM32I.RANKI(I)
+    & RCBM32I.ACTIONDI(I) = 'C')
+ THEN
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     RCBM32O.MSGLNO              = 'RECORD ALREADY EXISTS';
+     RCBM32O.ACTIONDC(I)         = DFHRED;
+     RCBM32I.ACTIONDL(I)         = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+                                                 /* EOC CEDS00000676 */
+ IF RCBM32I.TOFI(I) ¬= 'WSU' &
+    RCBM32I.TOFI(I) ¬= 'MSU' &
+    RCBM32I.TOFI(I) ¬= 'MESE' THEN
+ DO;
+    RCBM32O.TOFC(I)            = DFHRED;
+    RCBM32I.TOFL(I)            = -1;
+    /*ERR_O229-INVALID TYPE OF OFFERING*/
+    RCBM32O.MSGLNO             = ERR_O229;
+    CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+                                                 /* SOC CEDS00000676 */
+ /* MOVED THE CODE BELOW AS PART OF TREC 1998 TO VALIDATE THE FIELDS */
+
+ /* OFF_NNAME, OFF_SNAME AND RANK IN SEQUENCE                        */
+
+ /*IF RCBM32I.OFF_SNAMEL(I) = 0 |                                    */
+                                                      /* SOC RC01340 */
+ /* RCBM32I.OFF_SNAMEI(I)  = ''|                                     */
+ /* RCBM32I.OFF_SNAMEF(I)  = ERASE_EOF THEN                          */
+ /*VERIFY(RCBM32I.OFF_SNAMEI(I),ALPHA1) ¬= 0 THEN                    */
+                                                      /* EOC RC01340 */
+ /*DO;                                                               */
+ /* RCBM32O.OFF_SNAMEC(I)      = DFHRED;                             */
+ /* RCBM32I.OFF_SNAMEL(I)      = -1;                                 */
+    /*FIELD MUST BE FILLED IN CORRECTLY*/
+ /* RCBM32O.MSGLNO             = ERR_O101;                           */
+ /* CALL RCBC32M_SEND_MAP_CSR;                                       */
+ /*END;                                                              */
+
+ /* MOVED PART OF THE CODE FROM BELOW FOR OFF_NNAME SCREEN VALIDATION*/
+ /* COMPARING OLD OFF NNAME WITH NEW OFF NNAME                       */
+
+ DO R = 1 TO 11;                          /* CHECK 11 ROWS IN SCREEN */
+   IF I ¬= R THEN             /* I = R CONDITION IS CHECKED IN TABLE */
+   DO;
+     IF RCBM32I.OFF_NNAMEI(R) ¬= RCBM32I.OFF_NNAMEI(I) THEN
+        NNAME_FLAG = TRUE;                /* NO DUPLICATES IN SCREEN */
+     ELSE
+       DO;
+         RCBM32O.OFF_NNAMEC(I)      = DFHRED;
+         RCBM32I.OFF_NNAMEL(I)      = -1;
+         /*DUPLICATE OFFERING NNAME ENTERED ON THE ONLINE SCREEN*/
+         RCBM32O.MSGLNO             = ERR_O235;
+         CALL RCBC32M_SEND_MAP_CSR;
+       END;
+   END;
+ END;
+
+ /* VALIDATING OFF_NNAME IN TABLE 691 AND CHECKING FOR DUPLICATES    */
+ CALL RCBC32M_CHECK_NNAME;
+
+ IF NNAME_FLAG = FALSE THEN
+   DO;
+ /* BELOW MSG 0233 SHOULD BE DISPLAYED ONLY FOR ALL (A)DD CONDITIONS */
+ /* AND FOR (C)HANGE WHEN OLD VALUE = CURRENT VALUE IN SCREEN        */
+     IF VERIFY(RCBM32I.ACTIONDI(I),'C') ¬= 0 |
+        (TMP_OFF_ID_OLD(I) ¬= RCBM32I.OFF_NNAMEI(I))
+     THEN
+     DO;
+       RCBM32O.OFF_NNAMEC(I)      = DFHRED;
+       RCBM32I.OFF_NNAMEL(I)      = -1;
+       /* NOT ALLOWED TO UPDATE */
+       RCBM32O.MSGLNO             = ERR_O233;
+       CALL RCBC32M_SEND_MAP_CSR;
+     END;
+   END;
+
+ /* FOR (C)HANGE IF OFF_NNAME IS CHANGED ERR_0120 SHOULD BE DISPLAYED*/
+ WRK_TMP_OFF_ID_OLD = '';                          /*SOC CEDS00000743*/
+ WRK_TMP_REC_COUNT = 0;                            /*EOC CEDS00000743*/
+ IF RCBM32I.ACTIONDI(I) = 'C' THEN
+ DO;
+   WRK_TMP_OFF_ID_OLD = TMP_OFF_ID_OLD(I);         /*SOC CEDS00000743*/
+   EXEC SQL
+      SELECT COUNT(*)
+       INTO :WRK_TMP_REC_COUNT
+       FROM RCBV0691_TRANS_OFF
+       WHERE COUNTRY_NUMBER      = :WRK_COUNTRY_NUMBER
+       AND OFFERING_ID           = :WRK_TMP_OFF_ID_OLD;
+
+   IF WRK_TMP_REC_COUNT = '0' THEN
+   DO;
+      CALL RCBC32M_PROTECT_MAP;
+      RCBM32O.MSGLNO           = ERR_O120;
+      RCBM32O.ACTIONDC(I)      = DFHRED;
+      RCBM32I.ACTIONDL(I)      = -1;
+      CALL RCBC32M_SEND_MAP_CSR;
+   END;
+   ELSE                                            /*EOC CEDS00000743*/
+   IF TMP_OFF_ID_OLD(I) ¬= RCBM32I.OFF_NNAMEI(I)
+   THEN
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+ /*  RCBM32O.MSGLNO           = ERR_O120; */     /* SOC CEDS00000712 */
+     RCBM32O.MSGLNO           = ERR_O249;        /* EOC CEDS00000712 */
+     RCBM32O.ACTIONDC(I)      = DFHRED;
+     RCBM32I.ACTIONDL(I)      = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+ IF RCBM32I.OFF_SNAMEL(I) = 0 |
+    RCBM32I.OFF_SNAMEI(I)  = ''|
+    RCBM32I.OFF_SNAMEF(I)  = ERASE_EOF THEN
+ DO;
+    RCBM32O.OFF_SNAMEC(I)      = DFHRED;
+    RCBM32I.OFF_SNAMEL(I)      = -1;
+    /*FIELD MUST BE FILLED IN CORRECTLY*/
+    RCBM32O.MSGLNO             = ERR_O101;
+    CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+ /* COMMENTED & MOVED CODE ABOVE FOR TREC 1998 FOR PROPER VALIDATION */
+
+   /* COMPARING OLD OFF NNAME WITH NEW OFF NNAME    SOC CEDS00000646 */
+ /*IF TMP_OFF_ID_OLD(I) ¬= RCBM32I.OFF_NNAMEI(I) THEN                */
+ /*DO;                                                               */
+                                                      /* SOC RC01340 */
+ /********************************************************************/
+ /* THE FOLLOWING CODE HAS BEEN COMMENTED TO REMOVE ANY FORM OF      */
+ /*              VALIDATION FOR OFF_NNAME                            */
+ /********************************************************************/
+ /*    IF VERIFY(TRIM(RCBM32I.OFF_NNAMEI(I),'',' '),ALPHA) ¬= 0 THEN */
+ /*  DO;                                                             */
+ /*   RCBM32O.OFF_NNAMEC(I)      = DFHRED;                           */
+ /*   RCBM32I.OFF_NNAMEL(I)      = -1;                               */
+ /*   RCBM32O.MSGLNO             = ERR_O101;                         */
+ /*   CALL RCBC32M_SEND_MAP_CSR;                                     */
+ /*  END;                                                            */
+                                                      /* EOC RC01340 */
+
+ /*NNAME_FLAG                    = TRUE;                             */
+ /*CALL RCBC32M_CHECK_NNAME;                                         */
+
+ /*IF NNAME_FLAG = FALSE THEN                                        */
+ /* DO;                                                              */
+ /*  RCBM32O.OFF_NNAMEC(I)      = DFHRED;                            */
+ /*  RCBM32I.OFF_NNAMEL(I)      = -1;                                */
+     /*NOT ALLOWED TO UPDATE           */
+ /*  RCBM32O.MSGLNO             = ERR_O233;                          */
+ /*  CALL RCBC32M_SEND_MAP_CSR;                                      */
+ /* END;                                                             */
+ /*END;                                                              */
+                                                 /* EOC CEDS00000676 */
+                       /* COMPARING OLD OFF SNAME WITH NEW OFF SNAME */
+                                                 /* SOC CEDS00000676 */
+ DO R = 1 TO 11;                          /* CHECK 11 ROWS IN SCREEN */
+ IF I ¬= R THEN               /* I = R CONDITION IS CHECKED IN TABLE */
+ DO;                                             /* EOC CEDS00000676 */
+ IF RCBM32I.OFF_SNAMEI(R) ¬= RCBM32I.OFF_SNAMEI(I) THEN
+                                                 /* SOC CEDS00000676 */
+ /* DO;                                    */    /* EOC CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+ SNAME_FLAG                    = TRUE;
+ ELSE                                            /* SOC CEDS00000676 */
+   DO;
+     RCBM32O.OFF_SNAMEC(I)      = DFHRED;
+     RCBM32I.OFF_SNAMEL(I)      = -1;
+     /*DUPLICATE SHORT NAME ENTERED ON THE ONLINE SCREEN*/
+     RCBM32O.MSGLNO             = ERR_O236;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+ END;
+                                                 /* EOC CEDS00000676 */
+ CALL RCBC32M_CHECK_SNAME;
+
+ IF SNAME_FLAG = FALSE THEN
+ DO;
+   IF VERIFY(RCBM32I.ACTIONDI(I),'C') ¬= 0  |    /* SOC CEDS00000676 */
+      (TMP_OFF_SNAME_OLD(I) ¬= RCBM32I.OFF_SNAMEI(I))
+   THEN
+   DO;                                           /* EOC CEDS00000676 */
+    RCBM32O.OFF_SNAMEC(I)      = DFHRED;
+    RCBM32I.OFF_SNAMEL(I)      = -1;
+    /*OFFERING SHORT NAME ALREADY USED*/
+    RCBM32O.MSGLNO             = ERR_O231;
+    CALL RCBC32M_SEND_MAP_CSR;
+   END;                                              /* CEDS00000676 */
+ END;
+                                                 /* SOC CEDS00000676 */
+ /*END;                                         */   /* CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+
+ IF (RCBM32I.TOFI(I) = 'WSU')|
+    (RCBM32I.TOFI(I) = 'MSU') THEN
+ DO;
+   IF RCBM32I.SLC_TRANS_FLAGI(I) ¬= ''
+   &  RCBM32I.SLC_TRANS_FLAGF(I) ¬= ERASE_EOF
+   &  RCBM32I.SLC_TRANS_FLAGl(I) ¬= 0 THEN
+   DO;
+    RCBM32O.SLC_TRANS_FLAGC(I) = DFHRED;
+    RCBM32I.SLC_TRANS_FLAGL(I) = -1;
+    /*SLC TRANSLATION FLAG SHOULD BE BLANK FOR TOF = WSU/MSU*/
+    RCBM32O.MSGLNO             = ERR_O224;
+    CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF RCBM32I.CUST_AGGR_FLAGI(I) ¬= ''
+   &  RCBM32I.CUST_AGGR_FLAGF(I) ¬= ERASE_EOF
+   &  RCBM32I.CUST_AGGR_FLAGL(I) ¬= 0 THEN
+   DO;
+    RCBM32O.CUST_AGGR_FLAGC(I) = DFHRED;
+    RCBM32I.CUST_AGGR_FLAGL(I) = -1;
+    /* ERR_O232- CUSTOMER AGG FLAG SHOULD BE BLANK FOR TOF= WSU/MSU */
+    RCBM32O.MSGLNO             = ERR_O232;
+    CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   IF RCBM32I.RANKI(I) ¬= ' '
+   &  RCBM32I.RANKF(I) ¬= ERASE_EOF
+   &  RCBM32I.RANKL(I) ¬= 0  THEN
+   DO;
+      RCBM32O.RANKC(I)         = DFHRED;
+      RCBM32I.RANKL(I)         = -1;
+      /*RANK SHOULD BE BLANK WHEN TOF = WSU/MSU*/
+      RCBM32O.MSGLNO           = ERR_O225;
+      CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+ WRK_TOS_FORMAT                = RCBM32I.TOS_FORMATI(I);
+
+ IF (TALLY(WRK_TOS_FORMAT,'TTTT') = 1 & TALLY(WRK_TOS_FORMAT,'T') =4)
+  & (TALLY(WRK_TOS_FORMAT,'OO') = 1 & TALLY(WRK_TOS_FORMAT,'O') =2)
+ THEN;
+ ELSE
+ DO;
+    RCBM32O.TOS_FORMATC(I)     = DFHRED;
+    RCBM32I.TOS_FORMATL(I)     = -1;
+    /*INVALID TOS FORMAT*/
+    RCBM32O.MSGLNO             = ERR_O228;
+    CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+ IF (TALLY(WRK_TOS_FORMAT,'S') = 5) THEN
+ DO;
+    IF (TALLY(WRK_TOS_FORMAT,'SSSSS') = 1)
+    THEN;
+    ELSE
+    DO;
+       RCBM32O.TOS_FORMATC(I)     = DFHRED;
+       RCBM32I.TOS_FORMATL(I)     = -1;
+       /*INVALID TOS FORMAT*/
+       RCBM32O.MSGLNO             = ERR_O228;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+ END;
+
+ IF (TALLY(WRK_TOS_FORMAT,'S') = 7) THEN
+ DO;
+    IF (TALLY(WRK_TOS_FORMAT,'SSSSSSS') = 1)
+    THEN;
+    ELSE
+    DO;
+       RCBM32O.TOS_FORMATC(I)     = DFHRED;
+       RCBM32I.TOS_FORMATL(I)     = -1;
+       /*INVALID TOS FORMAT*/
+       RCBM32O.MSGLNO             = ERR_O228;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+ END;
+
+ IF ((TALLY(WRK_TOS_FORMAT,'S') ¬= 5) & (TALLY(WRK_TOS_FORMAT,'S')¬= 7))
+ THEN
+ DO;
+   RCBM32O.TOS_FORMATC(I)     = DFHRED;
+   RCBM32I.TOS_FORMATL(I)     = -1;
+   /*INVALID TOS FORMAT*/
+   RCBM32O.MSGLNO             = ERR_O228;
+   CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+ IF INDEX(WRK_TOS_FORMAT,'M') ¬= 0 THEN
+ DO;
+    IF (TALLY(WRK_TOS_FORMAT,'MMM') = 1)
+       & (TALLY(WRK_TOS_FORMAT,'M') = 3)
+    THEN;
+    ELSE
+    DO;
+       RCBM32O.TOS_FORMATC(I)     = DFHRED;
+       RCBM32I.TOS_FORMATL(I)     = -1;
+       /*INVALID TOS FORMAT*/
+       RCBM32O.MSGLNO             = ERR_O228;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+ END;
+
+ IF RCBM32I.TOFI(I) = 'MESE' THEN
+ DO;
+
+    IF (RCBM32I.CUST_AGGR_FLAGI(I) ¬= 'Y') &
+       (RCBM32I.CUST_AGGR_FLAGI(I) ¬= 'N') THEN
+    DO;
+        RCBM32O.CUST_AGGR_FLAGC(I) = DFHRED;
+        RCBM32I.CUST_AGGR_FLAGL(I) = -1;
+        /*ERR_O231- CUSTOMER AGG FLAG SHOULD BE Y/N */
+        RCBM32O.MSGLNO             = ERR_O227;
+        CALL RCBC32M_SEND_MAP_CSR;
+    END;
+
+    IF (RCBM32I.SLC_TRANS_FLAGI(I) ¬= 'Y') &
+       (RCBM32I.SLC_TRANS_FLAGI(I) ¬= 'N') THEN
+    DO;
+       RCBM32O.SLC_TRANS_FLAGC(I) = DFHRED;
+       RCBM32I.SLC_TRANS_FLAGL(I) = -1;
+       /*SLC TRANSLATION FLAG SHOULD BE Y/N FOR TOF = MESE*/
+       RCBM32O.MSGLNO             = ERR_O226;
+       CALL RCBC32M_SEND_MAP_CSR;
+    END;
+
+ /* RANK VALIDATION IS PERFORMED IN THE BELOW CHECKS TREC 1998       */
+    IF RCBM32I.RANKI(I) = ' '|
+       RCBM32I.RANKF(I) = ERASE_EOF THEN
+    DO;
+      RCBM32O.RANKC(I)           = DFHRED;
+      RCBM32I.RANKL(I)           = -1;
+      /*FIELD MUST BE FILLED IN CORRECTLY*/
+      RCBM32O.MSGLNO             = ERR_O101;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+
+    IF VERIFY(RCBM32I.RANKI(I),NUMERIC) ¬=0 THEN
+    DO;
+      RCBM32O.RANKC(I)           = DFHRED;
+      RCBM32I.RANKL(I)           = -1;
+      /*RANK SHOULD BE NUMERIC*/
+      RCBM32O.MSGLNO             = ERR_0230;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+    ELSE
+      PIC_RANK                   = RCBM32I.RANKI(I);
+
+    IF ((PIC_RANK < 0) | (PIC_RANK > 9999)) THEN
+    DO;
+      RCBM32O.RANKC(I)           = DFHRED;
+      RCBM32I.RANKL(I)           = -1;
+      /*INVALID RANK VALUE*/
+      RCBM32O.MSGLNO             = ERR_O223;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+
+    WRK_RANK                      = RCBM32I.RANKI(I);
+                                                 /* SOC CEDS00000676 */
+    DO R = 1 TO 11;
+    IF I ¬= R THEN
+    DO;
+    IF RCBM32I.RANKI(R) ¬= RCBM32I.RANKI(I) THEN /* EOC CEDS00000676 */
+    RANK_FLAG                     = TRUE;
+    ELSE                                         /* SOC CEDS00000676 */
+      DO;
+        RCBM32O.RANKC(I)      = DFHRED;
+        RCBM32I.RANKL(I)      = -1;
+        /*DUPLICATE RANK ENTERED ON THE ONLINE SCREEN*/
+        RCBM32O.MSGLNO             = ERR_O237;
+        CALL RCBC32M_SEND_MAP_CSR;
+      END;
+    END;
+    END;
+                                                 /* EOC CEDS00000676 */
+    CALL RCBC32M_CHECK_RANK;
+
+    IF RANK_FLAG = FALSE THEN
+    DO;
+     IF VERIFY(RCBM32I.ACTIONDI(I),'C') ¬= 0  |  /* SOC CEDS00000676 */
+        (TMP_RANK_OLD(I) ¬= RCBM32I.RANKI(I))
+     THEN
+     DO;                                         /* EOC CEDS00000676 */
+      RCBM32O.RANKC(I)           = DFHRED;
+      RCBM32I.RANKL(I)           = -1;
+      /*RANK ALREADY USED*/
+      RCBM32O.MSGLNO             = ERR_O222;
+      CALL RCBC32M_SEND_MAP_CSR;
+     END;                                            /* CEDS00000676 */
+    END;
+                                                 /* SOC CEDS00000676 */
+                                                 /* SOC CEDS00000649 */
+    /* VALIDATE ONLINE SCREEN TO CHECK FOR DUPLICATES ENTERED ON
+       OFFERING NAME, OFFERING SHORT NAME AND RANK FIELDS */
+ /*  IF I < 11 THEN                                                  */
+ /*  DO;                                                             */
+ /*   R = I + 1;          */         /* COMPARE ONLINE SCREEN VALUES */
+ /*   DO WHILE( R <= 11);                                            */
+ /*    IF RCBM32I.OFF_NNAMEI(I) = RCBM32I.OFF_NNAMEI(R) THEN         */
+ /*    DO;                                                           */
+ /*      RCBM32O.OFF_NNAMEC(I)      = DFHRED;                        */
+ /*      RCBM32I.OFF_NNAMEL(I)      = -1;                            */
+         /*DUPLICATE OFFERING NNAME ENTERED ON THE ONLINE SCREEN*/
+ /*      RCBM32O.MSGLNO             = ERR_O235;                      */
+ /*      CALL RCBC32M_SEND_MAP_CSR;                                  */
+ /*    END;                                                          */
+ /*    IF RCBM32I.OFF_SNAMEI(I) = RCBM32I.OFF_SNAMEI(R) THEN         */
+ /*    DO;                                                           */
+ /*      RCBM32O.OFF_SNAMEC(I)      = DFHRED;                        */
+ /*      RCBM32I.OFF_SNAMEL(I)      = -1;                            */
+         /*DUPLICATE SHORT NAME ENTERED ON THE ONLINE SCREEN*/
+ /*      RCBM32O.MSGLNO             = ERR_O236;                      */
+ /*      CALL RCBC32M_SEND_MAP_CSR;                                  */
+ /*    END;                                                          */
+ /*    IF RCBM32I.RANKI(I) = RCBM32I.RANKI(R) THEN                   */
+ /*    DO;                                                           */
+ /*      RCBM32O.RANKC(I)      = DFHRED;                             */
+ /*      RCBM32I.RANKL(I)      = -1;                                 */
+         /*DUPLICATE RANK ENTERED ON THE ONLINE SCREEN*/
+ /*      RCBM32O.MSGLNO             = ERR_O237;                      */
+ /*      CALL RCBC32M_SEND_MAP_CSR;                                  */
+ /*    END;                                                          */
+ /*    R = R + 1;                                                    */
+ /*   END;                                                           */
+ /*  END;                                   */   /* EOC CEDS00000649 */
+                                                 /* EOC CEDS00000676 */
+ END;
+0END RCBC32M_UPDATE_CHECK;
+1/********************************************************************/
+ /*      CHECK IF OFF RANK ALREADY USED                              */
+ /********************************************************************/
+ RCBC32M_CHECK_RANK: PROC;
+
+                                                 /* SOC CEDS00000676 */
+  /*IF NNAME_FLAG = FALSE  THEN                */   /* CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+  WRK_NNAME                    = RCBM32I.OFF_NNAMEI(I);
+                                                 /* SOC CEDS00000676 */
+  /*ELSE                                    */   /* SOC CEDS00000646 */
+  /*WRK_NNAME                    = TMP_OFF_ID_OLD(I);                */
+                                                 /* EOC CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+  WRK_COUNT                    = '0';
+
+  EXEC SQL
+    SELECT COUNT(*)
+    INTO :WRK_COUNT
+    FROM RCBV0691_TRANS_OFF
+    WHERE (COUNTRY_NUMBER      =  :WRK_COUNTRY_NUMBER
+    AND    RANK_NUMBER         =  :WRK_RANK
+    AND    OFFERING_ID         <> :WRK_NNAME);
+
+ SELECT(SQLCA.SQLCODE);
+   WHEN(0)
+   DO;
+     IF WRK_COUNT ¬= 0 THEN
+        RANK_FLAG              = FALSE;
+   END;
+   OTHERWISE
+   DO;
+     RCBM32O.MSGLNO = 'DB2 ERROR ' || SQLCA.SQLCODE || ' OCCURED
+     WHILE ACCESSING RCBT0691';
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+0END RCBC32M_CHECK_RANK;
+1/********************************************************************/
+ /*      CHECK IF OFF SHORT NAME IS ALREADY USED                     */
+ /********************************************************************/
+ RCBC32M_CHECK_SNAME: PROC;
+  WRK_SNAME                    = RCBM32I.OFF_SNAMEI(I);
+                                                 /* SOC CEDS00000676 */
+ /*IF NNAME_FLAG = FALSE  THEN      */               /* CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+  WRK_NNAME                    = RCBM32I.OFF_NNAMEI(I);
+                                                 /* SOC CEDS00000676 */
+ /*ELSE                             */           /* SOC CEDS00000646 */
+ /*WRK_NNAME                    = TMP_OFF_ID_OLD(I);                 */
+                                                 /* EOC CEDS00000646 */
+                                                 /* EOC CEDS00000676 */
+  WRK_COUNT                    = '0';
+
+  EXEC SQL
+    SELECT COUNT(*)
+    INTO :WRK_COUNT
+    FROM RCBV0691_TRANS_OFF
+    WHERE (COUNTRY_NUMBER      =  :WRK_COUNTRY_NUMBER
+    AND    OFFERING_SNAME      =  :WRK_SNAME
+    AND    OFFERING_ID         <> :WRK_NNAME);
+
+  SELECT(SQLCA.SQLCODE);
+    WHEN(0);
+    OTHERWISE
+    DO;
+      RCBM32O.MSGLNO = 'DB2 ERROR ' || SQLCA.SQLCODE || ' OCCURED
+      WHILE ACCESSING RCBT0691';
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+  END;
+
+  IF WRK_COUNT = 0 THEN
+  DO;
+    WRK_SNAME = '%' || RCBM32I.OFF_SNAMEI(I) ||'%';
+    EXEC SQL
+      SELECT COUNT(*)
+      INTO :WRK_COUNT
+      FROM RCBV0650_TRANS_SDF
+      WHERE (COUNTRY_NUMBER    = :WRK_COUNTRY_NUMBER
+      AND   SERVICE_EXTENSION LIKE :WRK_SNAME);
+  END;
+
+  SELECT(SQLCA.SQLCODE);
+    WHEN(0)
+    DO;
+      IF WRK_COUNT ¬= 0 THEN
+         SNAME_FLAG            = FALSE;
+    END;
+    OTHERWISE
+    DO;
+      RCBM32O.MSGLNO = 'DB2 ERROR ' || SQLCA.SQLCODE || ' OCCURED
+      WHILE ACCESSING RCBT0650';
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+  END;
+
+0END RCBC32M_CHECK_SNAME;
+1/********************************************************************/
+ /*      CHECK IF OFF NNAME IS ALREADY USED         SOC CEDS00000646 */
+ /********************************************************************/
+ RCBC32M_CHECK_NNAME: PROC;
+  WRK_NNAME                    = RCBM32I.OFF_NNAMEI(I);
+  WRK_COUNT                    = '0';
+
+  EXEC SQL
+    SELECT COUNT(*)
+    INTO :WRK_COUNT
+    FROM RCBV0691_TRANS_OFF
+    WHERE (COUNTRY_NUMBER      =  :WRK_COUNTRY_NUMBER
+    AND    OFFERING_ID         =  :WRK_NNAME);
+
+
+  SELECT(SQLCA.SQLCODE);
+    WHEN(0)
+    DO;
+      IF WRK_COUNT ¬= 0 THEN
+         NNAME_FLAG            = FALSE;
+    END;
+    OTHERWISE
+    DO;
+      RCBM32O.MSGLNO = 'DB2 ERROR ' || SQLCA.SQLCODE || ' OCCURED
+      WHILE ACCESSING RCBT0691';
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+  END;
+
+0END RCBC32M_CHECK_NNAME;                        /* EOC CEDS00000646 */
+1/********************************************************************/
+ /*      PROTECT MAP RCBM32                                          */
+ /********************************************************************/
+0RCBC32M_PROTECT_MAP: PROC;
+
+ DO M = 1 TO 11;
+   IF FILL_FLAG(M)= TRUE THEN
+   DO;
+     RCBM32O.OFF_NNAMEA(M)     = DFHBMPRF;
+   END;
+ END;
+
+0END RCBC32M_PROTECT_MAP;
+1/********************************************************************/
+ /*      PROTECT MAP RCBM32                                          */
+ /********************************************************************/
+0RCBC32M_PROTECT_MAP1: PROC;
+
+ RCBM32O.COUNTRYA    = DFHBMPRF;
+ RCBM32O.OFFNNSELA   = DFHBMPRF;
+ RCBM32O.OFFSNSELA   = DFHBMPRF;
+ RCBM32O.TOFSELA     = DFHBMPRF;
+ RCBM32O.RANKSELA    = DFHBMPRF;
+
+ DO M = 1 TO 11;
+   RCBM32O.ACTIONDA(M)        = DFHBMPRF;
+   RCBM32O.OFF_NNAMEA(M)      = DFHBMPRF;
+   RCBM32O.TOFA(M)            = DFHBMPRF;
+   RCBM32O.OFF_SNAMEA(M)      = DFHBMPRF;
+   RCBM32O.SLC_TRANS_FLAGA(M) = DFHBMPRF;
+   RCBM32O.CUST_AGGR_FLAGA(M) = DFHBMPRF;
+   RCBM32O.TOS_FORMATA(M)     = DFHBMPRF;
+   RCBM32O.RANKA(M)           = DFHBMPRF;
+ END;
+
+0END RCBC32M_PROTECT_MAP1;
+1/********************************************************************/
+ /*      INSERT T691 RECORD                                          */
+ /********************************************************************/
+0RCBC32M_INSERT_RECORD: PROC;
+
+ RCB691S                       = '';
+ RCB691SI.INDNULL(*)           = 0;
+
+ RCB691S.COUNTRY_NUMBER        = WRK_COUNTRY_NUMBER;
+ RCB691S.OFFERING_ID           = RCBM32I.OFF_NNAMEI(I);
+ RCB691S.TYPE_OF_OFFERING      = RCBM32I.TOFI(I);
+ RCB691S.OFFERING_SNAME        = RCBM32I.OFF_SNAMEI(I);
+
+ IF RCBM32I.SLC_TRANS_FLAGI(I) = ''        |
+    RCBM32I.SLC_TRANS_FLAGF(I) = ERASE_EOF |
+    RCBM32I.SLC_TRANS_FLAGL(I) = 0 THEN
+    RCB691SI.INDNULL(5)        = -1;
+ ELSE
+    RCB691S.SLC_TRANS_REQ_FLAG = RCBM32I.SLC_TRANS_FLAGI(I);
+
+ RCB691S.CUST_AGGR_REQ_FLAG    = RCBM32I.CUST_AGGR_FLAGI(I);
+
+ RCB691S.TOS_FORMAT            = RCBM32I.TOS_FORMATI(I);
+
+ IF RCBM32I.RANKI(I)           = ''        |
+    RCBM32I.RANKF(I)           = ERASE_EOF |
+    RCBM32I.RANKL(I)           = 0 THEN
+    RCB691SI.INDNULL(8)        = -1;
+ ELSE
+    RCB691S.RANK_NUMBER        = RCBM32I.RANKI(I);
+
+ EXEC SQL
+      INSERT INTO RCBV0691_TRANS_OFF
+         (COUNTRY_NUMBER
+         ,OFFERING_ID
+         ,TYPE_OF_OFFERING
+         ,OFFERING_SNAME
+         ,SLC_TRANS_REQ_FLAG
+         ,CUST_AGGR_REQ_FLAG
+         ,TOS_FORMAT
+         ,RANK_NUMBER)
+      VALUES (:RCB691S:RCB691SI.INDNULL);
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+
+   WHEN (-803)
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     RCBM32O.MSGLNO            = 'RECORD ALREADY EXISTS';
+     RCBM32O.OFF_NNAMEC(I)     = DFHRED;
+     RCBM32I.ACTIONDL(I)       = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   OTHERWISE
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     PIC_EXPLAIN1              = SQLCA.SQLCODE;
+     RCBM32O.MSGLNO = 'DB2 ERROR - RC FROM RCBT0691 INSERT = '
+                       || PIC_EXPLAIN1;
+     RCBM32O.ACTIONDC(I)       = DFHRED;
+     RCBM32I.ACTIONDL(I)       = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+0END RCBC32M_INSERT_RECORD;
+1/********************************************************************/
+ /*      UPDATE T691 RECORD                                          */
+ /********************************************************************/
+0RCBC32M_UPDATE_RECORD: PROC;
+
+ RCB691S                       = '';
+ RCB691SI.INDNULL(*)           = 0;
+
+ RCB691S.COUNTRY_NUMBER        = WRK_COUNTRY_NUMBER;
+ RCB691S.OFFERING_ID           = RCBM32I.OFF_NNAMEI(I);
+ RCB691S.TYPE_OF_OFFERING      = RCBM32I.TOFI(I);
+ RCB691S.OFFERING_SNAME        = RCBM32I.OFF_SNAMEI(I);
+
+ IF RCBM32I.SLC_TRANS_FLAGI(I) = ''        |
+    RCBM32I.SLC_TRANS_FLAGF(I) = ERASE_EOF |
+    RCBM32I.SLC_TRANS_FLAGL(I) = 0 THEN
+    RCB691SI.INDNULL(5)        = -1;
+ ELSE
+    RCB691S.SLC_TRANS_REQ_FLAG = RCBM32I.SLC_TRANS_FLAGI(I);
+
+ IF RCBM32I.CUST_AGGR_FLAGI(I) = '' THEN
+    RCB691SI.INDNULL(6)        = -1;
+ ELSE
+    RCB691S.CUST_AGGR_REQ_FLAG       = RCBM32I.CUST_AGGR_FLAGI(I);
+
+ RCB691S.TOS_FORMAT            = RCBM32I.TOS_FORMATI(I);
+
+ IF RCBM32I.RANKI(I)           = ''        |
+    RCBM32I.RANKF(I)           = ERASE_EOF |
+    RCBM32I.RANKL(I)           = 0 THEN
+    RCB691SI.INDNULL(8)        = -1;
+ ELSE
+    RCB691S.RANK_NUMBER        = RCBM32I.RANKI(I);
+
+ WRK_REC_COUNT   = 0;
+
+ EXEC SQL
+    SELECT COUNT(*)
+     INTO :WRK_REC_COUNT
+     FROM RCBV0691_TRANS_OFF
+     WHERE COUNTRY_NUMBER      = :WRK_COUNTRY_NUMBER
+     AND OFFERING_ID           = :RCB691S.OFFERING_ID
+     AND TYPE_OF_OFFERING      = :RCB691S.TYPE_OF_OFFERING
+     AND OFFERING_SNAME        = :RCB691S.OFFERING_SNAME
+     AND SLC_TRANS_REQ_FLAG    = :RCB691S.SLC_TRANS_REQ_FLAG
+     AND CUST_AGGR_REQ_FLAG    = :RCB691S.CUST_AGGR_REQ_FLAG
+     AND TOS_FORMAT            = :RCB691S.TOS_FORMAT
+     AND RANK_NUMBER           = :RCB691S.RANK_NUMBER;
+
+ IF WRK_REC_COUNT = 0 THEN
+ DO;
+   WRK_NNAME  = TMP_OFF_ID_OLD(I);                   /* CEDS00000646 */
+   EXEC SQL
+    UPDATE RCBV0691_TRANS_OFF
+    SET TYPE_OF_OFFERING       = :RCB691S.TYPE_OF_OFFERING
+                                                 /* SOC CEDS00000646 */
+       ,OFFERING_ID            = :RCB691S.OFFERING_ID
+                                                 /* EOC CEDS00000646 */
+       ,OFFERING_SNAME         = :RCB691S.OFFERING_SNAME
+       ,SLC_TRANS_REQ_FLAG     = :RCB691S.SLC_TRANS_REQ_FLAG :NUL691E
+       ,CUST_AGGR_REQ_FLAG     = :RCB691S.CUST_AGGR_REQ_FLAG
+       ,TOS_FORMAT             = :RCB691S.TOS_FORMAT :NUL691G
+       ,RANK_NUMBER            = :RCB691S.RANK_NUMBER :NUL691H
+    WHERE COUNTRY_NUMBER       = :WRK_COUNTRY_NUMBER
+      AND OFFERING_ID          = :WRK_NNAME;     /* SOC CEDS00000646 */
+   /* AND OFFERING_ID          = :RCB691S.OFFERING_ID; */
+                                                 /* EOC CEDS00000646 */
+
+  SELECT (SQLCA.SQLCODE);
+    WHEN (0);
+
+    WHEN (100)
+    DO;
+      CALL RCBC32M_PROTECT_MAP;
+      RCBM32O.MSGLNO           = ERR_O120;
+      RCBM32O.ACTIONDC(I)      = DFHRED;
+      RCBM32I.ACTIONDL(I)      = -1;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+
+    OTHERWISE
+    DO;
+      CALL RCBC32M_PROTECT_MAP;
+      PIC_EXPLAIN1             = SQLCA.SQLCODE;
+      RCBM32O.MSGLNO        = 'DB2 ERROR - RC FROM RCBT0691 UPDATE = '
+                               || PIC_EXPLAIN1;
+      RCBM32O.ACTIONDC(I)      = DFHRED;
+      RCBM32I.ACTIONDL(I)      = -1;
+      CALL RCBC32M_SEND_MAP_CSR;
+    END;
+  END;
+ END;
+ ELSE DO;
+   CALL RCBC32M_PROTECT_MAP;
+   RCBM32O.MSGLNO              = 'RECORD ALREADY EXISTS';
+   RCBM32O.ACTIONDC(I)         = DFHRED;
+   RCBM32I.ACTIONDL(I)         = -1;
+   CALL RCBC32M_SEND_MAP_CSR;
+ END;
+
+0END RCBC32M_UPDATE_RECORD;
+1/********************************************************************/
+ /*      DELETE T691 RECORD                                          */
+ /********************************************************************/
+0RCBC32M_DELETE_RECORD: PROC;
+
+ RCB691S                       = '';
+
+ RCB691S.OFFERING_ID           = RCBM32I.OFF_NNAMEI(I);
+
+ EXEC SQL
+      DELETE FROM RCBV0691_TRANS_OFF
+      WHERE COUNTRY_NUMBER     = :WRK_COUNTRY_NUMBER
+        AND OFFERING_ID        = :RCB691S.OFFERING_ID;
+
+ SELECT (SQLCA.SQLCODE);
+   WHEN (0);
+
+   WHEN (100)
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     RCBM32O.MSGLNO            = ERR_O121;
+     RCBM32O.ACTIONDC(I)       = DFHRED;
+     RCBM32I.ACTIONDL(I)       = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+
+   OTHERWISE
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     PIC_EXPLAIN1              = SQLCA.SQLCODE;
+     RCBM32O.MSGLNO         = 'DB2 ERROR - RC FROM RCBT0691 DELETE = '
+                       || PIC_EXPLAIN1;
+     RCBM32O.ACTIONDC(I)       = DFHRE1D;
+     RCBM32I.ACTIONDL(I)       = -1;
+     CALL RCBC32M_SEND_MAP_CSR;
+   END;
+ END;
+
+0END RCBC32M_DELETE_RECORD;
+1/********************************************************************/
+ /*      CREATE T560 RECORD                                          */
+ /********************************************************************/
+0RCBC32M_UPD_T560: PROC;
+
+ DCL WRK_TIME_IN  CHAR(26) INIT('');
+
+ EXEC SQL SET :WRK_TIME_IN     = CURRENT TIMESTAMP;
+
+ WRKMAP_DATA = ' ';
+ WRKMAP.OFF_NNAME              = RCBM32I.OFF_NNAMEI(I);
+ WRKMAP.TOF                    = RCBM32I.TOFI(I);
+ WRKMAP.OFF_SNAME              = RCBM32I.OFF_SNAMEI(I);
+ WRKMAP.SLC_TRANS_FLAG         = RCBM32I.SLC_TRANS_FLAGI(I);
+ WRKMAP.CUST_AGGR_FLAG         = RCBM32I.CUST_AGGR_FLAGI(I);
+ WRKMAP.TOS_FORMAT             = RCBM32I.TOS_FORMATI(I);
+ WRKMAP.RANK                   = RCBM32I.RANKI(I);
+
+ RCB560S                       = '';
+ RCB560SI.INDNULL(*)           = 0;
+ RCB560S.COUNTRY_NUMBER        = WRK_COUNTRY_NUMBER;
+ RCB560S.TXN_CODE              = 'RCBTXN32';
+ RCB560S.TIMESTAMP             = WRK_TIME_IN;
+ RCB560S.USERID                = HEADER.USERID;
+ RCB560S.ACTION                = WRK_ACTION;
+ RCB560S.DATA                  = WRKMAP_DATA;
+
+ EXEC SQL
+      INSERT INTO RCBV0560_XACTION
+      (COUNTRY_NUMBER,
+       TXN_CODE,
+       TIMESTAMP,
+       USERID,
+       ACTION,
+       DATA)
+        VALUES (:RCB560S:RCB560SI.INDNULL);
+
+ SELECT(SQLCA.SQLCODE);
+   WHEN(0);
+   OTHERWISE
+   DO;
+     CALL RCBC32M_PROTECT_MAP;
+     RET_CODE                  = SQLCA.SQLCODE;
+     SUB_CODE                  = SQLCA.SQLCABC;
+     PIC_EXPLAIN1              = SQLCA.SQLCODE;
+     RCBM32O.MSGLNO = 'DB2 ERROR - RC FROM RCBT0560 INSERT = '
+                        || PIC_EXPLAIN1;
+     CALL RCBC32M_SEND_MAP;
+   END;
+ END;
+1/*******************************************************************/
+ /*DO NOT CHANGE THIS PART, IT IS MEANT FOR ABR                     */
+ /*******************************************************************/
+0 %INCLUDE DAIFPLH ;                     /* COMPILE DATE/TIME STAMP */
+  $DAIMOD (RCBC32M);                     /* MODULE TO BE COMPILED   */
+0/*******************************************************************/
+ /* END OF ABR BLOCK '                                              */
+ /*******************************************************************/
+0 END RCBC32M;
